@@ -275,4 +275,3 @@ default via 10.140.0.1 dev eth0 proto dhcp src 10.140.0.2 metric 100
 2. 不同。工作等待時，先查排程狀態與原因，例如資源、分區或節點問題；工作已啟動但找不到檔案時，先查執行節點的路徑、掛載和權限。
 3. 不夠。控制器正常以外，還要驗證運算節點、身分驗證、名稱解析、網路、資料路徑、工作實際輸出與退出狀態。
 4. 目前 VM 適合驗證 Linux 管理、Shell、Python、單機 C／MPI、單節點排程器概念、基本監控與小型自動化。多節點工作分配、跨主機 SSH／共享儲存、跨節點 MPI、節點故障處理及網路測試需要多台獨立 VM。真實 CPU 拓撲、NUMA、GPU、RDMA／InfiniBand 和可代表生產效能的量測需要相應實體硬體。
-5. `The controller manages jobs and allocates resources.` `A compute node runs the assigned program.` `A job is a request to run a program with specific resources.`

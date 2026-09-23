@@ -210,7 +210,7 @@ for w, (title, days) in enumerate(weeks, 1):
 
 ## 實作紀錄
 
-帶練時追加實際命令、重點輸出與解釋。
+帶練時追加實際命令、重點輸出與解釋。當天產生可重跑檔案時，存於 `artifacts/week-{w:02}/day-{d:02}/`，並在此連結；終端結果仍記錄在本檔。
 '''
         path = folder / f'day-{d:02}.md'
         if not path.exists():

@@ -8,7 +8,7 @@
 
 | 週 | 大方向 | 每日安排 |
 |---|---|---|
-| 01 | 認識 HPC 與 Linux 起步 | [D1 HPC 全貌](week-01/day-01.md)；[D2 確認 GCP Linux 環境](week-01/day-02.md)；[D3 終端機與路徑](week-01/day-03.md)；[D4 檔案與編輯器](week-01/day-04.md)；[D5 查說明與錯誤](week-01/day-05.md)；[D6 第一份環境報告](week-01/day-06.md)；[D7 複習](week-01/day-07.md) |
+| 01 | 認識 HPC 與 Linux 起步 | [D1 HPC 全貌](week-01/day-01.md)；[D2 使用者、目錄與工具環境](week-01/day-02.md)；[D3 終端機與路徑](week-01/day-03.md)；[D4 檔案與編輯器](week-01/day-04.md)；[D5 查說明與錯誤](week-01/day-05.md)；[D6 第一份環境報告](week-01/day-06.md)；[D7 複習](week-01/day-07.md) |
 | 02 | Linux 檔案、權限與 Git | [D1 文字處理](week-02/day-01.md)；[D2 使用者與權限](week-02/day-02.md)；[D3 群組與 sudo](week-02/day-03.md)；[D4 Git 基礎](week-02/day-04.md)；[D5 Git 分支與復原](week-02/day-05.md)；[D6 檔案封存與備份](week-02/day-06.md)；[D7 複習](week-02/day-07.md) |
 | 03 | Linux 程序、服務與日誌 | [D1 程序與資源](week-03/day-01.md)；[D2 套件與相依性](week-03/day-02.md)；[D3 systemd 服務](week-03/day-03.md)；[D4 日誌排查](week-03/day-04.md)；[D5 Shell 腳本](week-03/day-05.md)；[D6 排程與復原](week-03/day-06.md)；[D7 複習](week-03/day-07.md) |
 | 04 | Shell 與維運基本功複習 | [D1 標準輸入輸出](week-04/day-01.md)；[D2 引用與變數](week-04/day-02.md)；[D3 條件與迴圈](week-04/day-03.md)；[D4 函式與參數](week-04/day-04.md)；[D5 程序與訊號](week-04/day-05.md)；[D6 維運腳本審查](week-04/day-06.md)；[D7 複習](week-04/day-07.md) |

@@ -2,7 +2,7 @@
 
 [課程總表](../ROADMAP.md) · [參考教材](../../RESOURCES.md) · [進度](../../PROGRESS.md)
 
-狀態：未開始｜實際日期：待填｜實際時間：待填
+狀態：已完成｜實際日期：2026-09-24
 
 ## 今日目標與課前筆記
 
@@ -28,3 +28,25 @@ W01 已用 `id a2264` 確認該帳號屬於 `google-sudoers`、`docker`、`lxd` 
 ## 實作紀錄
 
 帶練時追加實際命令、重點輸出與解釋。
+
+### 1. 查詢 `a2264` 的 sudo 授權
+
+**實際指令**
+
+```bash
+sudo -l -U a2264
+```
+
+**重點輸出**
+
+```text
+Matching Defaults entries for a2264 on instance-20260923-104239:
+    env_reset, secure_path=/sbin\:/bin\:/usr/sbin\:/usr/bin
+
+User a2264 may run the following commands on instance-20260923-104239:
+    (ALL : ALL) NOPASSWD: ALL
+```
+
+**結果解釋**
+
+`(ALL : ALL)` 表示可指定任意目標使用者與群組，後面的 `ALL` 表示可執行任意命令，`NOPASSWD` 表示不需輸入密碼。因此 `a2264` 雖然預設是 UID 1000，仍具備完整 sudo 管理權限，不能當作受限帳號。`env_reset` 與 `secure_path` 控制命令環境與搜尋路徑，不縮小可執行命令的授權範圍。這份輸出證明實際授權，但沒有指出是哪一條 sudoers 規則提供；不能只憑 `google-sudoers` 群組名稱斷定規則來源。

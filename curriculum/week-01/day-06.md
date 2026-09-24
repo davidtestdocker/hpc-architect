@@ -8,6 +8,12 @@
 
 W01 D01 已完成 OS、CPU、記憶體與檔案系統盤點，本日不重跑相同指令。改確認 shell 對單一程序施加的資源限制，以及 cgroup 對目前工作負載可用 CPU 與記憶體的限制。
 
+### 先理解 cgroup
+
+cgroup（control group）是 Linux 核心將多個程序歸成一組、對整組程序統計與限制資源的機制。像 `session-7.scope` 這樣的工作階段會有自己的 cgroup；systemd 服務和日後的 Slurm 工作也可能各有一組。`/proc/self/cgroup` 顯示目前程序屬於哪一組，`/sys/fs/cgroup/...` 則顯示那組的設定與統計。
+
+這與 `ulimit` 的作用範圍不同：`ulimit` 是目前 shell 的程序限制，子程序通常會繼承；cgroup 的限制作用於群組內程序的合計用量。cgroup 有父子階層，子層沒有設限時仍可能受父層限制。`cpu.max` 控制一段時間內這組程序可使用多少 CPU 時間，`memory.max` 設定這組程序的記憶體上限；兩者都不代表資源已預留給它。`max` 只表示該層沒有設定該項上限，VM 的實際 CPU 與 RAM 仍是邊界。
+
 ## 學習方式
 
 帶練時一次只執行一條指令；輸出確認後，再進到下一步。

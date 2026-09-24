@@ -80,4 +80,37 @@ google-compute-engine   Google Compute Engine
 
 ### Slurm 安裝結果
 
-已安裝：`slurm-26.05.4-1.el10.x86_64`、`slurm-slurmctld-26.05.4-1.el10.x86_64`、`slurm-slurmd-26.05.4-1.el10.x86_64`。
+已安裝：`slurm-26.05.4-1.el10.x86_64`、`slurm-slurmctld-26.05.4-1.el10.x86_64`、`slurm-slurmd-26.05.4-1.el10.x86_64`、`munge-0.5.15-11.el10_1.x86_64`、`munge-libs-0.5.15-11.el10_1.x86_64`、`munge-devel-0.5.15-11.el10_1.x86_64`。
+
+## 下一步：確認 VM 的 CPU 配置
+
+Slurm 要知道運算節點有多少可分配的 CPU。這裡的「邏輯 CPU」是作業系統看見、可排程的執行單位；在 VM 內看到的是雲端提供的虛擬 CPU 配置，不能直接當成實體伺服器的核心數。
+
+本次指令：`lscpu`。它只讀取 VM 可見的 CPU 資訊；重點看 `CPU(s)`（邏輯 CPU 總數）、`Thread(s) per core`（每核心的執行緒數）、`Core(s) per socket`（每插槽的核心數）與 `Socket(s)`（插槽數）。這一步不建立或修改檔案，不更動 Slurm 服務或雲端資源。收到實際輸出後再決定節點的 CPU 設定。
+
+實際執行 `lscpu`；重點輸出：
+
+```text
+CPU(s):                  2
+Thread(s) per core:      2
+Core(s) per socket:      1
+Socket(s):               1
+Hypervisor vendor:       KVM
+NUMA node(s):            1
+NUMA node0 CPU(s):       0,1
+```
+
+判讀：這台 VM 呈現 2 個邏輯 CPU、1 個虛擬核心／插槽和 1 個 NUMA 節點；`KVM` 表示它是虛擬機，不能由此推論實體主機的核心配置。後續先以 VM 實際可見資源設定教學節點，不把它寫成實體叢集容量。
+
+**NUMA 節點是什麼：**NUMA 是多處理器電腦的一種 CPU／記憶體配置：CPU 存取自己附近的記憶體通常比存取其他 CPU 群附近的記憶體快。系統把一組 CPU 與其鄰近記憶體稱為一個 NUMA 節點。這裡的「節點」是**同一台機器內部**的硬體分組，不是叢集裡的一台 VM。這台 VM 只呈現 1 個 NUMA 節點，CPU 0、1 都在其中，因此不能拿它測試跨 NUMA 節點的記憶體存取差異；也不能推論底層實體主機的 NUMA 拓撲。
+
+下一條指令是 `slurmd -C`：讓 Slurm 的運算節點程式列出它偵測到的硬體配置，尤其是 `CPUs`、插槽／核心／執行緒與 `RealMemory`（MiB）。`-C` 只列印硬體配置後結束，不啟動服務，也不修改設定檔；輸出將用來核對之後的 `slurm.conf` 節點設定。若執行失敗，也保留錯誤訊息供判斷。參考：[Slurm 官方 slurmd 文件](https://slurm.schedmd.com/slurmd.html)。
+
+實際執行 `slurmd -C`；輸出：
+
+```text
+NodeName=instance-20260923-104239 CPUs=2 Boards=1 SocketsPerBoard=1 CoresPerSocket=1 ThreadsPerCore=2 RealMemory=3906
+UpTime=0-23:29:49
+```
+
+判讀：Slurm 偵測到的 CPU 拓撲與 `lscpu` 一致；`RealMemory=3906` 表示它偵測到約 3906 MiB 記憶體，不是保證所有記憶體都能分配給工作。`UpTime` 是當時 VM 的開機運作時間。這是硬體偵測結果，還不是可用的 Slurm 節點或已啟動的排程服務。

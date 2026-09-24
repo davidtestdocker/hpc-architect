@@ -2,13 +2,13 @@
 
 對象：有 SRE／維運經驗、會 Linux、程式略懂，希望從基礎重建。每週約 20 小時：D1–D5 各 3 小時、D6 4 小時、D7 1 小時；可將 D7 合併到 D6 留一天休息。24 週約 480 小時，依驗收調整，不跳過基礎。
 
-週次是學習順序，不綁定日曆。跨 VM 實驗從第 7 週開始需要第二台，第 8 週規劃第三台；未準備額外資源時先做單機部分，跨節點項目標為待完成。參見 [GCP 環境方案](../ENVIRONMENT.md)。
+週次是學習順序，不綁定日曆。已有 SRE／維運經驗的內容依實際能力壓縮；完成指令清單不代表通過驗收。每個階段以 [課程入口的能力門檻](../README.md#階段與能力門檻) 和 [面試專案驗收](../project/README.md#必做驗收) 判斷，缺少實際證據就標為未完成。跨 VM 實驗從第 7 週開始需要第二台，第 8 週規劃第三台；未準備額外資源時先做單機部分，跨節點項目標為待完成。參見 [GCP 環境方案](../ENVIRONMENT.md)。
 
 每日文件含課前摘要、實作題、驗收與未填寫的學習紀錄；摘要是導讀，不是假裝你已完成的筆記。
 
 | 週 | 大方向 | 每日安排 |
 |---|---|---|
-| 01 | 認識 HPC 與 Linux 起步 | [D1 HPC 全貌](week-01/day-01.md)；[D2 使用者、目錄與工具環境](week-01/day-02.md)；[D3 終端機與路徑](week-01/day-03.md)；[D4 檔案與編輯器](week-01/day-04.md)；[D5 查說明與錯誤](week-01/day-05.md)；[D6 第一份環境報告](week-01/day-06.md)；[D7 複習](week-01/day-07.md) |
+| 01 | 認識 HPC 與 Linux 起步 | [D1 HPC 全貌](week-01/day-01.md)；[D2 使用者、目錄與工具環境](week-01/day-02.md)；[D3 終端機與路徑](week-01/day-03.md)；[D4 檔案與 Vim](week-01/day-04.md)；[D5 查說明與錯誤](week-01/day-05.md)；[D6 程序資源限制與 cgroup](week-01/day-06.md)；[D7 情境驗收](week-01/day-07.md) |
 | 02 | Linux 檔案、權限與 Git | [D1 文字處理](week-02/day-01.md)；[D2 使用者與權限](week-02/day-02.md)；[D3 群組與 sudo](week-02/day-03.md)；[D4 Git 基礎](week-02/day-04.md)；[D5 Git 分支與復原](week-02/day-05.md)；[D6 檔案封存與備份](week-02/day-06.md)；[D7 複習](week-02/day-07.md) |
 | 03 | Linux 程序、服務與日誌 | [D1 程序與資源](week-03/day-01.md)；[D2 套件與相依性](week-03/day-02.md)；[D3 systemd 服務](week-03/day-03.md)；[D4 日誌排查](week-03/day-04.md)；[D5 Shell 腳本](week-03/day-05.md)；[D6 排程與復原](week-03/day-06.md)；[D7 複習](week-03/day-07.md) |
 | 04 | Shell 與維運基本功複習 | [D1 標準輸入輸出](week-04/day-01.md)；[D2 引用與變數](week-04/day-02.md)；[D3 條件與迴圈](week-04/day-03.md)；[D4 函式與參數](week-04/day-04.md)；[D5 程序與訊號](week-04/day-05.md)；[D6 維運腳本審查](week-04/day-06.md)；[D7 複習](week-04/day-07.md) |

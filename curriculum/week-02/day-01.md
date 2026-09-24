@@ -2,7 +2,7 @@
 
 [課程總表](../ROADMAP.md) · [參考教材](../../RESOURCES.md) · [進度](../../PROGRESS.md)
 
-狀態：未開始｜實際日期：待填｜實際時間：待填
+狀態：已完成｜實際日期：2026-09-24
 
 ## 今日目標與課前筆記
 
@@ -28,3 +28,26 @@ W01 已實際使用管線與 `getent passwd`，這一天不重講管線或製造
 ## 實作紀錄
 
 帶練時追加實際命令、重點輸出與解釋。
+
+### 1. 統計真實帳號資料的 shell
+
+**實際指令**
+
+```bash
+getent passwd | cut -d: -f7 | sort | uniq -c
+```
+
+**實際輸出**
+
+```text
+      2 /bin/bash
+      1 /bin/sync
+      1 /sbin/halt
+      3 /sbin/nologin
+      1 /sbin/shutdown
+     13 /usr/sbin/nologin
+```
+
+**結果解釋**
+
+共統計 21 筆帳號紀錄。兩筆 `/bin/bash` 對應 D02 已查到的 `root` 與 `a2264`；`/sbin/nologin` 和 `/usr/sbin/nologin` 合計 16 筆，常見於不供互動式登入的服務帳號。`sync`、`halt`、`shutdown` 各有一筆專用 shell。`cut` 擷取第 7 欄、`sort` 將相同 shell 排在一起、`uniq -c` 計數。這是帳號資料的快速盤點，不能單靠 shell 欄位判定 SSH 實際登入權限。

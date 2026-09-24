@@ -402,21 +402,11 @@ LENGTH:          0
 **分區**（partition）是可提交工作的節點集合；本次 `debug` 分區只有這台 VM。
 
 本次設定檔：[single-node-slurm.conf](../project/slurm/single-node-slurm.conf)。
-`ClusterName` 是這個教學叢集的名稱；`SlurmctldHost` 指向本機控制器，
-括號內的 `10.140.0.2` 是目前 VM 的私有位址，不是通用模板值。
-`SlurmUser=slurm` 使用已建立的控制服務帳號，
-`AuthType`／`CredType` 選用已驗證的 MUNGE。
-
-`StateSaveLocation` 存放控制器的持續狀態，須讓 `slurm` 帳號可寫；
-`SlurmdSpoolDir` 是運算節點放置工作執行檔案的目錄，須供 root 寫入。
-兩個目錄下一步才建立，現在尚不存在。
-
-`SelectType=select/cons_tres` 與 `CR_CPU_Memory` 讓排程器追蹤可消耗的 CPU 和記憶體；
-這是資源**排程記帳**，尚不能單憑這兩行宣稱核心層的記憶體隔離已生效。
-`NodeName` 沿用 `slurmd -C` 偵測到的 2 個邏輯 CPU 和拓撲。
-偵測記憶體是 3906 MiB，先只宣告 `RealMemory=3000`，
-約保留 906 MiB 給作業系統與同機控制服務，避免將全部記憶體分配給工作。
-`State=UNKNOWN` 表示先等運算服務註冊，不預先宣稱節點可用。
+這份設定讓同一台 VM 同時擔任控制與運算節點，使用 MUNGE 驗證，
+將 2 個邏輯 CPU 和 3000 MiB 記憶體納入資源排程，
+並把運算節點放進預設的 `debug` 分區。
+控制端與運算端所需的狀態目錄下一步才建立。
+各設定項目的用途與限制直接見設定檔內的中文註解。
 
 本次要在 VM 執行的指令是
 `install -D -o root -g root -m 0644 /root/hpc-arch/project/slurm/single-node-slurm.conf /etc/slurm/slurm.conf`。
@@ -432,3 +422,12 @@ LENGTH:          0
 `cmp /root/hpc-arch/project/slurm/single-node-slurm.conf /etc/slurm/slurm.conf && echo same`
 逐位元組比較來源與安裝後的設定檔，完全一致才輸出 `same`。
 這些驗證不啟動服務，也不輸出任何金鑰。
+
+**實際結果：**`install` 完成且沒有錯誤訊息；
+`stat` 顯示 `/etc/slurm/slurm.conf` 為 `root:root 644`，
+`cmp` 輸出 `same`，表示安裝檔與專案中的來源檔逐位元組相同。
+這只確認設定檔已正確放置；Slurm 控制與運算服務尚未啟動。
+
+後來只在專案設定檔加入中文註解，設定值未改；
+VM 上的已安裝檔仍是加入註解前的版本，所以上述 `cmp` 結果僅代表當時一致。
+下次部署前須重新複製專案設定檔，才能讓兩份檔案再度一致。

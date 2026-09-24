@@ -556,3 +556,70 @@ instance-20260923-104239
 命令成功返回，輸出的主機名與設定的運算節點相同。
 這證明一般帳號可經 Slurm 在本機運算節點執行即時工作；
 尚未驗證批次腳本、資源限制或跨節點執行。
+
+### 準備可重跑的批次工作
+
+下一步使用 [node-smoke.sbatch](../project/workloads/node-smoke.sbatch)
+驗證一般帳號提交批次工作、資源請求與工作輸出。
+腳本請求 `debug` 分區的一個節點、一個工作行程、一個 CPU、256 MiB 記憶體，
+最長執行兩分鐘；執行後輸出工作 ID、使用者、節點和請求的資源值。
+`#SBATCH` 行是提交時由 Slurm 讀取的工作參數，
+`slurm-%j.out` 是工作輸出檔名，其中 `%j` 會替換為實際工作 ID。
+這些數值可驗證排程器收到的請求，不能單憑輸出宣稱核心層資源隔離已生效。
+
+一般帳號不能穿越 `/root` 讀取 repo 內腳本，
+因此先在 VM 執行
+`install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/workloads/node-smoke.sbatch /home/a2264/node-smoke.sbatch`。
+這會複製腳本到使用者家目錄並交由 `a2264` 擁有；
+`sbatch` 只需讀取腳本，不要求可執行位元。
+不啟動工作、不改服務或雲端資源。
+隨後以只讀指令
+`stat -c '%U:%G %a %n' /home/a2264/node-smoke.sbatch`
+及
+`cmp /root/hpc-arch/project/workloads/node-smoke.sbatch /home/a2264/node-smoke.sbatch && echo same`
+確認部署副本的擁有者、權限與內容。
+若之後要清理，先確認檔案仍是這次部署的副本，再移除該檔；
+不清理使用者家目錄的其他檔案。
+
+**實際結果：**學員回傳：
+
+```text
+$ stat -c '%U:%G %a %n' /home/a2264/node-smoke.sbatch
+a2264:a2264 644 /home/a2264/node-smoke.sbatch
+$ cmp /root/hpc-arch/project/workloads/node-smoke.sbatch /home/a2264/node-smoke.sbatch && echo same
+same
+```
+
+副本由 `a2264` 擁有、可供 `sbatch` 讀取，內容與 repo 腳本相同。
+
+### 提交批次工作
+
+接下來在 VM 執行
+`sudo -iu a2264 sbatch /home/a2264/node-smoke.sbatch`。
+`sbatch` 會把腳本交給控制服務排隊執行，
+而不是像先前的 `srun` 一樣等待工作執行完才返回；
+成功提交時會回報工作 ID，尚不能據此斷定工作成功。
+因使用 `sudo -iu a2264`，提交工作目錄是 `/home/a2264`；
+執行後預期在該處留下 `slurm-<工作 ID>.out`，
+Slurm 也會產生短暫的排程與執行狀態。
+這次不改 repo、服務設定或雲端資源。
+若工作需要中止，先查明工作 ID 與狀態，再用 `scancel` 取消該工作；
+取消不會自動刪除已產生的輸出檔。
+
+**實際結果：**
+
+```text
+$ sudo -iu a2264 sbatch /home/a2264/node-smoke.sbatch
+Submitted batch job 2
+```
+
+控制端已接受批次工作並給予 ID `2`；
+這不表示工作已執行或成功結束。
+
+接著以兩條只讀指令檢查這個工作：
+`sudo -iu a2264 squeue -j 2` 查看它是否仍在等待或執行；
+`sudo -iu a2264 cat /home/a2264/slurm-2.out`
+讀取腳本設定的工作輸出。
+若佇列沒有工作列，只代表工作已離開目前佇列，不能單憑此判定成功；
+若輸出檔尚未出現，可能是工作還沒開始，須再查排程狀態。
+兩條指令只讀，不改檔案、服務或雲端資源。

@@ -2,7 +2,7 @@
 
 [課程總表](../ROADMAP.md) · [參考教材](../../RESOURCES.md) · [進度](../../PROGRESS.md)
 
-狀態：未開始｜實際日期：待填｜實際時間：待填
+狀態：已完成｜實際日期：2026-09-24｜實際時間：未另行記錄
 
 ## 今日目標與課前筆記
 
@@ -29,3 +29,86 @@
 ## 實作紀錄
 
 帶練時追加實際命令、重點輸出與解釋。
+
+### 1. 讀取 `ls` 手冊開頭
+
+**實際指令**
+
+```bash
+man ls | head -n 20
+```
+
+**重點輸出**
+
+```text
+NAME
+       ls - list directory contents
+
+SYNOPSIS
+       ls [OPTION]... [FILE]...
+
+       -a, --all
+              do not ignore entries starting with .
+```
+
+**結果解釋**
+
+`ls` 用於列出目錄內容。`SYNOPSIS` 顯示選項與目標路徑的角色：選項改變列出方式，`FILE` 指定要查看的路徑；省略路徑時使用目前目錄。`-a` 會顯示點開頭的項目，`-A` 則會保留隱藏項目但排除 `.` 和 `..`。
+
+### 2. 同時使用 `-l` 與 `-a`
+
+**實際指令**
+
+```bash
+ls -la curriculum/week-01
+```
+
+**重點輸出**
+
+```text
+drwxr-xr-x.  2 root root   125 Sep 23 14:23 .
+drwxr-xr-x. 26 root root  4096 Sep 23 11:43 ..
+-rw-r--r--.  1 root root 12750 Sep 23 15:00 day-01.md
+...
+-rw-r--r--.  1 root root   295 Sep 23 14:23 day-07.md
+```
+
+**結果解釋**
+
+`-l` 顯示每個項目的權限、擁有者、大小與修改時間；`-a` 額外顯示 `.`（目前目錄）及 `..`（父目錄）。輸出確認 `curriculum/week-01` 內有 D01 至 D07 的課程檔。
+
+### 3. 讀取不存在路徑的錯誤
+
+**實際指令**
+
+```bash
+ls /tmp/w01d05-path-does-not-exist
+```
+
+**重點輸出**
+
+```text
+ls: cannot access '/tmp/w01d05-path-does-not-exist': No such file or directory
+```
+
+**結果解釋**
+
+`cannot access` 表示操作失敗，`No such file or directory` 說明指定的路徑不存在。這是讀取操作，沒有建立任何檔案或目錄；修正時應確認目標名稱，或改查已知存在的路徑。
+
+### 4. 改查已知存在的目錄
+
+**實際指令**
+
+```bash
+ls -ld /tmp
+```
+
+**重點輸出**
+
+```text
+drwxrwxrwt. 11 root root 4096 Sep 24 05:29 /tmp
+```
+
+**結果解釋**
+
+`/tmp` 存在且可存取。權限末尾的 `t` 是 sticky bit：所有使用者可在此建立項目，但通常只能刪除或改名自己擁有的項目。這證實前一步的問題是指定路徑不存在，而非 `/tmp` 無法使用。

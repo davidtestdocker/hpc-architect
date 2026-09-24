@@ -402,6 +402,9 @@ LENGTH:          0
 **分區**（partition）是可提交工作的節點集合；本次 `debug` 分區只有這台 VM。
 
 本次設定檔：[single-node-slurm.conf](../project/slurm/single-node-slurm.conf)。
+專案檔放在 repo 的 `project/slurm/`，部署後的設定檔在 VM 的 `/etc/slurm/`；
+`/var/spool/slurmctld` 與 `/var/spool/slurmd` 則是服務執行時使用的目錄，
+不是放設定檔的地方，也不屬於 repo。
 這份設定讓同一台 VM 同時擔任控制與運算節點，使用 MUNGE 驗證，
 將 2 個邏輯 CPU 和 3000 MiB 記憶體納入資源排程，
 並把運算節點放進預設的 `debug` 分區。
@@ -516,9 +519,19 @@ VM 上的已安裝檔仍是加入註解前的版本，所以上述 `cmp` 結果�
 若要停止，可用 `systemctl stop slurmd`；
 停止服務不會自動刪除可能留下的暫存資料。
 
-**實際結果：**學員回傳 `systemctl is-active slurmd` 為 `active`；
-`sinfo -N` 顯示 `instance-20260923-104239` 在預設 `debug` 分區為 `idle`。
-這表示運算服務正在執行、節點已向控制端註冊且目前可供排程；
+**實際結果：**學員回傳：
+
+```text
+$ systemctl is-active slurmd
+active
+$ sinfo -N
+NODELIST                  NODES PARTITION STATE
+instance-20260923-104239      1    debug* idle
+```
+
+`active` 表示運算服務正在執行；
+節點列中的 `1` 是列出的節點數，`debug*` 表示預設分區，
+`idle` 表示節點已註冊且目前可供排程。
 尚未驗證一般帳號的工作能真正執行。
 
 ### 驗證一般帳號能執行工作

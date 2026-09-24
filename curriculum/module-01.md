@@ -623,3 +623,37 @@ Submitted batch job 2
 若佇列沒有工作列，只代表工作已離開目前佇列，不能單憑此判定成功；
 若輸出檔尚未出現，可能是工作還沒開始，須再查排程狀態。
 兩條指令只讀，不改檔案、服務或雲端資源。
+
+### 停機前設定服務開機自啟
+
+批次工作腳本已補上中文註解；
+設定的工作參數與執行邏輯未改。
+已提交的工作 `2` 使用提交當時的腳本，不因這次加註解而改變。
+
+MUNGE 先前已執行 `systemctl enable --now munge`，
+本次只需在 VM 執行 `systemctl enable slurmctld slurmd`，
+讓控制與運算服務隨下次開機啟動；不會重啟目前正在運作的服務。
+這會建立 systemd 的開機啟用連結，不修改 repo、工作資料或雲端資源。
+可用 `systemctl is-enabled munge slurmctld slurmd` 只讀驗證三個服務；
+若要撤銷本次設定，可用 `systemctl disable slurmctld slurmd`，
+不動原本已啟用的 MUNGE。
+
+**實際結果：**`systemctl enable slurmctld slurmd`
+成功建立兩個服務的開機啟用連結。
+`systemctl is-enabled munge slurmctld slurmd` 依序回報：
+
+```text
+enabled
+enabled
+enabled
+```
+
+三個服務都已設定開機自啟；這只證明啟用狀態，
+仍要在 VM 下次開機後檢查服務與節點是否恢復。
+加註解的腳本已重新複製到 `/home/a2264/node-smoke.sbatch`；
+`cmp` 結束碼為 0，表示家目錄副本與 repo 內容一致。
+
+下次開機並連上 VM 後，先用兩條只讀指令：
+`systemctl is-active munge slurmctld slurmd` 查看三個服務，
+`sinfo -N` 查看運算節點是否恢復為可排程狀態。
+這些指令不變更 VM 或雲端資源。

@@ -12,7 +12,9 @@ W01 D01 已完成 OS、CPU、記憶體與檔案系統盤點，本日不重跑相
 
 cgroup（control group）是 Linux 核心將多個程序歸成一組、對整組程序統計與限制資源的機制。像 `session-7.scope` 這樣的工作階段會有自己的 cgroup；systemd 服務和日後的 Slurm 工作也可能各有一組。`/proc/self/cgroup` 顯示目前程序屬於哪一組，`/sys/fs/cgroup/...` 則顯示那組的設定與統計。
 
-這與 `ulimit` 的作用範圍不同：`ulimit` 是目前 shell 的程序限制，子程序通常會繼承；cgroup 的限制作用於群組內程序的合計用量。cgroup 有父子階層，子層沒有設限時仍可能受父層限制。`cpu.max` 控制一段時間內這組程序可使用多少 CPU 時間，`memory.max` 設定這組程序的記憶體上限；兩者都不代表資源已預留給它。`max` 只表示該層沒有設定該項上限，VM 的實際 CPU 與 RAM 仍是邊界。
+先看「子程序」的具體例子：你正在操作的 Bash 是一個程序；在這個 Bash 輸入 `cat /proc/self/cgroup` 時，Bash 會啟動 `cat` 程序來執行命令。相對於 Bash，這個 `cat` 就是子程序；`cat` 結束後，你仍回到原來的 Bash。相反，`ulimit -a` 是 Bash 內建命令，通常由 Bash 自己執行，不需要另外啟動 `ulimit` 子程序。
+
+這也說明兩種限制的作用範圍：`ulimit` 顯示目前 Bash 的程序限制，Bash 啟動的 `cat`、Python 程式等子程序通常會繼承這些限制。cgroup 則把多個程序放在同一組，限制的是這組程序的合計資源使用量。cgroup 有父子階層，子層沒有設限時仍可能受父層限制。`cpu.max` 控制一段時間內這組程序可使用多少 CPU 時間，`memory.max` 設定這組程序的記憶體上限；兩者都不代表資源已預留給它。`max` 只表示該層沒有設定該項上限，VM 的實際 CPU 與 RAM 仍是邊界。
 
 ## 學習方式
 
@@ -59,7 +61,7 @@ virtual memory              (kbytes, -v) unlimited
 
 **結果解釋**
 
-這些是目前 shell 顯示的資源限制，子程序通常會繼承。單一程序可開啟的檔案描述符上限為 1024；單一執行緒的 stack 上限為 8192 KiB（8 MiB）；core file size 為 0，表示預設不寫出 core dump。`max user processes` 顯示 15153，但以 root 執行時不能直接把它當成一般使用者的實際可用程序數。`cpu time` 與 `virtual memory` 的 `unlimited` 只表示此層沒有設定相應上限，仍受 VM 資源與其他限制約束。
+這些是目前 Bash 顯示的資源限制。之後從這個 Bash 啟動的 `cat` 或 Python 程式通常會繼承；上方「先理解 cgroup」有具體例子。`open files=1024` 表示單一程序最多可同時持有 1024 個檔案描述符；檔案描述符可理解為程序為開啟的檔案、網路連線等保留的編號。`stack size=8192 KiB` 是單一執行緒用於函式呼叫等工作的 stack 空間上限，約 8 MiB。`core file size=0` 表示預設不寫出 core dump，也就是程式崩潰時可供除錯的記憶體快照檔。`max user processes` 顯示 15153，但以 root 執行時不能直接把它當成一般使用者的實際可用程序數。`cpu time` 與 `virtual memory` 的 `unlimited` 只表示此層沒有設定相應上限，仍受 VM 資源與其他限制約束。
 
 ### 2. 確認目前工作階段的 cgroup
 

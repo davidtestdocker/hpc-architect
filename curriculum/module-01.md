@@ -431,3 +431,104 @@ LENGTH:          0
 後來只在專案設定檔加入中文註解，設定值未改；
 VM 上的已安裝檔仍是加入註解前的版本，所以上述 `cmp` 結果僅代表當時一致。
 下次部署前須重新複製專案設定檔，才能讓兩份檔案再度一致。
+
+### 建立控制端狀態目錄
+
+接下來在 VM 執行
+`install -d -o slurm -g slurm -m 0700 /var/spool/slurmctld`。
+這會建立設定檔指定的控制端狀態目錄，
+並讓執行控制服務的 `slurm` 帳號擁有及寫入；
+`0700` 限制其他帳號讀寫。
+它只影響 VM 的 `/var/spool/slurmctld`，不修改 repo、其他目錄或雲端資源，
+也不啟動 Slurm。
+隨後以只讀指令
+`stat -c '%U:%G %a %n' /var/spool/slurmctld`
+驗證擁有者與權限。
+若要復原，須先確認目錄沒有服務狀態資料，不能直接刪除。
+
+**實際結果：**學員執行 `install -d -o slurm -g slurm -m 0700 /var/spool/slurmctld`，
+指令沒有錯誤輸出；`stat` 回報
+`slurm:slurm 700 /var/spool/slurmctld`。
+控制端狀態目錄已存在且擁有者、權限符合設定，尚未啟動控制服務。
+
+### 建立運算端暫存目錄
+
+接下來在 VM 執行
+`install -d -o root -g root -m 0755 /var/spool/slurmd`。
+這會建立設定檔指定的運算端暫存目錄，供以 root 執行的 `slurmd` 使用；
+目錄擁有者為 `root`，其他帳號只可進入與讀取目錄清單，不能寫入。
+它只影響 VM 的 `/var/spool/slurmd`，不修改 repo 或雲端資源，
+也不啟動服務。
+隨後以只讀指令
+`stat -c '%U:%G %a %n' /var/spool/slurmd`
+驗證擁有者與權限。
+若要復原，須先確認目錄沒有工作暫存資料，不能直接刪除。
+
+**實際結果：**學員執行 `install -d -o root -g root -m 0755 /var/spool/slurmd`，
+指令沒有錯誤輸出；`stat` 回報
+`root:root 755 /var/spool/slurmd`。
+運算端暫存目錄已存在且擁有者、權限符合預期，尚未啟動運算服務。
+
+### 同步加上註解的設定檔
+
+接下來在 VM 重跑
+`install -D -o root -g root -m 0644 /root/hpc-arch/project/slurm/single-node-slurm.conf /etc/slurm/slurm.conf`。
+這會以專案中的版本覆寫先前安裝的設定檔；
+兩版的設定值相同，差別是新增中文註解。
+影響僅限 VM 的 `/etc/slurm/slurm.conf`，不啟動服務或修改雲端資源。
+隨後以只讀指令
+`cmp /root/hpc-arch/project/slurm/single-node-slurm.conf /etc/slurm/slurm.conf && echo same`
+確認兩份檔案完全一致。
+若要還原先前版本，可從版本紀錄取回原檔再重新安裝；
+這次不直接刪除設定檔。
+
+**實際結果：**學員重新執行 `install` 後，
+`cmp /root/hpc-arch/project/slurm/single-node-slurm.conf /etc/slurm/slurm.conf && echo same`
+輸出 `same`。
+專案設定檔與 VM 安裝檔再次完全一致；這仍未證明服務能啟動。
+
+### 啟動控制服務
+
+接下來在 VM 執行 `systemctl start slurmctld`，
+啟動控制節點的排程服務，不設定開機自動啟動。
+它會讓服務讀取 `/etc/slurm/slurm.conf`，
+並可能在 `/var/spool/slurmctld` 寫入排程狀態；
+不修改 repo 或雲端資源。
+隨後以 `systemctl is-active slurmctld` 只讀確認服務是否為 `active`。
+如果要停止，可用 `systemctl stop slurmctld`；
+已寫入的狀態資料不會因停止服務而自動刪除。
+
+**實際結果：**學員執行 `systemctl start slurmctld` 後，
+`systemctl is-active slurmctld` 回報 `active`。
+控制服務目前正在執行，但尚未設定開機自動啟動；
+這也還不能證明運算服務與提交工作正常。
+
+### 啟動運算服務並檢查節點
+
+接下來在 VM 執行 `systemctl start slurmd`，
+啟動這台 VM 的運算端服務，不設定開機自動啟動。
+它會讀取 `/etc/slurm/slurm.conf`，
+可能在 `/var/spool/slurmd` 寫入工作暫存資料，並向控制服務註冊節點；
+不修改 repo 或雲端資源。
+隨後以兩條只讀指令驗證：
+`systemctl is-active slurmd` 檢查服務是否正在執行；
+`sinfo -N` 列出 Slurm 看到的節點及狀態，確認節點是否進入排程器。
+若要停止，可用 `systemctl stop slurmd`；
+停止服務不會自動刪除可能留下的暫存資料。
+
+**實際結果：**學員回傳 `systemctl is-active slurmd` 為 `active`；
+`sinfo -N` 顯示 `instance-20260923-104239` 在預設 `debug` 分區為 `idle`。
+這表示運算服務正在執行、節點已向控制端註冊且目前可供排程；
+尚未驗證一般帳號的工作能真正執行。
+
+### 驗證一般帳號能執行工作
+
+接下來在 VM 執行
+`sudo -iu a2264 srun -p debug -N1 -n1 /usr/bin/hostname`。
+`sudo -iu a2264` 讓這次工作以一般帳號及其登入環境執行，
+而不是沿用 root 身分與目前的 `/root/hpc-arch` 工作目錄。
+`srun` 向 Slurm 申請資源並執行命令；
+`-p debug` 指定分區，`-N1` 申請一個節點，`-n1` 啟動一個工作行程。
+`hostname` 只回報實際執行的節點名稱。
+這會短暫佔用 VM 的排程資源，可能留下 Slurm 工作狀態，
+不建立 repo 檔案，也不修改雲端資源；工作結束後資源應自動釋放。

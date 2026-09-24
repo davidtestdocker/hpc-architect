@@ -2,7 +2,7 @@
 
 [課程總表](../ROADMAP.md)
 
-狀態：未開始｜實際日期：待填
+狀態：已完成｜實際日期：2026-09-24
 
 學習 shell 指令的退出狀態、`$?`、管線對錯誤的處理方式，以及為何維運腳本不能只看畫面有沒有輸出。
 
@@ -24,3 +24,45 @@
 2. `bash -o pipefail -c 'ls /tmp/w01d05-path-does-not-exist | wc -l; echo "status=$?"'`：在子 shell 啟用 `pipefail`，比較相同失敗案例的退出狀態。
 
 執行後將實際輸出與解釋追加在本文件。
+
+## 實作紀錄
+
+### 1. 管線的預設退出狀態
+
+**實際指令**
+
+```bash
+bash -c 'ls /tmp/w01d05-path-does-not-exist | wc -l; echo "status=$?"'
+```
+
+**實際輸出**
+
+```text
+ls: cannot access '/tmp/w01d05-path-does-not-exist': No such file or directory
+0
+status=0
+```
+
+**結果解釋**
+
+`ls` 因路徑不存在而失敗，錯誤訊息直接顯示在終端機；它沒有提供正常輸出給 `wc -l`，所以 `wc` 計得 0 行並成功結束。Bash 預設取管線最後一個命令 `wc` 的退出狀態，因此 `$?` 顯示 `0`，前段 `ls` 的失敗沒有反映在整段管線的狀態中。
+
+### 2. 啟用 `pipefail` 比較結果
+
+**實際指令**
+
+```bash
+bash -o pipefail -c 'ls /tmp/w01d05-path-does-not-exist | wc -l; echo "status=$?"'
+```
+
+**實際輸出**
+
+```text
+ls: cannot access '/tmp/w01d05-path-does-not-exist': No such file or directory
+0
+status=2
+```
+
+**結果解釋**
+
+`wc` 仍收到零行，但 `pipefail` 使管線反映前段 `ls` 的非零退出狀態，這次是 `2`。因此腳本可藉管線狀態發現錯誤。此示範在顯示狀態後又執行了 `echo`；`echo` 通常成功，所以外層 `bash -c` 最終仍可能回報 `0`。真正撰寫腳本時若要把失敗傳給呼叫者，需保存該狀態並以它結束腳本。

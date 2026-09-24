@@ -1,34 +1,20 @@
-# 24 週課程總表
+# HPC 系統軟體工程師能力路線
 
-對象：有 SRE／維運經驗、會 Linux、程式略懂，希望從基礎重建。每週約 20 小時：D1–D5 各 3 小時、D6 4 小時、D7 1 小時；可將 D7 合併到 D6 留一天休息。24 週約 480 小時，依驗收調整，不跳過基礎。
+課程不以週數、天數或指令數判斷完成。從 `project/README.md` 保存的職缺摘要出發：叢集規劃、網路與共享儲存、部署自動化、Linux 與程式、開源系統維運。原始職缺全文不在工作區，不能把額外工具冒稱為職缺原文要求。
 
-週次是學習順序，不綁定日曆。已有 SRE／維運經驗的內容依實際能力壓縮；完成指令清單不代表通過驗收。每個階段以 [課程入口的能力門檻](../README.md#階段與能力門檻) 和 [面試專案驗收](../project/README.md#必做驗收) 判斷，缺少實際證據就標為未完成。跨 VM 實驗從第 7 週開始需要第二台，第 8 週規劃第三台；未準備額外資源時先做單機部分，跨節點項目標為待完成。參見 [GCP 環境方案](../ENVIRONMENT.md)。
+學員已有 SRE／維運經驗。Linux、Git、Shell、Python 基礎只在真實任務需要且尚不熟悉時補，不另設純練指令日。每個模組以可運作、可解釋、可重跑的成果結束。單機起步；跨節點前先確認預算與資源，不把單機多程序宣稱為多節點。
 
-每日文件含課前摘要、實作題、驗收與未填寫的學習紀錄；摘要是導讀，不是假裝你已完成的筆記。
+| 順序 | 模組 | 能力證據 | 對應職缺能力 |
+|---|---|---|---|
+| 1 | [單機工作負載與健檢](module-01.md) | 可測試的 Python CLI，辨認資源、路徑與失敗 | Linux、程式、維運 |
+| 2 | [單節點 Slurm](module-02.md) | 可提交、診斷、恢復的批次工作 | 叢集維運、Linux |
+| 3 | [C、MPI 與排程工作](module-03.md) | 正確、可編譯的 C/MPI 工作負載 | 程式、HPC 工作模型 |
+| 4 | [多節點網路與共享儲存](module-04.md) | 節點互通、NFS 權限與故障定位 | 網路、儲存、叢集規劃 |
+| 5 | [Ansible 可重建叢集](module-05.md) | 從乾淨 VM 部署並安全重跑 | 部署自動化、維運 |
+| 6 | [監控與故障復原](module-06.md) | 健檢、告警、故障與恢復紀錄 | 開源系統維運 |
+| 7 | [效能與架構取捨](module-07.md) | 原始量測、瓶頸分析、容量設計 | 叢集規劃、系統軟體 |
+| 8 | [作品與面試證據](module-08.md) | 可重建作品與每項主張的證據 | 職缺應徵 |
 
-| 週 | 大方向 | 每日安排 |
-|---|---|---|
-| 01 | 認識 HPC 與 Linux 起步 | [D1 HPC 全貌](week-01/day-01.md)；[D2 使用者、目錄與工具環境](week-01/day-02.md)；[D3 終端機與路徑](week-01/day-03.md)；[D4 檔案與 Vim](week-01/day-04.md)；[D5 查說明與錯誤](week-01/day-05.md)；[D6 程序資源限制與 cgroup](week-01/day-06.md)；[D7 退出狀態與管線錯誤](week-01/day-07.md) |
-| 02 | Linux 檔案、權限與 Git | [D1 帳號 shell 文字處理](week-02/day-01.md)；[D2 路徑逐層權限](week-02/day-02.md)；[D3 群組與實際 sudo 授權](week-02/day-03.md)；[D4 Git 基礎](week-02/day-04.md)；[D5 Git 分支與復原](week-02/day-05.md)；[D6 檔案封存與備份](week-02/day-06.md)；[D7 umask 與新檔案預設權限](week-02/day-07.md) |
-| 03 | Linux 程序、服務與日誌 | [D1 程序與資源](week-03/day-01.md)；[D2 套件與相依性](week-03/day-02.md)；[D3 systemd 服務](week-03/day-03.md)；[D4 日誌排查](week-03/day-04.md)；[D5 Shell 腳本](week-03/day-05.md)；[D6 排程與復原](week-03/day-06.md)；[D7 程序開啟的檔案與 /proc](week-03/day-07.md) |
-| 04 | Shell 與維運基本功複習 | [D1 標準輸入輸出](week-04/day-01.md)；[D2 引用與變數](week-04/day-02.md)；[D3 條件與迴圈](week-04/day-03.md)；[D4 函式與參數](week-04/day-04.md)；[D5 程序與訊號](week-04/day-05.md)；[D6 維運腳本審查](week-04/day-06.md)；[D7 trap 與腳本清理](week-04/day-07.md) |
-| 05 | Python 程式基礎 | [D1 變數與型別](week-05/day-01.md)；[D2 條件與迴圈](week-05/day-02.md)；[D3 串列與字典](week-05/day-03.md)；[D4 函式](week-05/day-04.md)；[D5 檔案與例外](week-05/day-05.md)；[D6 小型日誌分析器](week-05/day-06.md)；[D7 Python 迭代器與產生器](week-05/day-07.md) |
-| 06 | Python 系統工具 | [D1 JSON 與 CSV](week-06/day-01.md)；[D2 命令列參數](week-06/day-02.md)；[D3 執行外部命令](week-06/day-03.md)；[D4 環境與依賴](week-06/day-04.md)；[D5 測試與可維護性](week-06/day-05.md)；[D6 主機健檢工具 v1](week-06/day-06.md)；[D7 Python logging](week-06/day-07.md) |
-| 07 | 網路基礎與診斷 | [D1 IP 與子網路](week-07/day-01.md)；[D2 路由與閘道](week-07/day-02.md)；[D3 DNS 與主機名](week-07/day-03.md)；[D4 TCP UDP 與連接埠](week-07/day-04.md)；[D5 SSH 金鑰](week-07/day-05.md)；[D6 網路診斷流程](week-07/day-06.md)；[D7 MTU 與封包大小](week-07/day-07.md) |
-| 08 | 多節點網路與儲存 | [D1 多 VM 拓撲](week-08/day-01.md)；[D2 名稱與時間一致](week-08/day-02.md)；[D3 防火牆](week-08/day-03.md)；[D4 網路封包觀察](week-08/day-04.md)；[D5 NFS 與 UID](week-08/day-05.md)；[D6 儲存故障演練](week-08/day-06.md)；[D7 NFS 快取與檔案鎖定](week-08/day-07.md) |
-| 09 | 計算機架構與 C 入門 | [D1 CPU 與記憶體階層](week-09/day-01.md)；[D2 NUMA 與 PCIe](week-09/day-02.md)；[D3 C 編譯流程](week-09/day-03.md)；[D4 C 迴圈與陣列](week-09/day-04.md)；[D5 指標與配置](week-09/day-05.md)；[D6 效能量測入門](week-09/day-06.md)；[D7 CPU affinity 與 taskset](week-09/day-07.md) |
-| 10 | Ansible 自動化入門 | [D1 Inventory](week-10/day-01.md)；[D2 第一個 Playbook](week-10/day-02.md)；[D3 變數與模板](week-10/day-03.md)；[D4 Handler 與服務](week-10/day-04.md)；[D5 冪等性](week-10/day-05.md)；[D6 自動建立基礎環境](week-10/day-06.md)；[D7 Ansible tags](week-10/day-07.md) |
-| 11 | 自動化可靠度與專案起稿 | [D1 Roles 與檔案結構](week-11/day-01.md)；[D2 秘密與設定](week-11/day-02.md)；[D3 變更前驗證](week-11/day-03.md)；[D4 失敗處理](week-11/day-04.md)；[D5 重建基準](week-11/day-05.md)；[D6 專案設計審查](week-11/day-06.md)；[D7 Ansible 靜態檢查](week-11/day-07.md) |
-| 12 | Slurm 使用者操作 | [D1 排程器概念](week-12/day-01.md)；[D2 單節點 Slurm 實驗](week-12/day-02.md)；[D3 互動工作](week-12/day-03.md)；[D4 批次工作](week-12/day-04.md)；[D5 資源請求](week-12/day-05.md)；[D6 工作排查](week-12/day-06.md)；[D7 Slurm job array](week-12/day-07.md) |
-| 13 | 多節點 Slurm 管理 | [D1 驗證與 MUNGE](week-13/day-01.md)；[D2 節點資源設定](week-13/day-02.md)；[D3 控制器與運算節點](week-13/day-03.md)；[D4 分區與限制](week-13/day-04.md)；[D5 Drain 與復原](week-13/day-05.md)；[D6 部署自動化](week-13/day-06.md)；[D7 Slurm 優先序與公平共享](week-13/day-07.md) |
-| 14 | MPI 與平行程式 | [D1 MPI 程式模型](week-14/day-01.md)；[D2 跨節點啟動](week-14/day-02.md)；[D3 資料切分](week-14/day-03.md)；[D4 集合通訊](week-14/day-04.md)；[D5 正確性與失敗](week-14/day-05.md)；[D6 第一個 HPC 工作負載](week-14/day-06.md)；[D7 MPI 非阻塞通訊](week-14/day-07.md) |
-| 15 | 效能與瓶頸分析 | [D1 量測設計](week-15/day-01.md)；[D2 加速比與效率](week-15/day-02.md)；[D3 Amdahl 定律](week-15/day-03.md)；[D4 CPU 記憶體與 I/O](week-15/day-04.md)；[D5 網路吞吐與延遲](week-15/day-05.md)；[D6 效能報告](week-15/day-06.md)；[D7 perf 基礎剖析](week-15/day-07.md) |
-| 16 | Zabbix 監控與告警 | [D1 監控模型](week-16/day-01.md)；[D2 安裝與接入](week-16/day-02.md)；[D3 主機與模板](week-16/day-03.md)；[D4 Trigger 設計](week-16/day-04.md)；[D5 服務故障監控](week-16/day-05.md)；[D6 儀表板與處置](week-16/day-06.md)；[D7 Zabbix 自動探索](week-16/day-07.md) |
-| 17 | 健檢工具與故障排除 | [D1 健檢工具 v2](week-17/day-01.md)；[D2 Slurm 狀態解析](week-17/day-02.md)；[D3 DNS 故障演練](week-17/day-03.md)；[D4 共享路徑故障](week-17/day-04.md)；[D5 节点不可用](week-17/day-05.md)；[D6 事件報告](week-17/day-06.md)；[D7 核心傾印入門](week-17/day-07.md) |
-| 18 | 容器、K8s 與 OpenStack 定位 | [D1 容器與 VM](week-18/day-01.md)；[D2 容器實作](week-18/day-02.md)；[D3 HPC 容器概念](week-18/day-03.md)；[D4 K8s 基本概念](week-18/day-04.md)；[D5 OpenStack 基本概念](week-18/day-05.md)；[D6 技術選擇練習](week-18/day-06.md)；[D7 容器映像來源與版本](week-18/day-07.md) |
-| 19 | HPC 架構規劃 | [D1 需求訪談](week-19/day-01.md)；[D2 容量規劃](week-19/day-02.md)；[D3 網路分工](week-19/day-03.md)；[D4 RDMA 與 GPU 概念](week-19/day-04.md)；[D5 可用性與備份](week-19/day-05.md)；[D6 架構提案](week-19/day-06.md)；[D7 平行檔案系統的 metadata](week-19/day-07.md) |
-| 20 | 面試專案整合 | [D1 驗收凍結](week-20/day-01.md)；[D2 乾淨環境重建](week-20/day-02.md)；[D3 工作流程驗收](week-20/day-03.md)；[D4 監控與故障整合](week-20/day-04.md)；[D5 重現與版本](week-20/day-05.md)；[D6 成果整理](week-20/day-06.md)；[D7 設定漂移](week-20/day-07.md) |
-| 21 | 專案驗收與修補緩衝 | [D1 需求追蹤](week-21/day-01.md)；[D2 部署重跑](week-21/day-02.md)；[D3 測試資料整理](week-21/day-03.md)；[D4 恢復流程重測](week-21/day-04.md)；[D5 缺口修補](week-21/day-05.md)；[D6 發布候選作品](week-21/day-06.md)；[D7 漸進式變更](week-21/day-07.md) |
-| 22 | 文件與展示 | [D1 README 敘事](week-22/day-01.md)；[D2 架構圖](week-22/day-02.md)；[D3 操作手冊](week-22/day-03.md)；[D4 展示腳本](week-22/day-04.md)；[D5 錄影彩排](week-22/day-05.md)；[D6 同儕檢查](week-22/day-06.md)；[D7 展示環境故障備案](week-22/day-07.md) |
-| 23 | 履歷與技術面試 | [D1 職缺能力對照](week-23/day-01.md)；[D2 專案履歷段落](week-23/day-02.md)；[D3 Linux 與網路問答](week-23/day-03.md)；[D4 HPC 與效能問答](week-23/day-04.md)；[D5 程式與自動化問答](week-23/day-05.md)；[D6 英文與協作敘事](week-23/day-06.md)；[D7 系統設計面試中的假設](week-23/day-07.md) |
-| 24 | 投遞準備與補強 | [D1 模擬面試一](week-24/day-01.md)；[D2 弱點修補](week-24/day-02.md)；[D3 模擬面試二](week-24/day-03.md)；[D4 履歷與作品核對](week-24/day-04.md)；[D5 投遞策略](week-24/day-05.md)；[D6 下一階段計畫](week-24/day-06.md)；[D7 入職前三十天技術計畫](week-24/day-07.md) |
+順序表示依賴關係，不是固定日曆。模組 1 與 2 可依實際環境交錯；模組 4 前不建立新付費 VM。資源不足可先交付單機版，但跨節點能力須標為未驗證。Slurm、C/MPI、Ansible、網路／儲存與故障復原是核心；K8s、OpenStack、GPU、RDMA、Lustre 等先限於架構判斷所需的認識，除非原始職缺或實際面試另有要求。
+
+帶練時先在當前模組文件記下本次新命令、目的及會影響的檔案，再一次給一條 VM 指令。執行後把實際輸出與判讀寫回同一份文件。尚未執行的成果不得寫成完成。

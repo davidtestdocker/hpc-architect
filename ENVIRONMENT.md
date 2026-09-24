@@ -4,12 +4,12 @@
 
 ## 分階段使用
 
-| 時期 | 規劃 | 能驗證什麼 |
+| 階段 | 規劃 | 能驗證什麼 |
 |---|---|---|
-| 第 1–6 週 | 現有 2 vCPU／4 GB／100 GB VM | Linux、Shell、Git、Python 與單機健檢 |
-| 第 7 週 | 需要跨機操作時加入第二台實驗 VM | SSH、名稱解析、連線診斷；未建立前只做單機部分 |
-| 第 8 週起 | 規劃 head + compute01 + compute02 三台獨立 GCP VM | NFS、Ansible、多節點 Slurm 與 MPI |
-| 第 16 週監控 | 按實際 RAM 使用量決定分時啟動 Zabbix，或另外配置監控 VM | 監控與告警；不可因記憶體不足影響量測卻未註記 |
+| 模組 1–3 | 現有 VM | 工作負載健檢、單節點 Slurm、C/MPI 正確性 |
+| 模組 4 前 | 確認預算後才考慮加入第二台實驗 VM | SSH、名稱解析、連線診斷 |
+| 模組 4–5 | 視資源規劃 head + compute01 + compute02 三台獨立 GCP VM | NFS、Ansible、多節點 Slurm 與 MPI |
+| 模組 6 | 按實際 RAM 使用量決定監控服務配置 | 監控與告警；不可因記憶體不足影響量測卻未註記 |
 
 教學叢集的起始估算：head 可沿用現有 2 vCPU／4 GB VM；每台 compute 暫估 2 vCPU／2–4 GB、20–30 GB 開機磁碟。這是小型功能實驗的規劃值，需依 OS、套件和工作負載驗證，不是生產建議或費用報價。資料集保持小型，不需 GPU 或 InfiniBand。
 
@@ -26,6 +26,6 @@
 
 ## 資源與預算
 
-本課程沒有建立任何付費資源。第 7 週前再確認你的每月可接受預算、現有機型與區域，估算啟動時數、磁碟、IP、網路與可能的其他服務費用後，才決定具體配置。停止 VM 不表示帳單歸零，保留資源仍可能計費；以當時官方價格與帳單為準。
+本課程沒有建立額外付費資源。新增 VM 前先確認你的每月可接受預算、現有機型與區域，估算啟動時數、磁碟、IP、網路與可能的其他服務費用後，才決定具體配置。停止 VM 不表示帳單歸零，保留資源仍可能計費；以當時官方價格與帳單為準。
 
 官方參考：[VM 網路](https://docs.cloud.google.com/compute/docs/networking/network-overview)、[VM 停止／啟動](https://docs.cloud.google.com/compute/docs/instances/stop-start-instance)、[Compute 定價](https://cloud.google.com/products/compute/pricing)。

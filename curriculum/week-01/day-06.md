@@ -2,7 +2,7 @@
 
 [課程總表](../ROADMAP.md) · [參考教材](../../RESOURCES.md) · [進度](../../PROGRESS.md)
 
-狀態：未開始｜實際日期：待填｜實際時間：待填
+狀態：已完成｜實際日期：2026-09-24
 
 ## 今日目標與課前筆記
 
@@ -22,8 +22,8 @@ W01 D01 已完成 OS、CPU、記憶體與檔案系統盤點，本日不重跑相
 
 1. `ulimit -a`：列出目前 shell 對程序施加的限制；重點查看 open files、stack size 與 max user processes。
 2. `cat /proc/self/cgroup`：取得目前程序所屬的 cgroup 路徑；若不是 cgroup v2，依實際輸出調整後續讀取方式。
-3. `cat /sys/fs/cgroup/<上一步的 cgroup 路徑>/cpu.max`：讀取該 cgroup 的 CPU 配額；實際指令中的路徑要依第二步輸出填入，不照抄尖括號。`max` 表示此層未設定 CPU 時間配額。
-4. `cat /sys/fs/cgroup/<上一步的 cgroup 路徑>/memory.max`：讀取該 cgroup 的記憶體上限；實際路徑同上。`max` 表示此層未設定記憶體上限。若需判斷有效上限，還須檢查父層 cgroup。
+3. `grep -H . /sys/fs/cgroup/user.slice/user-1000.slice/session-7.scope/{cpu,memory}.max`：用第二步確認的實際路徑，一次讀取此層的 CPU 配額與記憶體上限，並在輸出附上檔名。`max` 表示該層未設定對應上限；若需判斷有效上限，還須考慮父層 cgroup。
+4. `grep -H . /sys/fs/cgroup/user.slice/{cpu,memory}.max /sys/fs/cgroup/user.slice/user-1000.slice/{cpu,memory}.max`：讀取兩層父 cgroup 的配額，確認是否有上層限制。若其中一層已取得結果，只補查缺少的那層。
 
 完成觀察後，依實際數值判讀：若一個程式要求 4 個 CPU、4 GiB 記憶體，需求與 VM 可見資源和已觀察到的限制有何衝突？`max` 只表示該層沒有額外上限，不代表可以超過 VM 資源，也不能排除父層或日後排程器的限制。這項判讀直接使用已有輸出，不重跑 D01 盤點。
 
@@ -31,3 +31,101 @@ W01 D01 已完成 OS、CPU、記憶體與檔案系統盤點，本日不重跑相
 ## 實作紀錄
 
 帶練時追加實際命令、重點輸出與解釋。
+
+### 1. 目前 shell 的程序資源限制
+
+**實際指令**
+
+```bash
+ulimit -a
+```
+
+**重點輸出**
+
+```text
+core file size              (blocks, -c) 0
+open files                          (-n) 1024
+stack size                  (kbytes, -s) 8192
+max user processes                  (-u) 15153
+cpu time                   (seconds, -t) unlimited
+virtual memory              (kbytes, -v) unlimited
+```
+
+**結果解釋**
+
+這些是目前 shell 顯示的資源限制，子程序通常會繼承。單一程序可開啟的檔案描述符上限為 1024；單一執行緒的 stack 上限為 8192 KiB（8 MiB）；core file size 為 0，表示預設不寫出 core dump。`max user processes` 顯示 15153，但以 root 執行時不能直接把它當成一般使用者的實際可用程序數。`cpu time` 與 `virtual memory` 的 `unlimited` 只表示此層沒有設定相應上限，仍受 VM 資源與其他限制約束。
+
+### 2. 確認目前工作階段的 cgroup
+
+**實際指令**
+
+```bash
+cat /proc/self/cgroup
+```
+
+**重點輸出**
+
+```text
+0::/user.slice/user-1000.slice/session-7.scope
+```
+
+**結果解釋**
+
+`0::` 表示使用 cgroup v2；目前程序屬於 `/user.slice/user-1000.slice/session-7.scope`。路徑中的 `user-1000.slice` 是工作階段的 cgroup 名稱，不能取代 `id` 判斷有效使用者；先前的 `id` 已確認當時的 shell 是 root。下一步讀取此層的配額設定。
+
+### 3. 讀取目前工作階段的配額
+
+**實際指令**
+
+```bash
+grep -H . /sys/fs/cgroup/user.slice/user-1000.slice/session-7.scope/{cpu,memory}.max
+```
+
+**重點輸出**
+
+```text
+/sys/fs/cgroup/user.slice/user-1000.slice/session-7.scope/cpu.max:max 100000
+/sys/fs/cgroup/user.slice/user-1000.slice/session-7.scope/memory.max:max
+```
+
+**結果解釋**
+
+這一層未設定 CPU 時間配額；`100000` 是 CPU 配額週期，單位為微秒。記憶體上限也未在此層設定。`max` 只描述此層設定，父層 cgroup 仍可能對工作階段施加上限，因此下一步檢查父層。
+
+### 4. 父層查詢的實際錯誤與已取得結果
+
+**實際輸入與重點輸出**
+
+```text
+grep -H . /sys/fs/cgroup/{cpu,memory}.max /sys/fs/cgroup/user.slice/{cpu,memory}.max /sys/fs/cgroup/user.slice/user-1000.slice/
+  {cpu,memory}.max
+grep: /sys/fs/cgroup/cpu.max: No such file or directory
+grep: /sys/fs/cgroup/memory.max: No such file or directory
+/sys/fs/cgroup/user.slice/cpu.max:max 100000
+/sys/fs/cgroup/user.slice/memory.max:max
+grep: /sys/fs/cgroup/user.slice/user-1000.slice/: Is a directory
+-bash: cpu.max: command not found
+```
+
+**結果解釋**
+
+原指令錯把根 cgroup 的 `.max` 檔當成存在，且過長的輸入在 `user-1000.slice/` 後換行，使 Bash 把後段當成新命令；這是課程指令設計錯誤，沒有修改系統。已成功確認 `user.slice` 沒有 CPU 或記憶體配額；只需補查 `user-1000.slice` 這一層。
+
+### 5. 補查父層並判讀工作資源
+
+**實際指令**
+
+```bash
+grep -H . /sys/fs/cgroup/user.slice/user-1000.slice/{cpu,memory}.max
+```
+
+**重點輸出**
+
+```text
+/sys/fs/cgroup/user.slice/user-1000.slice/cpu.max:max 100000
+/sys/fs/cgroup/user.slice/user-1000.slice/memory.max:max
+```
+
+**結果解釋**
+
+`user-1000.slice` 與已查過的 `user.slice`、`session-7.scope` 都沒有設定 CPU 或記憶體 `.max` 配額；這只代表目前工作階段所經過的這三層沒有額外配額。D01 的 VM 仍只有 2 個邏輯 CPU、3.8 GiB RAM 且沒有 swap。要求 4 個 CPU 的程式可以建立 4 條執行緒，但不能同時取得 4 個 VM 可見的 CPU；要求實際占用 4 GiB 記憶體則超過 VM 的總 RAM，還須扣除系統與其他程序用量，存在記憶體不足風險。`ulimit` 中的 `open files=1024` 等限制也仍有效；日後由 systemd 或 Slurm 啟動的工作需另查其執行環境，不能直接套用這個 shell 的結果。

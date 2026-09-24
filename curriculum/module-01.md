@@ -394,3 +394,41 @@ LENGTH:          0
 `TTL=300` 表示這張憑證的有效時間為 300 秒，
 `LENGTH=0` 是因為 `munge -n` 不放入資料內容。
 這只證明本機 MUNGE 驗證正常，尚未證明 Slurm 排程器已設定或可提交工作。
+
+## 單節點 Slurm 設定
+
+`slurm.conf` 是 Slurm 控制端、運算端與使用者命令共同讀取的設定檔。
+它要回答「誰是控制器、哪台是運算節點、能分配多少資源、工作能送到哪個分區」。
+**分區**（partition）是可提交工作的節點集合；本次 `debug` 分區只有這台 VM。
+
+本次設定檔：[single-node-slurm.conf](../project/slurm/single-node-slurm.conf)。
+`ClusterName` 是這個教學叢集的名稱；`SlurmctldHost` 指向本機控制器，
+括號內的 `10.140.0.2` 是目前 VM 的私有位址，不是通用模板值。
+`SlurmUser=slurm` 使用已建立的控制服務帳號，
+`AuthType`／`CredType` 選用已驗證的 MUNGE。
+
+`StateSaveLocation` 存放控制器的持續狀態，須讓 `slurm` 帳號可寫；
+`SlurmdSpoolDir` 是運算節點放置工作執行檔案的目錄，須供 root 寫入。
+兩個目錄下一步才建立，現在尚不存在。
+
+`SelectType=select/cons_tres` 與 `CR_CPU_Memory` 讓排程器追蹤可消耗的 CPU 和記憶體；
+這是資源**排程記帳**，尚不能單憑這兩行宣稱核心層的記憶體隔離已生效。
+`NodeName` 沿用 `slurmd -C` 偵測到的 2 個邏輯 CPU 和拓撲。
+偵測記憶體是 3906 MiB，先只宣告 `RealMemory=3000`，
+約保留 906 MiB 給作業系統與同機控制服務，避免將全部記憶體分配給工作。
+`State=UNKNOWN` 表示先等運算服務註冊，不預先宣稱節點可用。
+
+本次要在 VM 執行的指令是
+`install -D -o root -g root -m 0644 /root/hpc-arch/project/slurm/single-node-slurm.conf /etc/slurm/slurm.conf`。
+`install -D` 會建立必要的上層目錄並複製設定檔，
+`-o root -g root -m 0644` 設定擁有者與讀取權限。
+已確認 `/etc/slurm/slurm.conf` 目前不存在，因此不會覆寫既有設定。
+它只建立 VM 的 `/etc/slurm/slurm.conf`，不碰 MUNGE 金鑰、不啟動或啟用 Slurm 服務，
+也不修改雲端資源。
+若需撤銷這一步，應在確認檔案仍是本次建立且服務未依賴後移除該設定檔；不直接刪除其他設定。
+
+完成後可連續執行兩條只讀驗證：
+`stat -c '%U:%G %a %n' /etc/slurm/slurm.conf` 檢查檔案為 `root:root 644`；
+`cmp /root/hpc-arch/project/slurm/single-node-slurm.conf /etc/slurm/slurm.conf && echo same`
+逐位元組比較來源與安裝後的設定檔，完全一致才輸出 `same`。
+這些驗證不啟動服務，也不輸出任何金鑰。

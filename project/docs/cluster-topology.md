@@ -1,8 +1,10 @@
 # 教學叢集拓撲與資源假設
 
-這份文件記錄目前已部署的單節點環境，以及後續叢集的目標角色。
-這是架構成果檔；教學順序、後續 VM 指令、實際輸出與判讀都接續記在
-[模組 01](../../curriculum/module-01.md)。
+這是跨模組維護的架構成果檔：記錄叢集當前的實際拓撲、資源假設與目標角色。
+[模組 01](../../curriculum/module-01.md) 建立單節點初版；
+後續模組若實際新增節點或共享資料，才在此更新現況與架構決策。
+各次教學的 VM 指令、輸出與故障判讀仍記在當時的模組文件，
+不回填模組 01。
 排程設定與工作腳本分別見
 [single-node-slurm.conf](../slurm/single-node-slurm.conf) 和
 [node-smoke.sbatch](../workloads/node-smoke.sbatch)。

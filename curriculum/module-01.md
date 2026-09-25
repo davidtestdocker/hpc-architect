@@ -48,6 +48,7 @@ MUNGE 是讓這些服務確認彼此身分的常見驗證機制，
 | 提交 `sbatch` 腳本 | 將批次工作送入佇列，稍後由 Slurm 執行 | 工作 4 正常退出，輸出確認本機節點與資源請求值 |
 | 提交超出 CPU 容量的工作 | 觀察排程器如何處理無法滿足的請求 | 工作 5 為 `PD`、原因 `PartitionConfig`；已取消並確認佇列清空 |
 | 檢查服務與節點 | 確認排程服務正在運作且節點可接工作 | 三個服務為 `active`，節點在 `debug` 分區為 `idle` |
+| 暫停並恢復控制服務 | 分辨控制端不可用，並確認排程功能恢復 | 停機時 `sinfo` 連線失敗；啟動後節點回到 `idle`，一般帳號 `srun` 再次成功 |
 
 此流程只對應目前的單台 VM；獨立運算節點和跨節點工作尚未建立或驗證。
 
@@ -71,6 +72,14 @@ Slurm 設定為工作宣告 2 個 CPU 與 3000 MiB 記憶體。
 
 GPU 節點另外考慮顯示記憶體、CPU 與 GPU 間的 PCIe 傳輸、
 卡與網卡的拓撲及供電／散熱。
+GPU 記憶體是卡上的容量，和 VM 主記憶體不同；
+FP64 是雙精度浮點運算，對數值精度要求較高的科學計算會用到。
+目前單卡教學的重點是驅動、Slurm 分配、計算正確性與監控，
+因此暫以 24 GB 的 G2／L4 作候選；
+若實際工作需要較大 GPU 記憶體或重視 FP64，則比較 40／80 GB 的 A2／A100。
+機型、用途與記憶體的比較在
+[架構成果檔的單 GPU 候選比較](../project/docs/cluster-topology.md#單-gpu-候選比較)；
+這些都是規劃，沒有建立 GPU VM。
 
 這些先用規格和拓撲理解，模組 04 有 GPU VM 後再驗證可觀察部分；單卡 VM 不能驗證多 GPU 互連。
 
@@ -923,3 +932,138 @@ $ sudo -iu a2264 squeue -u a2264
 工作 5 已離開佇列。
 本次故意超出 CPU 容量的請求得到 `PD` 與 `PartitionConfig`，
 並已取消，沒有留下待處理的工作。
+
+## 控制服務故障定位與復原
+
+這次只在教學 VM 上暫停 Slurm 控制服務 `slurmctld`，
+觀察使用者命令如何呈現控制端不可用，再啟動服務並重測工作。
+停機會暫時影響這台 VM 的工作提交、排程與狀態查詢；
+不修改 `slurm.conf`、MUNGE 金鑰或雲端資源。
+復原方式是重新啟動 `slurmctld`，再核對服務、節點與工作功能。
+
+停機前先確認整個 Slurm 佇列沒有正在執行或等待的工作，
+避免影響其他帳號；若有工作，本次不停止控制服務。
+第一條確定要在 VM 執行的指令是 `squeue`：
+它列出目前 Slurm 佇列中可見的所有工作及狀態，
+只讀控制服務資料，不建立或修改檔案，也不改服務或雲端資源。
+收到實際輸出後再決定是否能安全繼續。
+
+**停機前的實際查詢：**
+
+```text
+$ squeue
+             JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)
+```
+
+佇列只有表頭，沒有 Slurm 工作正在執行或等待；
+因此這次短暫停機不會中斷已知的 Slurm 工作。
+
+下一條確定要在 VM 執行的指令是 `systemctl stop slurmctld`：
+暫停這台 VM 的排程控制服務，使工作提交、排程與狀態查詢暫時不可用；
+可能更新 `/var/spool/slurmctld` 中的服務狀態，
+但不修改專案檔、`/etc/slurm/slurm.conf`、MUNGE 或雲端資源，
+也不取消 systemd 的開機啟用設定。
+復原指令是 `systemctl start slurmctld`；
+停止後先核對服務狀態與 Slurm 查詢的錯誤，隨即重新啟動，
+若啟動失敗則查看服務狀態及日誌，不刪除狀態資料。
+
+**停機指令的實際結果：**
+
+```text
+$ systemctl stop slurmctld
+```
+
+指令沒有錯誤輸出並返回提示字元；
+是否已停止以及使用者命令如何呈現故障，須再核對。
+同一操作後的三條只讀驗證指令可一起執行：
+
+- `systemctl is-active slurmctld`：確認控制服務目前是否為 `inactive`；
+- `sinfo -N`：觀察無控制端時 Slurm 節點查詢的實際錯誤；
+- `journalctl -u slurmctld -n 20 --no-pager`：讀取最近 20 行控制服務日誌，核對停止事件。
+
+這些指令只讀服務狀態、Slurm 回應與 systemd 日誌，
+不修改檔案、服務或雲端資源。
+各指令可能回傳非零退出碼，仍須分別執行並保留完整輸出；
+完成觀察後立即執行已記錄的復原指令。
+
+**停機後的實際驗證：**
+
+```text
+$ systemctl is-active slurmctld
+inactive
+$ sinfo -N
+slurm_load_partitions: Unable to contact slurm controller (connect failure)
+$ journalctl -u slurmctld -n 20 --no-pager
+Sep 24 13:02:03 instance-20260923-104239 slurmctld[331435]: [2026-09-24T13:02:03.069] _job_complete: JobId=2 WEXITSTATUS 0
+Sep 25 03:34:48 instance-20260923-104239 slurmctld[331435]: [2026-09-25T03:34:48.080] _job_complete: JobId=3 WEXITSTATUS 0
+Sep 25 03:36:06 instance-20260923-104239 slurmctld[331435]: [2026-09-25T03:36:06.055] _job_complete: JobId=4 WEXITSTATUS 0
+Sep 25 05:40:54 instance-20260923-104239 slurmctld[331435]: [2026-09-25T05:40:54.470] Terminate signal SIGTERM received
+Sep 25 05:40:54 instance-20260923-104239 slurmctld[331435]: [2026-09-25T05:40:54.475] Saving all slurm state
+Sep 25 05:40:54 instance-20260923-104239 systemd[1]: slurmctld.service: Deactivated successfully.
+```
+
+`inactive` 與控制端連線失敗互相吻合；
+日誌中的 SIGTERM、保存狀態及正常停用，說明這是本次有意停止控制服務，
+不能把它誤判成節點 CPU 不足或 MUNGE 身分錯誤。
+同一段日誌還列出工作 2、3、4 各自的 `WEXITSTATUS 0`；
+這補足先前工作 2、3 未取得的退出狀態證據。
+現在執行已預先記錄的 `systemctl start slurmctld` 恢復控制服務；
+它會讀取既有設定與保存狀態，不修改專案或雲端資源。
+
+**啟動指令的實際結果：**
+
+```text
+$ systemctl start slurmctld
+```
+
+指令沒有錯誤輸出並返回提示字元，仍須確認服務與節點狀態。
+同一復原操作後的兩條只讀驗證指令可一起執行：
+
+- `systemctl is-active slurmctld`：確認控制服務是否為 `active`；
+- `sinfo -N`：確認 `debug` 分區的本機節點是否恢復為可排程狀態。
+
+這兩條只讀服務與排程狀態，不修改檔案、服務或雲端資源。
+
+**服務與節點的實際驗證：**
+
+```text
+$ systemctl is-active slurmctld
+active
+$ sinfo -N
+NODELIST                  NODES PARTITION STATE
+instance-20260923-104239      1    debug* idle
+```
+
+控制服務已運作，`debug` 分區中的本機節點目前可供排程；
+還要重新執行一個一般帳號工作，才能確認提交到執行的路徑已恢復。
+下一條 VM 指令是
+`sudo -iu a2264 srun -p debug -N1 -n1 /usr/bin/hostname`：
+以 `a2264` 身分請求 `debug` 分區的一個節點、一個工作行程，
+回報實際執行主機名。
+它會短暫佔用排程資源並產生短暫工作狀態，
+不建立 repo 或使用者檔案，也不改服務設定或雲端資源。
+
+**復原後的工作重測結果：**
+
+```text
+$ sudo -iu a2264 srun -p debug -N1 -n1 /usr/bin/hostname
+instance-20260923-104239
+```
+
+一般帳號再次經 Slurm 在本機節點執行工作，輸出與目前運算節點名稱相同。
+因此這次控制服務故障練習已走完「停機症狀 → 服務日誌 → 啟動服務 → 節點恢復 → 工作重測」；
+證據僅適用於這台兼任控制與運算角色的 VM。
+
+## 本模組的單節點成果
+
+目前的單台 VM 已完成控制與運算角色、MUNGE 身分驗證及 `debug` 分區設定。
+工作 4 的退出碼為 0，輸出可對上執行身分、節點與請求值；
+超出節點 CPU 容量的工作 5 留在 `PD`，顯示 `PartitionConfig`，之後已取消。
+控制服務停止時 `sinfo` 無法連線，從服務狀態及日誌定位後重新啟動，
+一般帳號 `srun` 再次在本機成功。
+目前與目標拓撲、單卡 GPU 候選選擇的依據見
+[架構成果檔](../project/docs/cluster-topology.md)。
+
+這些證據完成了本模組約定的單節點排程與故障判讀範圍。
+尚未建立獨立 CPU／GPU 節點或共享儲存，也沒有驗證跨節點工作、GPU 分配、
+CPU 綁定或記憶體隔離；後續模組須依各自的實際成果另行驗收。

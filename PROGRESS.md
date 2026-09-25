@@ -4,7 +4,7 @@
 
 | 模組 | 狀態 | 下一個可驗證成果 |
 |---|---|---|
-| [1 HPC 架構與單節點排程](curriculum/module-01.md) | 進行中：`srun` 成功、批次工作 2 留下輸出、節點目前為 `idle`；學員決定不做開機恢復驗證 | 確認工作退出狀態；後續排程與故障診斷證據仍待完成 |
+| [1 HPC 架構與單節點排程](curriculum/module-01.md) | 進行中：單節點正常／資源不符工作與拓撲假設已記錄；工作 5 已取消 | 安全的 Slurm 服務故障定位、復原與工作重測紀錄 |
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 未開始 | 可測試的 Python CLI 與正常／失敗案例 |
 | [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 未開始 | 程式、測試與序列版一致的 MPI 工作 |
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 未開始 | 獨立 VM 互通、共享資料、GPU 裝置辨認與故障定位 |

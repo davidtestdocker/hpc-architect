@@ -86,12 +86,15 @@ GPU 節點先比較一張卡的候選型號、記憶體與用途，不在此時�
 
 成果是 project/docs/ 的拓撲與資源假設、project/workloads/ 的可重跑批次腳本，
 以及本文件的真實工作與診斷紀錄。
+目前的拓撲與資源假設已整理於
+[cluster-topology.md](../project/docs/cluster-topology.md)，
+其中分開標示單台 VM 的實際角色與尚未部署的目標角色。
 過關時應能回答：工作在哪個節點跑、請求和實得資源如何核對、
 等待／失敗時先看哪一層；單節點成功不得寫成跨節點能力。
 
 開始第一次帶練前，先在本文件追加本次確定的 VM 指令、
 每條用途及檔案／服務影響；取得結果後再追加實際輸出與解釋。
-現在沒有實作成果。
+本次實作結果依實際進行順序記在下文。
 
 ## 第一次帶練：確認單節點排程環境
 
@@ -715,8 +718,6 @@ active
 
 三行依指令順序分別對應 MUNGE、`slurmctld` 與 `slurmd`，
 表示三個服務當下都在執行。
-學員確認工作 2 提交後尚未重開機，並決定不做開機恢復驗證；
-不將開機恢復列為本次實作的完成證據。
 
 **目前節點狀態的只讀查詢結果：**
 
@@ -728,3 +729,181 @@ instance-20260923-104239      1    debug* idle
 
 這台 VM 仍在預設的 `debug` 分區中，`idle` 表示目前可供排程新工作。
 它不提供工作 2 的退出狀態，也不代表跨節點能力已驗證。
+
+### 以新批次工作確認退出狀態
+
+工作 2 已留下腳本輸出，但目前沒有它的工作退出狀態紀錄。
+這次以相同的 `/home/a2264/node-smoke.sbatch` 再提交一個新工作，
+使用 `sbatch --wait` 等它結束：Slurm 會讓 `sbatch` 回傳該批次工作的退出碼。
+外層 shell 隨即列印 `sbatch_exit`，避免退出碼隨下一條指令消失。
+工作 2 的結果不會因這次重跑而被改寫；新工作須以新的工作 ID 判讀。
+
+本次確定要在 VM 執行的指令是：
+
+```bash
+sudo -iu a2264 bash -c 'sbatch --wait /home/a2264/node-smoke.sbatch; result=$?; printf "sbatch_exit=%s\n" "$result"; exit "$result"'
+```
+
+它以一般帳號提交 `debug` 分區的一節點、一行程、一 CPU、256 MiB 工作，
+最長執行兩分鐘；會短暫佔用排程資源，並在 `/home/a2264` 建立新的
+`slurm-<工作 ID>.out`，不修改 repo、服務設定或雲端資源。
+若工作長時間等待或需中止，先以提交時回報的工作 ID 確認狀態，
+再取消該工作；中止等待的命令本身不等於取消 Slurm 工作。
+收到實際輸出後，核對新工作 ID、`sbatch_exit` 與對應輸出檔，
+再判斷這次工作的執行結果。
+
+**第一次嘗試的實際輸出：**
+
+```text
+$ sudo -iu a2264 bash -c 'sbatch --wait /home/a2264/node-smoke.sbatch; result=$?; printf "sbatch_exit=%s\n" "$result"; exit "$result"'
+Submitted batch job 3
+sbatch_exit=
+bash: line 1: exit: : numeric argument require
+```
+
+工作 3 已被接受，但列印的退出碼是空值；最後一行是外層命令處理空值時的錯誤，
+不是批次腳本的退出狀態。
+原因是 `sudo -iu` 會經過登入 shell，再執行內層 `bash -c`；
+這裡的 `$result` 在預期的內層 shell 執行前就被展開，導致狀態遺失。
+不把工作 3 記為成功或失敗，也不把這個錯誤歸咎於 Slurm。
+
+修正後改用 `sudo -u` 直接以 `a2264` 執行單一 `bash -c`，
+並在該 shell 中切到使用者家目錄，以保持工作輸出檔位置不變。
+本次要在 VM 執行的修正指令是：
+
+```bash
+sudo -u a2264 -- bash -c 'cd /home/a2264 || exit 1; sbatch --wait /home/a2264/node-smoke.sbatch; result=$?; printf "sbatch_exit=%s\n" "$result"; exit "$result"'
+```
+
+它會提交另一個新工作，使用相同的一 CPU、256 MiB 和兩分鐘上限，
+並在 `/home/a2264` 建立該工作 ID 對應的輸出檔；
+不修改既有的工作 2、工作 3 輸出、repo、服務設定或雲端資源。
+收到輸出後再依新的工作 ID 與 `sbatch_exit` 判讀。
+
+**修正指令的實際輸出：**
+
+```text
+$ sudo -u a2264 -- bash -c 'cd /home/a2264 || exit 1; sbatch --wait /home/a2264/node-smoke.sbatch; result=$?; printf "sbatch_exit=%s\n" "$result"; exit "$result"'
+Submitted batch job 4
+sbatch_exit=0
+```
+
+這次 Slurm 接受新工作 4，`sbatch --wait` 等到工作結束後回傳 `0`，
+因此工作 4 的批次腳本正常退出。
+這不會回頭證明工作 2 或 3 的退出狀態，也不證明核心層資源隔離。
+接著以只讀指令
+`sudo -iu a2264 cat /home/a2264/slurm-4.out`
+核對工作 4 的實際執行節點、使用者及請求值；
+此指令只讀取該工作輸出，不修改 VM、repo 或服務。
+
+**工作 4 輸出的本次回傳內容：**
+
+```text
+$ sudo -iu a2264 cat /home/a2264/slurm-4.out
+job_id=4
+user=a2264
+node=instance-20260923-104239
+requested_nodes=1
+requested_cpus_per_task=1
+requested_memory_mb=25
+```
+
+工作 ID、執行身分、節點、一個節點與每行程一個 CPU 的請求值符合預期。
+但回傳的 `requested_memory_mb=25` 與腳本來源的 `#SBATCH --mem=256M` 不一致；
+目前不能判定是輸出檔內容、部署副本或貼上過程的差異，
+因此先不把記憶體請求值寫成已核對通過。
+下一步用只讀的
+`sudo -iu a2264 tail -n 1 /home/a2264/slurm-4.out`
+單獨讀取最後一行確認檔案內容，不修改檔案、服務或雲端資源。
+
+**核對結果：**
+
+```text
+$ sudo -iu a2264 tail -n 1 /home/a2264/slurm-4.out
+requested_memory_mb=256
+```
+
+輸出檔中的實際值是 256 MiB，與腳本的 `--mem=256M` 一致；
+先前貼出的 `25` 與這次直接讀到的檔案值不同，不能據此判定工作或設定異常。
+工作 4 已取得退出碼 `0`，並確認在本機以 `a2264` 執行、資源請求值符合腳本。
+這是單節點批次工作成功的證據，仍不代表 CPU 綁定或記憶體隔離已驗證。
+
+### 判讀超出節點容量的 CPU 請求
+
+正常工作已驗證一個 CPU 的批次請求。
+目前唯一的運算節點在 `slurm.conf` 宣告 2 個邏輯 CPU；
+這次讓一般帳號提交需要 3 個 CPU 的工作，觀察 Slurm 對無法滿足的請求如何回應。
+命令列的 `--cpus-per-task=3` 會覆蓋腳本中的 `#SBATCH --cpus-per-task=1`，
+僅影響這次提交，不修改腳本或設定檔。
+
+本次確定要在 VM 執行的指令是：
+
+```bash
+sudo -iu a2264 sbatch --cpus-per-task=3 /home/a2264/node-smoke.sbatch
+```
+
+此指令以 `a2264` 身分向控制服務送出一個工作請求，
+不修改 repo、服務設定或雲端資源。
+若 Slurm 立即拒絕，就不會產生新工作與其輸出檔；
+若它回報工作 ID，須先查明該工作是否在等待及等待原因，
+若無法執行則依 ID 取消，避免留下無意義的佇列工作。
+本次工作即使被接受，也不預設它會執行成功；收到實際輸出後再判讀。
+
+**提交時的實際輸出：**
+
+```text
+$ sudo -iu a2264 sbatch --cpus-per-task=3 /home/a2264/node-smoke.sbatch
+Submitted batch job 5
+```
+
+控制服務接受了請求並指派工作 ID 5；
+這只代表提交成功，尚不能推論已有節點可分配或工作會執行。
+接著用只讀指令 `sudo -iu a2264 squeue -j 5`
+查看目前佇列中的狀態及原因；查詢不更動工作、設定或服務。
+
+**佇列的實際輸出：**
+
+```text
+$ sudo -iu a2264 squeue -j 5
+             JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)
+                 5     debug hpc-node    a2264 PD       0:00      1 (PartitionConfig)
+```
+
+`PD` 是等待中，`TIME=0:00` 表示尚未開始執行。
+依 [Slurm 工作等待原因文件](https://slurm.schedmd.com/job_reason_codes.html)，
+`PartitionConfig` 是工作違反分區某項限制時的概括原因；
+這個原因碼本身沒有指出是哪一項限制。
+在目前 `debug` 只有一台宣告 2 個 CPU 的節點、而本次明確請求每行程 3 個 CPU 的條件下，
+CPU 請求超出該節點容量，是此工作無法排入的直接可見差異。
+這與暫時有其他工作佔用 CPU 不同；單靠等待不會讓這台 2 CPU 節點變成 3 CPU。
+
+本次工作是刻意建立的無法執行請求，已取得等待原因，
+因此依原計畫取消工作 5，避免它留在佇列中。
+下一條 VM 指令是 `sudo -iu a2264 scancel 5`：
+只取消這個由 `a2264` 提交的工作，不更改腳本、其他工作、服務設定或雲端資源；
+它不會刪除既有的工作輸出檔。
+收到取消結果後再確認是否已離開佇列。
+
+**取消指令的實際結果：**
+
+```text
+$ sudo -iu a2264 scancel 5
+```
+
+指令沒有錯誤輸出並返回提示字元；
+這表示取消請求已送出，但仍須確認工作 5 是否已離開佇列。
+下一條只讀 VM 指令是 `sudo -iu a2264 squeue -u a2264`：
+列出此帳號目前在佇列中的工作，確認其中不再有工作 5；
+查詢不修改檔案、工作或服務。
+
+**取消後的只讀驗證結果：**
+
+```text
+$ sudo -iu a2264 squeue -u a2264
+             JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)
+```
+
+查詢結果只有表頭，表示 `a2264` 目前沒有留在佇列中的工作，
+工作 5 已離開佇列。
+本次故意超出 CPU 容量的請求得到 `PD` 與 `PartitionConfig`，
+並已取消，沒有留下待處理的工作。

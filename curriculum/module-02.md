@@ -106,3 +106,35 @@ Slurm 目前回報此節點為 `idle`，設定總量為 2 CPU、3000 MiB 記憶�
 它建立或覆蓋 `/home/a2264/node_preflight.py`，內容取自版本庫中的程式；
 不執行程式、不修改 Slurm／MUNGE 服務，也不新增雲端資源。
 日後更新程式可用同一條指令重新複製，移除部署檔即可復原。
+
+實際執行：
+
+```console
+# install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py
+#
+```
+
+指令沒有錯誤輸出，已在 `/home/a2264/` 部署第一版程式；
+此步尚未驗證 `a2264` 執行結果。
+
+依學員要求，原始程式與測試的每個函式已補中文用途註解，
+並將此要求寫入 `AGENTS.md`。部署檔仍是註解更新前的版本，
+下一條確定要在 VM 執行的指令仍是
+`install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py`。
+這次會覆蓋同一檔案，使部署檔與專案原始碼一致；
+不執行程式、不變更服務或雲端資源，必要時可移除部署檔復原。
+
+實際再次執行：
+
+```console
+# install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py
+```
+
+指令沒有錯誤輸出，部署檔已更新為含每個函式中文註解的版本。
+
+下一條確定要在 VM 執行的指令是
+`sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 1 --memory-mib 256`。
+`sudo -iu a2264` 使檢查以工作使用者身分執行；`--node` 指定 Slurm 節點，
+`--path` 是要檢查的工作目錄，`--cpus` 與 `--memory-mib` 是本次工作需求。
+程式會印出一行 JSON 並用退出碼表示結果；這次只讀取目錄權限與 Slurm 資料，
+不建立或修改檔案、不提交工作、不變更服務或雲端資源。

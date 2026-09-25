@@ -12,6 +12,7 @@ import sys
 SINFO_FORMAT = "%N|%T|%c|%m"
 
 
+# 將命令列的 CPU、記憶體或逾時值轉成正整數；無效值交由 argparse 回報。
 def positive_int(value):
     number = int(value)
     if number < 1:
@@ -19,6 +20,7 @@ def positive_int(value):
     return number
 
 
+# 在指定秒數內查詢單一 Slurm 節點；回傳節點欄位，失敗時回傳診斷訊息。
 def read_node(node, timeout):
     # 不經 shell 執行，避免節點名稱被解釋成命令；逾時視為無法判斷。
     command = ["sinfo", "-N", "-h", "-n", node, "-o", SINFO_FORMAT]
@@ -49,6 +51,7 @@ def read_node(node, timeout):
     return {"name": fields[0], "state": fields[1].lower(), "cpus": cpus, "memory_mib": memory_mib}, None
 
 
+# 以目前進程身分檢查工作目錄；回傳 pass／fail／unknown 與判斷理由。
 def check_directory(path):
     # 用執行此程式的 UID/GID 檢查；跨節點時須在實際執行節點重查。
     try:
@@ -64,6 +67,7 @@ def check_directory(path):
     return "pass", "目前使用者可讀寫並進入工作目錄"
 
 
+# 合併路徑與 Slurm 資源檢查，回傳含個別證據和整體狀態的字典。
 def inspect(node, path, cpus, memory_mib, timeout):
     result = {
         "status": "unknown",
@@ -103,6 +107,7 @@ def inspect(node, path, cpus, memory_mib, timeout):
     return result
 
 
+# 解析命令列、輸出一行 JSON，並以 0／1／2 表示 pass／fail／unknown。
 def main(argv=None):
     parser = argparse.ArgumentParser(description="唯讀檢查工作目錄與 Slurm 節點設定；pass 不保證工作會被排程。")
     parser.add_argument("--node", required=True, help="Slurm 節點名稱")

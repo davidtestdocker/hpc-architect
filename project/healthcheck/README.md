@@ -9,7 +9,8 @@ python3 node_preflight.py --node instance-20260923-104239 --path /home/a2264 --c
 ```
 
 程式輸出一行 JSON。整體 `status` 為 `pass`、`fail` 或 `unknown`，
-退出碼分別是 0、1、2；`checks` 列出每項證據，`effective_uid` 表示實際檢查路徑的身分。
+退出碼分別是 0、1、3；無效命令列參數使用退出碼 2。
+`checks` 列出每項證據，`effective_uid` 表示實際檢查路徑的身分。
 `fail` 表示已觀察到條件不符；`unknown` 表示查詢失敗、逾時、資料格式異常，
 或目前節點狀態不足以判斷。工作路徑不存在時即使 Slurm 同時查詢失敗，
 整體仍是 `fail`，但 `checks` 會保留兩項結果。

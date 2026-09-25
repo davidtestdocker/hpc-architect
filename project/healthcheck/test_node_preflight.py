@@ -1,5 +1,7 @@
 """檢查健檢分類，特別防止查詢失敗時誤報 pass。"""
 
+import contextlib
+import io
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -48,6 +50,20 @@ class NodePreflightTests(unittest.TestCase):
                           return_value=subprocess.CompletedProcess([], 0, "node01|idle|two|3000\n", "")):
             result = node_preflight.inspect("node01", "/work", 1, 256, 5)
         self.assertEqual("unknown", result["status"])
+
+    # 確認無法判斷與命令列參數錯誤使用不同退出碼，方便腳本分流處理。
+    def test_unknown_and_invalid_arguments_have_distinct_exit_codes(self):
+        with patch.object(node_preflight, "inspect", return_value={"status": "unknown"}), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(3, node_preflight.main([
+                "--node", "node01", "--path", "/work", "--cpus", "1", "--memory-mib", "256"
+            ]))
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                node_preflight.main([
+                    "--node", "node01", "--path", "/work", "--cpus", "0", "--memory-mib", "256"
+                ])
+        self.assertEqual(2, error.exception.code)
 
 
 if __name__ == "__main__":

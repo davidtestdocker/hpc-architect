@@ -107,7 +107,7 @@ def inspect(node, path, cpus, memory_mib, timeout):
     return result
 
 
-# 解析命令列、輸出一行 JSON，並以 0／1／2 表示 pass／fail／unknown。
+# 解析命令列、輸出一行 JSON；0／1／3 表示 pass／fail／unknown，2 留給無效參數。
 def main(argv=None):
     parser = argparse.ArgumentParser(description="唯讀檢查工作目錄與 Slurm 節點設定；pass 不保證工作會被排程。")
     parser.add_argument("--node", required=True, help="Slurm 節點名稱")
@@ -118,7 +118,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     result = inspect(args.node, args.path, args.cpus, args.memory_mib, args.timeout)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    return {"pass": 0, "fail": 1, "unknown": 2}[result["status"]]
+    return {"pass": 0, "fail": 1, "unknown": 3}[result["status"]]
 
 
 if __name__ == "__main__":

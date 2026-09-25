@@ -1,6 +1,8 @@
 # 面試專案：可重建的迷你 HPC 叢集
 
-狀態：規格已定義，尚未實作。依[能力路線](../curriculum/ROADMAP.md)逐步交付；單節點成果先完成，再視資源擴成跨節點，最後整合展示。
+狀態：已完成單節點 Slurm 工作與[Python 健檢工具](healthcheck/README.md)；
+跨節點建置、MPI 工作及整合展示仍待後續模組交付。
+依[能力路線](../curriculum/ROADMAP.md)逐步完成作品。
 
 目標：在 GCP 私有網路內，以 Ansible 部署 Slurm 叢集，執行 C/MPI 工作，配合 Python 健檢、共享儲存與 Zabbix，展示部署、排程、觀測、除錯和復原能力。
 

@@ -138,3 +138,81 @@ Slurm 目前回報此節點為 `idle`，設定總量為 2 CPU、3000 MiB 記憶�
 `--path` 是要檢查的工作目錄，`--cpus` 與 `--memory-mib` 是本次工作需求。
 程式會印出一行 JSON 並用退出碼表示結果；這次只讀取目錄權限與 Slurm 資料，
 不建立或修改檔案、不提交工作、不變更服務或雲端資源。
+
+實際執行與輸出：
+
+```console
+# sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 1 --memory-mib 256
+{"checks": [{"detail": "目前使用者可讀寫並進入工作目錄", "name": "work_directory", "status": "pass"}, {"detail": "idle", "name": "node_state", "status": "pass"}, {"detail": "需求 1；節點設定 2", "name": "cpus", "status": "pass"}, {"detail": "需求 256；節點設定 3000", "name": "memory_mib", "status": "pass"}], "effective_uid": 1000, "node": "instance-20260923-104239", "observed": {"cpus": 2, "memory_mib": 3000, "name": "instance-20260923-104239", "state": "idle"}, "path": "/home/a2264", "requested": {"cpus": 1, "memory_mib": 256}, "status": "pass"}
+```
+
+`checks` 四項均為 `pass`：
+工作目錄可讀寫並進入、節點為 `idle`、CPU 需求 1 ≤ 設定 2、
+記憶體需求 256 MiB ≤ 設定 3000 MiB。
+`effective_uid=1000` 表示以工作帳號執行，而非用 root 權限測路徑。
+這只是工作前檢查，沒有提交排程工作，也不保證後續一定獲得資源。
+
+下一條確定要在 VM 執行的指令是
+`sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 3 --memory-mib 256`。
+只把 CPU 需求改成 3，超過節點設定的 2 CPU；
+這與模組 01 中工作 5 因 3 CPU 需求進入 `PartitionConfig` 待排狀態的經驗對應。
+本次仍只讀取工作目錄和 Slurm 資料，不提交工作、修改檔案、服務或雲端資源。
+
+實際執行與輸出：
+
+```console
+# sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 3 --memory-mib 256
+{"checks": [{"detail": "目前使用者可讀寫並進入工作目錄", "name": "work_directory", "status": "pass"}, {"detail": "idle", "name": "node_state", "status": "pass"}, {"detail": "需求 3；節點設定 2", "name": "cpus", "status": "fail"}, {"detail": "需求 256；節點設定 3000", "name": "memory_mib", "status": "pass"}], "effective_uid": 1000, "node": "instance-20260923-104239", "observed": {"cpus": 2, "memory_mib": 3000, "name": "instance-20260923-104239", "state": "idle"}, "path": "/home/a2264", "requested": {"cpus": 3, "memory_mib": 256}, "status": "fail"}
+```
+
+目錄、節點狀態與記憶體仍通過；`cpus` 明確指出需求 3 高於節點設定 2，
+所以整體為 `fail`。這與先前工作 5 的排程結果一致，但本次沒有提交新工作。
+
+下一條確定要在 VM 執行的指令是
+`sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /root --cpus 1 --memory-mib 256`。
+它保持可符合節點設定的資源需求，只把工作目錄換成現有的 `/root`，
+用 `a2264` 身分檢查實際路徑權限。
+這是唯讀檢查；不建立或修改 `/root`、其他檔案、服務或雲端資源。
+
+實際執行與輸出：
+
+```console
+# sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /root --cpus 1 --memory-mib 256
+{"checks": [{"detail": "目前使用者無法讀寫並進入工作目錄", "name": "work_directory", "status": "fail"}, {"detail": "idle", "name": "node_state", "status": "pass"}, {"detail": "需求 1；節點設定 2", "name": "cpus", "status": "pass"}, {"detail": "需求 256；節點設定 3000", "name": "memory_mib", "status": "pass"}], "effective_uid": 1000, "node": "instance-20260923-104239", "observed": {"cpus": 2, "memory_mib": 3000, "name": "instance-20260923-104239", "state": "idle"}, "path": "/root", "requested": {"cpus": 1, "memory_mib": 256}, "status": "fail"}
+```
+
+`a2264` 無法讀寫並進入 `/root`，因此工作目錄檢查與整體狀態為 `fail`；
+其餘節點與資源條件仍為 `pass`。這是實際路徑權限的驗證，沒有改動 `/root`。
+
+收尾檢查發現原程式用退出碼 2 表示 `unknown`，而 argparse 也用 2 表示
+無效命令列參數，呼叫者無法只靠退出碼區分。
+已將 `unknown` 改為退出碼 3，保留 2 給無效參數，
+並在測試與使用說明中明確記錄；`pass` 和 `fail` 的判斷邏輯沒有改變。
+本工作區重新執行自動測試，6 項全部通過；新增測試確認 `unknown` 使用退出碼 3，
+而無效命令列參數使用退出碼 2。
+
+下一條確定要在 VM 執行的指令是
+`install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py`。
+它將更新過的退出碼邏輯覆蓋到既有部署檔；不執行程式、不修改 Slurm／MUNGE、
+不新增雲端資源。需要復原時可移除 `/home/a2264/node_preflight.py`，
+專案原始碼仍保留於版本庫工作區。
+
+實際執行：
+
+```console
+# install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py
+```
+
+沒有錯誤輸出，更新版程式已部署至 `/home/a2264/node_preflight.py`。
+本次更新只改 `unknown` 退出碼及註解，先前 VM 上的 `pass`／`fail` 判斷邏輯沒有變。
+
+## 模組 02 完成判定
+
+[健檢程式](../project/healthcheck/node_preflight.py)、
+[使用說明](../project/healthcheck/README.md)與
+[自動測試](../project/healthcheck/test_node_preflight.py)已交付。
+VM 實例證明 `a2264` 的正常路徑與 1 CPU／256 MiB 需求可通過前置檢查；
+3 CPU 需求與 `/root` 權限不符會分別指出失敗原因。
+6 項自動測試涵蓋 Slurm 查詢失敗、逾時、格式錯誤及退出碼區分，
+其中 `unknown` 分支使用可控的模擬回應驗證，沒有再次中斷控制服務。
+此工具的 `pass` 代表列出的前置檢查通過，實際工作排程仍以 Slurm 執行結果為準。

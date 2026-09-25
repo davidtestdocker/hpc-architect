@@ -4,13 +4,13 @@
 
 | 模組 | 狀態 | 下一個可驗證成果 |
 |---|---|---|
-| [1 單機工作負載與健檢](curriculum/module-01.md) | 未開始 | 可測試的 Python CLI 與正常／失敗案例 |
-| [2 單節點 Slurm](curriculum/module-02.md) | 未開始 | 可提交、診斷、恢復的批次工作 |
-| [3 C、MPI 與排程工作](curriculum/module-03.md) | 未開始 | 與序列版一致的可重跑 MPI 工作 |
-| [4 多節點網路與共享儲存](curriculum/module-04.md) | 未開始 | 獨立 VM 互通、NFS 權限與故障定位 |
-| [5 Ansible 可重建叢集](curriculum/module-05.md) | 未開始 | 乾淨 VM 部署與無非預期變更的重跑 |
-| [6 監控與故障復原](curriculum/module-06.md) | 未開始 | 告警、恢復與真實故障紀錄 |
-| [7 效能與架構取捨](curriculum/module-07.md) | 未開始 | 原始量測、瓶頸與設計取捨 |
-| [8 作品與面試證據](curriculum/module-08.md) | 未開始 | 可重建作品與逐項有證據的履歷主張 |
+| [1 HPC 架構與單節點排程](curriculum/module-01.md) | 進行中：MUNGE 與 Slurm 服務已啟動，`srun` 成功；批次工作僅確認提交 | 查工作 2 的輸出與結束狀態，並驗證重開機後服務及節點狀態 |
+| [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 未開始 | 可測試的 Python CLI 與正常／失敗案例 |
+| [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 未開始 | 程式、測試與序列版一致的 MPI 工作 |
+| [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 未開始 | 獨立 VM 互通、共享資料、GPU 裝置辨認與故障定位 |
+| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 未開始 | 乾淨環境部署及無非預期變更的重跑 |
+| [6 叢集維運、監控與故障復原](curriculum/module-06.md) | 未開始 | 告警、恢復與真實故障紀錄 |
+| [7 效能證據與軟硬體架構取捨](curriculum/module-07.md) | 未開始 | 原始量測、瓶頸與設計取捨 |
+| [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 | 可重建作品與逐項有證據的履歷主張 |
 
 狀態依當前模組的實際驗收更新，不按日曆自動推進。模組可交錯，但未驗證的能力不可標成完成。

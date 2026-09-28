@@ -62,9 +62,11 @@ MPI 工作要用哪種啟動命令，需依實際安裝的版本與 Slurm 整合
 
 ## 第一個 C++ 工作：讀取指定程序的狀態
 
-[proc_snapshot.cpp](../project/workloads/proc_snapshot.cpp) 是在這台 Linux VM 執行的命令列工具。
-給它 `--pid` 和一個程序 ID，它會讀取 `/proc/<PID>/status`，
-印出程序名稱、狀態和 `VmRSS`；**不會停止或修改該程序**。
+[proc_snapshot.cpp](../project/workloads/proc_snapshot.cpp) 是 **C++ 原始碼**，不是可直接執行的程式。
+在這台 VM 執行下方的 `g++` 指令後，才會建立可執行檔 `/tmp/proc_snapshot`；
+執行這個檔案並提供 `--pid` 和程序 ID，才會讀取 `/proc/<PID>/status`，
+印出程序名稱、狀態和 `VmRSS`。執行程式不會建立另一份 `/tmp/proc_snapshot`，
+也**不會停止或修改指定程序**。
 這是把模組 02 已練過的「輸入、可判讀輸出、錯誤碼」用 C++ 實作，
 之後才能把編成的程式交給 Slurm 執行。
 
@@ -118,3 +120,19 @@ $
 預期輸出 `pid`、`name`、`state`、`vmrss` 四個欄位；
 `name` 應與目前 shell 相符，實際 PID、狀態及記憶體值以回傳結果為準。
 這條指令不建立或修改檔案，不影響 Slurm、其他服務或雲端資源。
+
+**實際執行與輸出：**
+
+```text
+$ /tmp/proc_snapshot --pid $$
+pid=4278
+name=bash
+state=S (sleeping)
+vmrss=5156 kB
+```
+
+本次 `$$` 展開為 PID 4278，讀到的名稱 `bash` 與目前 shell 相符。
+`S (sleeping)` 表示讀取時 shell 正在等待，不是程式失敗；
+`5156 kB` 是該程序當時的約略常駐記憶體，
+不是 Slurm 分配值或記憶體上限。這次確認了有效 PID 的讀取路徑，
+尚未驗證錯誤輸入與程序不存在時的行為。

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""以目前使用者身分檢查工作目錄與 Slurm 節點的基本執行條件。"""
+"""工作提交前的唯讀檢查：確認目錄與指定 Slurm 節點的基本條件。
+
+流程：讀取命令列需求 → 以執行者身分檢查目錄 → 用 sinfo 查節點 →
+逐項比較並合併狀態 → 輸出一行 JSON 和對應退出碼。
+只比較節點設定總量，不提交工作，也不保證工作能排入佇列。
+"""
 
 import argparse
 import json
@@ -9,9 +14,11 @@ import subprocess
 import sys
 
 
+# sinfo 依序輸出節點名、狀態、設定 CPU 數、設定記憶體 MiB；豎線便於拆欄位。
 SINFO_FORMAT = "%N|%T|%c|%m"
 
 
+# 第一段：驗證輸入並取得兩種原始證據；查詢失敗時保留原因，不猜測結果。
 # 將命令列的 CPU、記憶體或逾時值轉成正整數；無效值交由 argparse 回報。
 def positive_int(value):
     number = int(value)
@@ -36,6 +43,7 @@ def read_node(node, timeout):
         detail = result.stderr.strip().splitlines()[:1]
         return None, f"sinfo 退出碼 {result.returncode}：{detail[0][:200] if detail else '沒有錯誤訊息'}"
 
+    # 只接受與指定節點相符的一筆完整資料，避免用錯節點或不完整數值做判斷。
     lines = [line for line in result.stdout.splitlines() if line.strip()]
     if len(lines) != 1:
         return None, f"預期一筆節點資料，實際取得 {len(lines)} 筆"
@@ -67,6 +75,7 @@ def check_directory(path):
     return "pass", "目前使用者可讀寫並進入工作目錄"
 
 
+# 第二段：把目錄與節點證據放進 checks，再算出整體結果。
 # 合併路徑與 Slurm 資源檢查，回傳含個別證據和整體狀態的字典。
 def inspect(node, path, cpus, memory_mib, timeout):
     result = {
@@ -81,6 +90,7 @@ def inspect(node, path, cpus, memory_mib, timeout):
     path_status, path_detail = check_directory(path)
     result["checks"].append({"name": "work_directory", "status": path_status, "detail": path_detail})
 
+    # sinfo 失敗就記 unknown；成功才依狀態和節點設定總量做後續比較。
     node_data, error = read_node(node, timeout)
     if error:
         result["checks"].append({"name": "slurm_node", "status": "unknown", "detail": error})
@@ -102,11 +112,13 @@ def inspect(node, path, cpus, memory_mib, timeout):
             result["checks"].append({"name": name, "status": status,
                                      "detail": f"需求 {requested}；節點設定 {available}"})
 
+    # 已知不符優先於無法判斷；沒有 fail 但有 unknown 時也不能宣稱 pass。
     statuses = {check["status"] for check in result["checks"]}
     result["status"] = "fail" if "fail" in statuses else "unknown" if "unknown" in statuses else "pass"
     return result
 
 
+# 第三段：提供給使用者或腳本的命令列介面。
 # 解析命令列、輸出一行 JSON；0／1／3 表示 pass／fail／unknown，2 留給無效參數。
 def main(argv=None):
     parser = argparse.ArgumentParser(description="唯讀檢查工作目錄與 Slurm 節點設定；pass 不保證工作會被排程。")

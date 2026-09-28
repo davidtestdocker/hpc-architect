@@ -1,43 +1,35 @@
 # Slurm 節點工作前檢查
 
-## 這兩支程式在做什麼
+## 這支程式是什麼
 
-`node_preflight.py` 是提交工作前的唯讀檢查工具。
-它接收節點名稱、工作目錄、CPU 與記憶體需求，依序做四件事：
-
-1. 以**執行程式的使用者**身分，檢查工作目錄是否存在、是否為目錄，以及能否讀、寫、進入。
-2. 執行 `sinfo`，讀取指定節點的狀態、設定 CPU 數和設定記憶體 MiB。
-3. 把目錄、節點狀態、CPU 和記憶體各自的結果記在 `checks`，再合併成整體 `status`。
-4. 輸出一行 JSON，並用退出碼讓呼叫它的腳本知道結果。
-
-程式中的 `positive_int` 檢查數值參數，`check_directory` 與 `read_node` 取得兩種證據，
-`inspect` 彙整判定，`main` 處理命令列與輸出。
-它只使用 Python 標準函式庫；執行時需要可查詢 Slurm 控制器的 `sinfo`。
-程式不會提交工作、建立檔案、修改節點或變更服務。
-
-`test_node_preflight.py` 是這些判定規則的自動測試。
-測試用 `patch` 暫時替換目錄檢查和 `sinfo` 回應，
-再呼叫 `inspect` 或 `main`，以 `assertEqual` 核對結果；
-因此不需改動真實 Slurm 或工作目錄。
-六個案例涵蓋通過、CPU 超額、查詢失敗、目錄缺失且查詢逾時、資料格式錯誤，以及退出碼區分。
+`node_preflight.py` 是提交 Slurm 工作前的簡單檢查表。
+你給它工作目錄、指定節點和資源需求，它會找出明顯的阻礙；它不會提交工作。
+程式只使用 Python 標準函式庫，執行時需要可查詢 Slurm 的 `sinfo`。
 
 ## 執行健檢
 
-以下命令應由實際要使用工作目錄的帳號執行；若用 root 執行，
-目錄權限檢查反映的會是 root，而非工作帳號。
+以下例子使用模組二已部署到 `/home/a2264/` 的程式，
+讓工作帳號 `a2264` 檢查一個需要 1 CPU、256 MiB 記憶體的工作：
 
 ```bash
-python3 node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 1 --memory-mib 256
+sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 1 --memory-mib 256
 ```
 
+`sudo -iu a2264` 讓目錄權限按工作帳號判斷；如果用 root 執行，檢查到的是 root 的權限。
 `--node` 指定 Slurm 節點；`--path` 指定工作目錄；
-`--cpus` 和 `--memory-mib` 是工作的需求，不是工具要占用的資源。
+`--cpus` 和 `--memory-mib` 是這份工作的需求。
 可選的 `--timeout` 指定 `sinfo` 最多等待幾秒，預設為 5。
-用 `python3 node_preflight.py --help` 可查看全部參數。
+用 `python3 /home/a2264/node_preflight.py --help` 可查看全部參數。
+
+程式會查四件事：工作帳號能否讀、寫、進入目錄；Slurm 回報的節點狀態；
+CPU 需求是否超過節點設定總量；記憶體需求是否超過節點設定總量。
+節點 `idle` 通過，`mixed` 無法判斷，其他狀態不通過；
+不通過不一定代表節點故障，也可能只是正在被使用。
 
 ## 讀懂結果
 
-JSON 的 `requested` 是輸入的資源需求，`observed` 是成功查到的 Slurm 節點資料；
+程式印出一行 JSON。先看整體 `status`，再看 `checks` 中每項的原因。
+`requested` 是輸入的資源需求，`observed` 是成功查到的 Slurm 節點資料；
 若查詢失敗，`observed` 為空，原因會寫在 `checks`。
 `effective_uid` 是執行程式時的有效使用者 ID；`checks` 保留每項結果和理由。
 
@@ -55,11 +47,3 @@ JSON 的 `requested` 是輸入的資源需求，`observed` 是成功查到的 Sl
 CPU／記憶體比對的是 Slurm 的節點設定總量，`pass` 只表示這些前置條件通過；
 它不保證當下剩餘資源、分區政策或工作實際排程成功。
 本階段是單節點檢查；以後若檢查多節點，須在各節點檢查路徑並保留個別結果。
-
-## 執行自動測試
-
-在專案根目錄執行；`PYTHONDONTWRITEBYTECODE=1` 避免產生 `__pycache__`：
-
-```bash
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s project/healthcheck -p 'test_*.py' -v
-```

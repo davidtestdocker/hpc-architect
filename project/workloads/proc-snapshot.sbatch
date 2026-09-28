@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 在單節點 Slurm 工作中執行 C++ 程序快照工具，核對工作能啟動並讀取自己的 /proc 狀態。
 # 需先在執行節點備妥 /tmp/proc_snapshot；輸出留在提交工作時的目錄。
-# 投入模組 01 已驗證的本機 debug 分區，只申請一個節點與一個行程。
+# 投入模組 01 已驗證的本機 debug 分區，只申請一個節點與一個 Slurm task。
 #SBATCH --job-name=proc-snapshot
 #SBATCH --partition=debug
 #SBATCH --nodes=1

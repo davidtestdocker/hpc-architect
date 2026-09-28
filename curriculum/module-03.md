@@ -34,7 +34,7 @@
 才能確認這個例子的資料分配與加總沒有漏算或重算。
 
 MPI 把每個程序編一個 **rank**；rank 是程序編號，不是 CPU 核心。
-Slurm 的 `ntasks` 指啟動的程序數，`cpus-per-task` 指每個程序分配的 CPU 數，兩者不能互換。
+Slurm 的 `ntasks` 指申請的 task 數；`cpus-per-task` 指每個 task 分配的 CPU 數，兩者不能互換。
 3 個 rank 可能都在同一台 VM；只有記錄各 rank 的主機名，才有證據判斷是否跨節點。
 本模組先用單節點核對計算與排程，取得獨立 compute VM 後再驗證跨節點。
 
@@ -216,11 +216,11 @@ instance-20260923-104239      1    debug* idle
 
 ### C++ 工具的單節點批次腳本
 
-[proc-snapshot.sbatch](../project/workloads/proc-snapshot.sbatch) 讓 Slurm 在 `debug`
-分區啟動一個行程，執行已編好的 `/tmp/proc_snapshot`，
+[proc-snapshot.sbatch](../project/workloads/proc-snapshot.sbatch) 在 `debug`
+分區申請一個 Slurm task，執行已編好的 `/tmp/proc_snapshot`，
 藉此核對 C++ 工具是否能在排程工作內讀取程序狀態。
 它由一般帳號 `a2264` 從自己的家目錄提交；
-腳本申請一個節點、一個工作行程、一個 CPU、64 MiB 記憶體與兩分鐘上限。
+腳本申請一個節點、一個 Slurm task、每個 task 一個 CPU、64 MiB 記憶體與兩分鐘上限。
 提交後在工作目錄產生 `proc-snapshot-<工作 ID>.out`，
 其中應有工作 ID、節點名稱及工具輸出的 `pid`、`name`、`state`、`vmrss`。
 `sbatch --wait` 的退出碼再用來確認批次工作是否正常結束。
@@ -286,7 +286,7 @@ sudo -u a2264 -- bash -c 'cd /home/a2264 || exit 1; sbatch --wait /home/a2264/pr
 使 `#SBATCH --output` 指定的輸出檔留在該處。
 `sbatch --wait` 等待工作結束，最後立即印出其退出碼；
 成功提交時會顯示工作 ID，但提交成功還不足以證明程式結果正確。
-工作最多請求兩分鐘、一個節點、一個行程、一個 CPU 及 64 MiB 記憶體，
+工作最多請求兩分鐘、一個節點、一個 Slurm task、每個 task 一個 CPU 及 64 MiB 記憶體，
 會短暫佔用 `debug` 分區資源，並建立 `/home/a2264/proc-snapshot-<工作 ID>.out`。
 它不修改 Slurm 設定或雲端資源；可用工作 ID 找到並移除該輸出檔，
 但腳本與輸出保留到核對完成為止。
@@ -329,3 +329,151 @@ vmrss=3224 kB
 `R (running)` 是它讀取當下的狀態，`3224 kB` 是當時約略常駐記憶體。
 搭配 `sbatch_exit=0`，可確認這份編譯產物在單節點 Slurm 工作內正常執行、
 輸出所需欄位。這不構成跨節點、MPI 或 GPU 工作的證據。
+
+## 序列版與 MPI 版計算前的工具確認
+
+接下來要用已知答案的 `1` 到 `N` 加總，比對單一程序與 MPI 多個 rank 的結果。
+先查 VM 的 shell 能否找到 MPI 編譯器 `mpicc` 與啟動器 `mpirun`，
+避免假定工具鏈已安裝或已加入命令搜尋路徑。
+這次確定要在 VM 執行的指令是：
+
+```bash
+type -a mpicc mpirun
+```
+
+`type -a` 會列出目前 shell 能找到的所有同名命令位置；
+若某個命令找不到，也會明確回報。它只查詢 shell 的命令搜尋結果，
+不安裝套件、建立檔案、提交工作或修改服務。
+查到位置後仍須確認實際版本及與 Slurm 的啟動方式，
+才能決定後續編譯與執行指令。
+
+**實際查詢與結果：**
+
+```text
+$ type -a mpicc mpirun
+-bash: type: mpicc: not found
+-bash: type: mpirun: not found
+```
+
+目前 shell 找不到這兩個命令；這還不能單憑命令搜尋結果判定套件未安裝，
+因為 MPI 工具也可能安裝在尚未加入 `PATH` 的目錄。
+後續先核對套件及相容來源，再決定是否需要安裝。
+
+### MPICH 安裝與命令路徑
+
+已從 AlmaLinux 10.2 AppStream 安裝 `mpich-4.1.2-15.el10.x86_64` 與
+`mpich-devel-4.1.2-15.el10.x86_64`。
+同次安裝的相依套件為
+`environment-modules-5.6.1-2.el10.x86_64`、
+`gcc-gfortran-14.3.1-4.4.el10.alma.2.x86_64`、
+`hwloc-libs-2.11.1-4.el10.x86_64`、
+`libfabric-2.3.1-1.el10.x86_64`、
+`libgfortran-14.3.1-4.4.el10.alma.2.x86_64`、
+`libibverbs-61.0-1.el10.x86_64`、
+`libquadmath-14.3.1-4.4.el10.alma.2.x86_64`、
+`libquadmath-devel-14.3.1-4.4.el10.alma.2.x86_64`、
+`librdmacm-61.0-1.el10.x86_64`、
+`ocl-icd-2.3.2-8.el10.x86_64`、
+`rpm-mpi-hooks-8-10.el10.noarch` 與
+`tcl-1:8.6.13-4.el10.x86_64`。
+
+套件把 `mpicc`、`mpirun` 放在 `/usr/lib64/mpich/bin`，
+但此路徑不在安裝前 shell 的命令搜尋路徑中。
+
+這裡的 **Environment Modules** 是 MPICH 安裝時帶入的環境管理套件，
+`module` 是它提供的 shell 指令，與 Slurm task、MPI rank 或 Python module 無關。
+它解決的是「套件已安裝，但目前 shell 的 `PATH` 找不到命令」這個問題。
+套件提供 `/usr/share/modulefiles/mpi/mpich-x86_64` 設定檔；
+執行 `module load mpi/mpich-x86_64` 時，`module` 讀取該檔，
+為目前 shell 把 `/usr/lib64/mpich/bin` 加入 `PATH`、
+把 `/usr/lib64/mpich/lib` 加入 `LD_LIBRARY_PATH`。
+前者讓 shell 找到 `mpicc`、`mpirun`，後者讓執行中的 MPI 程式找到函式庫。
+這是使用此套件的環境準備，不是本模組要驗證的 MPI 計算能力；
+它不會重新安裝 MPICH，也不會永久改寫所有帳號的環境。
+
+因為目前 shell 是在安裝 Environment Modules **之前**開啟的，
+須先讀取新套件提供的初始化檔，讓這個 shell 認得 `module` 指令。
+這次確定要在 VM 執行的是：
+
+```bash
+source /etc/profile.d/modules.sh
+```
+
+`source` 在目前 shell 執行該檔，建立 `module` 所需的 shell 函式；
+這只更新目前 shell 的環境與函式定義，不建立檔案、提交工作或修改服務。
+完成後才載入 MPICH 模組並核對實際命令位置。
+
+**實際執行與結果：**
+
+```text
+$ source /etc/profile.d/modules.sh
+$
+```
+
+指令沒有顯示錯誤並返回提示字元；下一步載入 MPICH 模組。
+這次確定要在同一個 VM shell 執行的是：
+
+```bash
+module load mpi/mpich-x86_64
+```
+
+它會依已安裝的模組檔調整目前 shell 的 `PATH` 與 `LD_LIBRARY_PATH` 等變數，
+讓後續命令找到 MPICH 的編譯器與函式庫。
+變更只作用於這個 shell 及其子程序；關閉 shell 即不再保留，
+可用 `module unload mpi/mpich-x86_64` 提前撤回。
+這條指令不編譯、不提交工作，也不修改服務或雲端資源。
+
+**實際執行與結果：**
+
+```text
+$ module load mpi/mpich-x86_64
+$
+```
+
+指令沒有顯示錯誤並返回提示字元；這表示載入動作沒有回報失敗，
+仍須核對目前 shell 實際找到的命令路徑。
+這次確定要在同一個 VM shell 執行的唯讀驗證指令是：
+
+```bash
+type -a mpicc mpirun
+```
+
+這次應能看到 MPICH 的命令路徑；若仍找不到，須依實際輸出排查。
+指令只查目前 shell 的搜尋結果，不編譯、不提交工作，也不修改檔案或服務。
+
+**實際查詢與結果：**
+
+```text
+$ type -a mpicc mpirun
+mpicc is /usr/lib64/mpich/bin/mpicc
+mpirun is /usr/lib64/mpich/bin/mpirun
+```
+
+目前 shell 已能找到 MPICH 的編譯器與啟動器；
+這只確認命令路徑，還未驗證 MPI 程式的編譯或執行。
+
+## 已知答案的序列計算
+
+[sum_serial.c](../project/workloads/sum_serial.c) 是單程序 C 程式，
+用來建立 MPI 版本的正確性對照。
+先在這台 VM 用 `gcc` 編譯成 `/tmp/sum_serial`，
+再以 `sum_serial N` 提供一個 `0` 到 `10000000` 的十進位整數。
+程式逐一加總 `1` 到 `N`，輸出 `n` 和 `sum`；
+例如 `N=10` 的答案必須是 `55`，`N=0` 時總和是 `0`。
+它只使用 CPU，沒有檔案輸入，也不修改資料或服務。
+
+程式先檢查參數數量、每個字元和數值範圍，無效輸入會印錯誤並回傳 `2`；
+有效輸入回傳 `0`。`N` 上限限制迴圈工作量，也保證總和可放入
+`uint64_t`（64 位元無號整數）。
+日後 MPI 版須在 `0`、`1`、`10`、不能平均分配給 rank 的 `11`，
+以及無效輸入等案例與序列版比對，不能只看 MPI 工作有沒有正常退出。
+
+這次確定要在 VM 執行的編譯指令是：
+
+```bash
+gcc -std=c11 -Wall -Wextra -Wpedantic -O0 -g -o /tmp/sum_serial /root/hpc-arch/project/workloads/sum_serial.c
+```
+
+它以 C11 標準編譯，開啟常見警告並保留除錯資訊；
+成功時建立或覆蓋 `/tmp/sum_serial`，不執行計算、提交 Slurm 工作，
+也不修改服務或雲端資源。實際編譯結果以 VM 輸出為準。

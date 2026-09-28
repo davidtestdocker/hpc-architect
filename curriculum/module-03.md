@@ -230,3 +230,102 @@ instance-20260923-104239      1    debug* idle
 `/proc/<PID>/status`。這避免把提交端 shell 的 PID 誤當成工作節點上的 PID。
 `/tmp/proc_snapshot` 只在目前這台 VM 編譯；這份腳本只供單節點使用，
 若日後改成多節點工作，須先把執行檔部署到每個工作節點。
+
+一般帳號無法穿過 `/root` 讀取專案腳本，
+所以先由 root 把腳本複製到 `a2264` 的家目錄，供稍後提交。
+這次確定要在 VM 執行的指令是：
+
+```bash
+install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/workloads/proc-snapshot.sbatch /home/a2264/proc-snapshot.sbatch
+```
+
+`install` 會建立或覆蓋 `/home/a2264/proc-snapshot.sbatch`，
+設為 `a2264` 擁有且權限為 `0644`；不會修改專案腳本、提交工作、
+更動 Slurm 服務或雲端資源。若要撤回這份副本，可刪除家目錄中的該檔。
+執行結果仍以 VM 回傳為準。
+
+**實際複製與結果：**
+
+```text
+$ install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/workloads/proc-snapshot.sbatch /home/a2264/proc-snapshot.sbatch
+$
+```
+
+指令沒有顯示錯誤並返回提示字元；接著核對檔案擁有者、權限與內容。
+同一複製操作後，可一起執行以下兩條唯讀驗證指令：
+
+```bash
+stat -c '%U:%G %a %n' /home/a2264/proc-snapshot.sbatch
+cmp /root/hpc-arch/project/workloads/proc-snapshot.sbatch /home/a2264/proc-snapshot.sbatch && echo same
+```
+
+`stat` 應顯示 `a2264:a2264` 與 `644`；`cmp` 完全相同時才會印出 `same`。
+兩條指令只讀檔案，不提交工作或修改服務。
+
+**實際驗證與輸出：**
+
+```text
+$ stat -c '%U:%G %a %n' /home/a2264/proc-snapshot.sbatch
+a2264:a2264 644 /home/a2264/proc-snapshot.sbatch
+$ cmp /root/hpc-arch/project/workloads/proc-snapshot.sbatch /home/a2264/proc-snapshot.sbatch && echo same
+same
+```
+
+副本由 `a2264` 擁有、權限為 `644`，且與專案腳本內容相同；
+可供該帳號提交，尚未執行 Slurm 工作。
+
+### 提交單節點 C++ 工作
+
+這次確定要在 VM 執行的指令是：
+
+```bash
+sudo -u a2264 -- bash -c 'cd /home/a2264 || exit 1; sbatch --wait /home/a2264/proc-snapshot.sbatch'; printf 'sbatch_exit=%s\n' "$?"
+```
+
+`sudo -u` 讓一般帳號提交；`cd` 將提交目錄設為 `/home/a2264`，
+使 `#SBATCH --output` 指定的輸出檔留在該處。
+`sbatch --wait` 等待工作結束，最後立即印出其退出碼；
+成功提交時會顯示工作 ID，但提交成功還不足以證明程式結果正確。
+工作最多請求兩分鐘、一個節點、一個行程、一個 CPU 及 64 MiB 記憶體，
+會短暫佔用 `debug` 分區資源，並建立 `/home/a2264/proc-snapshot-<工作 ID>.out`。
+它不修改 Slurm 設定或雲端資源；可用工作 ID 找到並移除該輸出檔，
+但腳本與輸出保留到核對完成為止。
+
+**實際提交與結果：**
+
+```text
+$ sudo -u a2264 -- bash -c 'cd /home/a2264 || exit 1; sbatch --wait /home/a2264/proc-snapshot.sbatch'; printf 'sbatch_exit=%s\n' "$?"
+Submitted batch job 7
+sbatch_exit=0
+```
+
+Slurm 接受工作 7，`sbatch --wait` 等到批次工作正常結束；
+還須檢查 `/home/a2264/proc-snapshot-7.out`，才能確認執行位置與程式輸出。
+這次確定要在 VM 執行的唯讀指令是：
+
+```bash
+sudo -u a2264 -- cat /home/a2264/proc-snapshot-7.out
+```
+
+它只讀取工作 7 的標準輸出檔，不修改檔案、Slurm 服務或雲端資源。
+應能用 `job_id`、`node` 核對工作身分與節點，
+再檢查 `pid`、`name`、`state`、`vmrss` 是否為工具的有效輸出；
+實際值以檔案內容為準。
+
+**工作輸出與判讀：**
+
+```text
+$ sudo -u a2264 -- cat /home/a2264/proc-snapshot-7.out
+job_id=7
+node=instance-20260923-104239
+pid=37809
+name=proc_snapshot
+state=R (running)
+vmrss=3224 kB
+```
+
+工作 7 在 `instance-20260923-104239` 執行，與 `sinfo -N` 顯示的唯一節點相同。
+`name=proc_snapshot` 表示 `exec` 後的 PID 37809 確實屬於 C++ 工具；
+`R (running)` 是它讀取當下的狀態，`3224 kB` 是當時約略常駐記憶體。
+搭配 `sbatch_exit=0`，可確認這份編譯產物在單節點 Slurm 工作內正常執行、
+輸出所需欄位。這不構成跨節點、MPI 或 GPU 工作的證據。

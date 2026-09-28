@@ -95,3 +95,26 @@ g++ -std=c++17 -Wall -Wextra -Wpedantic -O0 -g -o /tmp/proc_snapshot /root/hpc-a
 這條指令會建立或覆蓋 `/tmp/proc_snapshot`，不執行程式，
 也不更動 Slurm、其他服務或雲端資源；不要把沒有錯誤訊息直接當成結果正確。
 若不再需要這個編譯產物，可移除 `/tmp/proc_snapshot`，原始碼仍保存在專案中。
+
+**實際編譯與結果：**
+
+```text
+$ g++ -std=c++17 -Wall -Wextra -Wpedantic -O0 -g -o /tmp/proc_snapshot /root/hpc-arch/project/workloads/proc_snapshot.cpp
+$
+```
+
+指令沒有顯示錯誤或警告，並返回提示字元；可先確認編譯這一步完成。
+這尚未證明程式能讀到正確的程序資料。
+
+接著讀取目前 shell 的程序狀態。`$$` 是目前 shell 的 PID，
+展開後會交給 `--pid`；這樣使用真正存在的程序，不需要建立假資料。
+這次確定要在 VM 執行的指令是：
+
+```bash
+/tmp/proc_snapshot --pid $$
+```
+
+它只讀取 `/proc/<目前 shell 的 PID>/status`，
+預期輸出 `pid`、`name`、`state`、`vmrss` 四個欄位；
+`name` 應與目前 shell 相符，實際 PID、狀態及記憶體值以回傳結果為準。
+這條指令不建立或修改檔案，不影響 Slurm、其他服務或雲端資源。

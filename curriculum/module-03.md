@@ -477,3 +477,95 @@ gcc -std=c11 -Wall -Wextra -Wpedantic -O0 -g -o /tmp/sum_serial /root/hpc-arch/p
 它以 C11 標準編譯，開啟常見警告並保留除錯資訊；
 成功時建立或覆蓋 `/tmp/sum_serial`，不執行計算、提交 Slurm 工作，
 也不修改服務或雲端資源。實際編譯結果以 VM 輸出為準。
+
+**實際編譯與結果：**
+
+```text
+$ gcc -std=c11 -Wall -Wextra -Wpedantic -O0 -g -o /tmp/sum_serial /root/hpc-arch/project/workloads/sum_serial.c
+$
+```
+
+指令沒有顯示警告或錯誤並返回提示字元；
+這表示已產生可執行檔，還不能判斷總和是否正確。
+先用已知答案的 `N=10` 驗證一般輸入。
+這次確定要在 VM 執行的指令是：
+
+```bash
+/tmp/sum_serial 10
+```
+
+`1` 到 `10` 的總和是 `55`，預期程式印出 `n=10`、`sum=55`；
+實際結果仍以 VM 輸出為準。這條指令只執行本機 CPU 計算，
+不建立檔案、提交工作或修改服務。
+
+**實際執行與結果：**
+
+```text
+$ /tmp/sum_serial 10
+n=10
+sum=55
+```
+
+`N=10` 得到已知答案 `55`，確認一般輸入的序列計算結果。
+接著對同一執行檔做相關的唯讀驗證：
+
+```bash
+/tmp/sum_serial 0
+/tmp/sum_serial 1
+/tmp/sum_serial 11
+/tmp/sum_serial abc; printf 'exit=%s\n' "$?"
+```
+
+`0` 驗證沒有待加總數字，預期總和為 `0`；
+`1` 驗證單筆，預期總和為 `1`；
+`11` 預期總和為 `66`，日後可用來測三個 MPI rank 不能整除的分工。
+`abc` 應被拒絕並顯示 `exit=2`；`printf` 立即讀取前一條程式的退出碼。
+這些指令只執行程式並讀取輸出，不建立檔案或修改服務。
+
+**實際執行與結果：**
+
+```text
+$ /tmp/sum_serial 0
+n=0
+sum=0
+$ /tmp/sum_serial 1
+n=1
+sum=1
+$ /tmp/sum_serial 11
+n=11
+sum=66
+$ /tmp/sum_serial abc; printf 'exit=%s\n' "$?"
+N 必須是 0 到 10000000 的十進位整數
+exit=2
+```
+
+空區間、單筆及 `N=11` 的總和分別為 `0`、`1`、`66`；
+非數字輸入被拒絕並回傳 `2`。這些是後續 MPI 版可核對的基準。
+
+## MPI 分工版
+
+[sum_mpi.c](../project/workloads/sum_mpi.c) 由 MPI 啟動器在 VM 上啟動多個 rank，
+每個 rank 只計算 `1` 到 `N` 的一段，最後把部分總和交給 rank 0 合併。
+使用時提供與序列版相同的 `N`；正常輸出包含每個 rank 的編號、主機名、
+起點、數量、部分總和，以及最終 `n`、`sum`。
+讀取 `count=0` 時，表示該 rank 沒分到數字；各 rank 輸出的先後順序不保證固定。
+無效輸入由 rank 0 報錯，並通知其他 rank 一起結束，避免有人等在通訊步驟。
+程式只做 CPU 計算及 MPI 通訊，不修改檔案或服務；
+多個 rank 若都顯示同一主機名，只能證明單節點分工。
+
+分工方式是先算每個 rank 至少拿到的 `N / rank 數` 個數字，
+再把餘數逐一分給前面的 rank。
+例如 `N=11`、三個 rank 時，分配 `1–4`、`5–8`、`9–11`，
+部分答案為 `10`、`26`、`30`，合併後應是 `66`。
+`MPI_Bcast` 把輸入及其有效性從 rank 0 傳給所有 rank；
+`MPI_Reduce` 把各 rank 的部分答案加到 rank 0。
+
+這次確定要在已載入 MPICH 模組的 VM shell 執行的編譯指令是：
+
+```bash
+mpicc -std=c11 -Wall -Wextra -Wpedantic -O0 -g -o /tmp/sum_mpi /root/hpc-arch/project/workloads/sum_mpi.c
+```
+
+`mpicc` 會帶入 MPICH 所需的標頭與函式庫設定；
+成功時建立或覆蓋 `/tmp/sum_mpi`，不執行 MPI 工作、
+提交 Slurm 工作或修改服務。編譯結果仍以 VM 輸出為準。

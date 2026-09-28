@@ -6,7 +6,7 @@
 |---|---|---|
 | [1 HPC 架構與單節點排程](curriculum/module-01.md) | 已完成：正常／資源不符工作、控制服務復原、拓撲與 GPU 候選比較皆有紀錄 | 轉模組 02，完成可測試的 Python 健檢 CLI |
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、VM 正常與兩種失敗案例 | 轉模組 03，完成可核對正確性的 C/C++ 與 MPI 工作 |
-| [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 進行中：C++ 程序快照工具已編譯，正常與錯誤輸入已驗證，單節點 Slurm 工作 7 成功 | 序列計算、MPI 版本及答案一致性驗證 |
+| [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 進行中：C++ 工具已在單節點 Slurm 執行；C 序列版與本機三 rank MPI 版在邊界、一般與無效輸入已核對 | 在單節點 Slurm 啟動 MPI 工作；取得獨立節點後再驗證跨節點 |
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 未開始 | 獨立 VM 互通、共享資料、GPU 裝置辨認與故障定位 |
 | [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 未開始 | 乾淨環境部署及無非預期變更的重跑 |
 | [6 叢集維運、監控與故障復原](curriculum/module-06.md) | 未開始 | 告警、恢復與真實故障紀錄 |

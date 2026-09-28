@@ -586,3 +586,89 @@ mpicc -std=c11 -Wall -Wextra -Wpedantic -O0 -g -o /tmp/sum_mpi /root/hpc-arch/pr
 `mpicc` 會帶入 MPICH 所需的標頭與函式庫設定；
 成功時建立或覆蓋 `/tmp/sum_mpi`，不執行 MPI 工作、
 提交 Slurm 工作或修改服務。編譯結果仍以 VM 輸出為準。
+
+**實際編譯與結果：**
+
+```text
+$ mpicc -std=c11 -Wall -Wextra -Wpedantic -O0 -g -o /tmp/sum_mpi /root/hpc-arch/project/workloads/sum_mpi.c
+$
+```
+
+指令沒有顯示警告或錯誤並返回提示字元；
+這表示已產生 MPI 執行檔，尚未驗證分工和答案。
+先在這台 VM 直接啟動三個 rank，測試不能平均分配的 `N=11`。
+這次確定要在已載入 MPICH 模組的 VM shell 執行的是：
+
+```bash
+mpirun -n 3 /tmp/sum_mpi 11
+```
+
+`-n 3` 讓 MPICH 啟動三個 rank；這是本機 MPI 執行，尚未交給 Slurm。
+預期 rank 0、1、2 分別拿到 `1–4`、`5–8`、`9–11`，
+部分總和為 `10`、`26`、`30`，合併總和應為 `66`，與序列版相同。
+各 rank 的輸出順序可能不同，實際主機名以 VM 輸出為準。
+這條指令會短暫啟動三個本機程序，不建立檔案、修改服務或雲端資源。
+
+**實際執行與結果：**
+
+```text
+$ mpirun -n 3 /tmp/sum_mpi 11
+rank=0 size=3 host=instance-20260923-104239 first=1 count=4 partial=10
+rank=1 size=3 host=instance-20260923-104239 first=5 count=4 partial=26
+rank=2 size=3 host=instance-20260923-104239 first=9 count=3 partial=30
+n=11
+sum=66
+```
+
+三個 rank 分別處理 `1–4`、`5–8`、`9–11`，沒有漏算或重疊；
+`10 + 26 + 30 = 66`，與序列版 `N=11` 的結果一致。
+三個 rank 的主機名相同，因此這是單節點 MPI 執行，尚未驗證 Slurm 啟動或跨節點。
+同一套程式還須核對空區間、少於 rank 數的輸入、一般輸入與錯誤輸入；
+以下是相關的唯讀驗證指令，可一起執行：
+
+```bash
+mpirun -n 3 /tmp/sum_mpi 0
+mpirun -n 3 /tmp/sum_mpi 1
+mpirun -n 3 /tmp/sum_mpi 10
+mpirun -n 3 /tmp/sum_mpi abc; printf 'mpirun_exit=%s\n' "$?"
+```
+
+預期總和依序為 `0`、`1`、`55`，與序列版相同；
+`N=0` 時所有 rank 的 `count` 都應是 `0`，`N=1` 時只有一個 rank 分到數字。
+`abc` 應被拒絕，程式中的各 rank 會以 `2` 結束；
+`mpirun` 的最終退出碼與額外診斷以實際輸出為準。
+這些指令只短暫執行本機 MPI 程序，不建立檔案、提交 Slurm 工作或修改服務。
+
+**實際驗證與輸出：**
+
+```text
+$ mpirun -n 3 /tmp/sum_mpi 0
+rank=0 size=3 host=instance-20260923-104239 first=1 count=0 partial=0
+rank=2 size=3 host=instance-20260923-104239 first=1 count=0 partial=0
+rank=1 size=3 host=instance-20260923-104239 first=1 count=0 partial=0
+n=0
+sum=0
+$ mpirun -n 3 /tmp/sum_mpi 1
+rank=0 size=3 host=instance-20260923-104239 first=1 count=1 partial=1
+rank=1 size=3 host=instance-20260923-104239 first=2 count=0 partial=0
+rank=2 size=3 host=instance-20260923-104239 first=2 count=0 partial=0
+n=1
+sum=1
+$ mpirun -n 3 /tmp/sum_mpi 10
+rank=0 size=3 host=instance-20260923-104239 first=1 count=4 partial=10
+rank=2 size=3 host=instance-20260923-104239 first=8 count=3 partial=27
+rank=1 size=3 host=instance-20260923-104239 first=5 count=3 partial=18
+n=10
+sum=55
+$ mpirun -n 3 /tmp/sum_mpi abc; printf 'mpirun_exit=%s\n' "$?"
+N 必須是 0 到 10000000 的十進位整數
+mpirun_exit=2
+```
+
+`N=0` 時所有 rank 的 `count=0`、總和為 `0`；
+`N=1` 時只有 rank 0 處理數字 `1`，其餘 rank 沒有工作。
+`count=0` 時顯示的 `first` 只是公式算出的下一個位置，不代表處理了該數字。
+`N=10` 分配 `1–4`、`5–7`、`8–10`，部分答案 `10 + 18 + 27 = 55`，
+與序列版相同。`abc` 被拒絕，`mpirun_exit=2`。
+這些證據涵蓋本機 MPICH 的分工、空區間、一般輸入及無效輸入，
+仍未證明 Slurm 啟動或跨節點執行。

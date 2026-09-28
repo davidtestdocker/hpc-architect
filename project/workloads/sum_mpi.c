@@ -33,10 +33,12 @@ static int parse_n(const char *text, uint64_t *out) {
 
 // 初始化 MPI，分配不重疊區段並合併總和；無效輸入時所有 rank 回傳 2。
 int main(int argc, char *argv[]) {
+    // 先建立 MPI 執行環境，後續才能讓這次啟動的多個程序互相通訊。
     MPI_Init(&argc, &argv);
 
     int rank = 0;
     int size = 0;
+    // MPI_COMM_WORLD 是這次啟動的整組程序；rank 是自己的編號，size 是總數。
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
@@ -51,11 +53,14 @@ int main(int argc, char *argv[]) {
             valid = 0;
         }
     }
+    // Rank 0 把輸入是否有效通知全部程序，避免其他 rank 繼續等待後面的通訊。
     MPI_Bcast(&valid, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if (!valid) {
+        // 所有 rank 都結束 MPI 環境，再用相同的參數錯誤碼退出。
         MPI_Finalize();
         return 2;
     }
+    // Rank 0 把 N 傳給全部程序；MPI_UINT64_T 對應 N 使用的 uint64_t 型別。
     MPI_Bcast(&n, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
     // 前 n % size 個 rank 多分一個數字；first 與 count 對應連續、不重疊區段。
@@ -72,6 +77,7 @@ int main(int argc, char *argv[]) {
 
     char host[MPI_MAX_PROCESSOR_NAME];
     int host_length = 0;
+    // 取得此 rank 所在位置的名稱，供輸出核對是否分布在不同節點。
     MPI_Get_processor_name(host, &host_length);
     printf("rank=%d size=%d host=%s first=%" PRIu64 " count=%" PRIu64
            " partial=%" PRIu64 "\n",
@@ -79,11 +85,13 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
 
     uint64_t sum = 0;
+    // MPI_SUM 把各 rank 的 partial 相加；MPI_Reduce 將結果交給 rank 0 的 sum。
     MPI_Reduce(&partial, &sum, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
     if (rank == 0) {
         printf("n=%" PRIu64 "\nsum=%" PRIu64 "\n", n, sum);
     }
 
+    // 所有 rank 完成通訊後關閉 MPI 環境。
     MPI_Finalize();
     return 0;
 }

@@ -560,6 +560,23 @@ exit=2
 `MPI_Bcast` 把輸入及其有效性從 rank 0 傳給所有 rank；
 `MPI_Reduce` 把各 rank 的部分答案加到 rank 0。
 
+這些函式由 `#include <mpi.h>` 宣告，編譯時 `mpicc` 會連結 MPICH 函式庫。
+程式中的呼叫依序是：
+
+| 函式或名稱 | 在這個程式中的作用 |
+|---|---|
+| `MPI_Init` | 建立 MPI 執行環境，必須先於其他 MPI 操作。 |
+| `MPI_COMM_WORLD` | 代表這次一起啟動的整組 rank。 |
+| `MPI_Comm_rank` | 取得目前程序的 rank 編號。 |
+| `MPI_Comm_size` | 取得這組 rank 的總數，不是 CPU 數。 |
+| `MPI_Bcast` | 由 rank 0 把有效性與 `N` 傳給所有 rank。 |
+| `MPI_Get_processor_name` | 取得目前 rank 所在位置的名稱，供核對節點分布。 |
+| `MPI_Reduce` | 用 `MPI_SUM` 加總各 rank 的部分答案，結果交給 rank 0。 |
+| `MPI_Finalize` | 所有 rank 完成後結束 MPI 環境。 |
+
+`MPI_UINT64_T` 表示傳送的數值對應 C 的 `uint64_t`；
+無效輸入也會先把判斷結果通知全部 rank，再一起結束，避免有人等不到通訊。
+
 這次確定要在已載入 MPICH 模組的 VM shell 執行的編譯指令是：
 
 ```bash

@@ -672,3 +672,193 @@ mpirun_exit=2
 與序列版相同。`abc` 被拒絕，`mpirun_exit=2`。
 這些證據涵蓋本機 MPICH 的分工、空區間、一般輸入及無效輸入，
 仍未證明 Slurm 啟動或跨節點執行。
+
+### 啟動參數與部分總和
+
+`mpirun -n 3 /tmp/sum_mpi 10` 中，`mpirun` 先讀取自己的 `-n 3`，
+啟動三個 `/tmp/sum_mpi` 程序；程式後面的 `10` 才是各程序收到的 `argv[1]`。
+每個程序執行 `MPI_Init` 後，`MPI_Comm_size` 查到這組程序共有三個，
+因此 `size=3`；`MPI_Comm_rank` 則讓它們分別取得 rank 0、1、2。
+rank 0 將字串 `"10"` 解析成 `n=10`，再傳給另外兩個 rank。
+
+`first` 是該 rank 從哪個數字開始，`count` 是連續處理幾個數字，
+`partial` 是這些數字的部分總和。因此 `N=10` 時，
+rank 0 算 `1+2+3+4=10`，rank 1 算 `5+6+7=18`，
+rank 2 算 `8+9+10=27`；合併得到 `10+18+27=55`。
+各 rank 的輸出順序可以不同，不影響分工或答案。
+
+## 準備透過 Slurm 啟動 MPI 工作
+
+本機的 `mpirun` 已證明程式能算對，但還沒有證明 Slurm 能啟動這三個 rank。
+Slurm 的 `srun` 可在獲得的工作資源內啟動程序；
+它與 MPI 的啟動配合方式須先查看這台 VM 實際提供的選項，
+再決定工作腳本要使用哪種方式。
+
+這次先在 VM 執行一條唯讀查詢：
+
+```bash
+srun --mpi=list
+```
+
+`--mpi=list` 要求 `srun` 列出此安裝提供的 MPI 啟動類型。
+這條指令不分配資源、不啟動 MPI 工作、不建立檔案，
+也不修改 Slurm 服務、設定或雲端資源。
+實際可用的類型以 VM 輸出為準；確認後才編寫與提交工作腳本。
+
+**實際查詢與輸出：**
+
+```text
+$ srun --mpi=list
+MPI plugin types are...
+        none
+        cray_shasta
+        pmi2
+```
+
+此安裝列出 `pmi2`，可先作為單節點 MPICH 工作啟動的候選。
+`none` 不提供這項 MPI 啟動配合；`cray_shasta` 對應另一類系統環境。
+清單只證明 Slurm 有這個選項，尚未證明目前的 MPICH 程式能透過它正確執行。
+
+### 單節點 MPI 工作腳本
+
+[sum-mpi.sbatch](../project/workloads/sum-mpi.sbatch) 讓一般帳號 `a2264`
+在目前 VM 的 `debug` 分區申請一個節點、兩個 Slurm task，
+每個 task 一個 CPU，合計 128 MiB 記憶體與兩分鐘上限。
+批次 shell 先載入已安裝的 MPICH 模組，再用 `srun --mpi=pmi2`
+為每個 task 啟動 `/tmp/sum_mpi 10`。
+`10` 是交給程式的 `N`；兩個 task 分別成為一個 MPI rank。
+預期 rank 0 計算 `1–5`，部分總和為 `15`；
+rank 1 計算 `6–10`，部分總和為 `40`，合併後為 `sum=55`。
+腳本也印出工作 ID 與批次節點，供核對執行位置。
+
+執行節點必須已有 `/tmp/sum_mpi` 與 MPICH 模組；目前只準備了這一台 VM。
+這份腳本只能驗證單節點 Slurm 啟動；`pmi2` 與 MPICH 是否配合成功，
+須等實際工作完成並檢查退出碼與輸出才能判斷。
+提交時輸出將寫在提交目錄的 `sum-mpi-<工作 ID>.out`，
+腳本本身不修改 Slurm 設定或雲端資源。
+
+一般帳號不能穿過 `/root` 讀取專案腳本，因此先由 root
+把目前版本複製到其家目錄。這次確定要在 VM 執行的指令是：
+
+```bash
+install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/workloads/sum-mpi.sbatch /home/a2264/sum-mpi.sbatch
+```
+
+它會覆蓋 `/home/a2264/sum-mpi.sbatch`，設為 `a2264` 擁有、權限 `0644`；
+不提交工作、不建立輸出檔或修改服務。若不再需要，可移除家目錄中的副本，
+專案內原稿仍會保留。複製結果以 VM 回傳為準，之後核對副本內容與權限。
+
+**實際複製與結果：**
+
+```text
+$ install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/workloads/sum-mpi.sbatch /home/a2264/sum-mpi.sbatch
+$
+```
+
+指令沒有回報錯誤並返回提示字元；還須確認副本的擁有者、權限與內容。
+同一次複製的兩項唯讀核對可一起執行：
+
+```bash
+stat -c '%U:%G %a %n' /home/a2264/sum-mpi.sbatch
+cmp /root/hpc-arch/project/workloads/sum-mpi.sbatch /home/a2264/sum-mpi.sbatch && echo same
+```
+
+`stat` 應顯示 `a2264:a2264` 與 `644`；`cmp` 完全相同時才印出 `same`。
+兩條指令不提交工作，也不修改檔案或服務。
+
+**實際核對與輸出：**
+
+```text
+$ stat -c '%U:%G %a %n' /home/a2264/sum-mpi.sbatch
+a2264:a2264 644 /home/a2264/sum-mpi.sbatch
+$ cmp /root/hpc-arch/project/workloads/sum-mpi.sbatch /home/a2264/sum-mpi.sbatch && echo same
+same
+```
+
+副本由 `a2264` 擁有、權限為 `644`，內容與專案中的新版腳本相同；
+可以提交，尚未驗證 Slurm 內的 MPI 執行。
+
+### 提交兩個 rank 的 Slurm 工作
+
+這次確定要在 VM 執行的指令是：
+
+```bash
+sudo -u a2264 -- bash -c 'cd /home/a2264 || exit 1; sbatch /home/a2264/sum-mpi.sbatch'
+```
+
+`sudo -u` 讓一般帳號提交；`cd` 將工作輸出放在 `/home/a2264`。
+`sbatch` 提交後回傳工作 ID，不會等待工作結束；
+須再依該 ID 查看狀態、退出碼與 `sum-mpi-<工作 ID>.out`，
+才能判斷兩個 rank 是否正常啟動、主機名是否相同、部分總和是否合為 `55`。
+工作最多申請兩分鐘、一個節點、兩個 task、每個 task 一個 CPU 及 128 MiB 記憶體，
+會短暫使用 `debug` 分區的本機節點並建立一份工作輸出檔，
+不修改 Slurm 設定、其他服務或雲端資源。
+
+**實際提交與結果：**
+
+```text
+$ sudo -u a2264 -- bash -c 'cd /home/a2264 || exit 1; sbatch /home/a2264/sum-mpi.sbatch'
+Submitted batch job 9
+```
+
+Slurm 接受了工作 9；提交成功不等於工作已執行或答案正確。
+先讀取對應輸出檔，核對兩個 rank 的主機、分工與合併結果。
+這次確定要在 VM 執行的唯讀指令是：
+
+```bash
+sudo -u a2264 -- cat /home/a2264/sum-mpi-9.out
+```
+
+它只讀取工作 9 的輸出，不修改檔案、工作或服務。
+預期可見工作 ID、批次節點、rank 0 與 1 的部分總和及 `sum=55`；
+若工作尚未完成或輸出有錯誤，須依實際內容判讀。
+
+**實際工作輸出：**
+
+```text
+$ sudo -u a2264 -- cat /home/a2264/sum-mpi-9.out
+job_id=9
+batch_node=instance-20260923-104239
+rank=0 size=2 host=instance-20260923-104239 first=1 count=5 partial=15
+rank=1 size=2 host=instance-20260923-104239 first=6 count=5 partial=40
+n=10
+sum=55
+```
+
+兩個 rank 都位於 `instance-20260923-104239`，
+分別處理 `1–5` 與 `6–10`，沒有漏算或重複。
+部分總和 `15+40=55`，與序列版及本機 MPI 版的 `N=10` 答案一致。
+這是**單節點 Slurm 啟動 MPI** 的計算輸出，不能當作跨節點證據。
+輸出內容正確後，仍須確認 Slurm 記錄的工作最終狀態與退出碼。
+這次確定要在 VM 執行的唯讀指令是：
+
+```bash
+scontrol show job 9
+```
+
+它查詢工作 9 的 `JobState`、`ExitCode` 與資源配置，不修改工作或服務。
+已完成的工作只在控制器保留一段時間；若查不到，需改用可用的歷史紀錄方式。
+
+**工作 9 的最終狀態與配置：**
+
+```text
+$ scontrol show job 9
+JobId=9 JobName=sum-mpi
+JobState=COMPLETED Reason=None
+ExitCode=0:0
+RunTime=00:00:01 TimeLimit=00:02:00
+Partition=debug
+NodeList=instance-20260923-104239
+BatchHost=instance-20260923-104239
+NumNodes=1 NumCPUs=2 NumTasks=2 CPUs/Task=1
+ReqTRES=cpu=2,mem=128M,node=1,billing=2
+AllocTRES=cpu=2,mem=128M,node=1,billing=2
+Command=/home/a2264/sum-mpi.sbatch
+StdOut=/home/a2264/sum-mpi-9.out
+```
+
+`COMPLETED` 與 `ExitCode=0:0` 表示 Slurm 記錄這份批次工作正常結束；
+實際配置與請求同為一個節點、兩個 task、兩個 CPU、128 MiB 記憶體。
+搭配工作輸出的兩個 rank、相同主機名和 `sum=55`，
+可確認這份 MPI 程式已在**單節點 Slurm 工作**中正常啟動並算對已知答案。
+這份結果不包含獨立節點、跨節點通訊或 GPU 計算的驗證。

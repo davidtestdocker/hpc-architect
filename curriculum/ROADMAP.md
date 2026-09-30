@@ -20,7 +20,7 @@
 
 職缺沒有指定排程器、MPI、NFS 或 Ansible。本課程選 [Slurm](https://slurm.schedmd.com/quickstart_admin.html) 作排程範例、[Ansible](https://docs.ansible.com/projects/ansible/latest/getting_started/index.html) 作設定自動化、NFS 作第一個共享資料案例、[Open MPI](https://docs.open-mpi.org/en/main/launching-apps/index.html) 作跨節點工作驗證。學的是節點、工作、網路、身分、部署與故障處理的可遷移能力，不把這些品牌說成職缺原文。
 
-Python 是自動化與健檢主語言；C 和 C++ 都要能閱讀、編譯、修改與除錯，其中至少一個完成較深入的系統／計算程式。Go 不再另外開一條完整主線，除非面試或實際工作要求。OpenStack、K8s、Zabbix 先建立角色與適用邊界；核心作品穩定後，優先選一項做有證據的加分實作，預設為與故障告警直接相關的 Zabbix。
+Python 是自動化與健檢主語言；C 和 C++ 用於交付可編譯、可核對結果的系統觀察與計算工作。Go 不再另外開一條完整主線，除非面試或實際工作要求。OpenStack、K8s、Zabbix 先建立角色與適用邊界；核心作品穩定後，優先選一項做有證據的加分實作，預設為與故障告警直接相關的 Zabbix。
 
 **GPU 現在是核心架構與實作項目。** 規劃一台獨立 GPU VM 作 compute-gpu01，接入既有控制節點；教會 GPU 記憶體、CPU／GPU 資料傳輸、PCIe／NUMA、單卡與多卡拓撲、驅動／CUDA 相容性、Slurm GPU 資源分配與監控。實機要完成驅動辨認、GPU 工作提交、正確性核對和使用率觀察；[Slurm GRES](https://slurm.schedmd.com/gres.html) 是排程 GPU 的具體機制。單卡 VM 能驗證單 GPU 管理，不能宣稱驗證了 NVLink、多 GPU、跨 GPU RDMA 或大規模 GPU 訓練。RDMA、平行檔案系統與機櫃供電等沒有設備時只做架構判斷。
 

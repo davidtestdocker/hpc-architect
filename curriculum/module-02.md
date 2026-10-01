@@ -2,6 +2,13 @@
 
 [能力路線](ROADMAP.md)｜職缺核心：Linux 與程式開發；支撐能力：獨立診斷節點。
 
+## 這個模組在做什麼
+
+把提交工作前常做的檢查寫成一支 Python 命令列工具。
+使用者給工作目錄、目標節點和資源需求；工具回報哪些條件符合、
+哪些明確不符，以及哪些資料不足以判斷。
+目的是在提交前發現明顯問題，並留下可由程式讀取的 JSON 結果。
+
 ## 目前成果
 
 | 項目 | 已驗證的結果 |
@@ -90,28 +97,155 @@ install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_prefli
 ```
 
 這會建立或覆蓋工作帳號可讀的部署副本，不修改 Slurm 或雲端資源。
-以下三個案例都以 `a2264` 身分執行，從 JSON 擷取的必要結果列於表中。
+執行後沒有錯誤輸出，部署檔位於 `/home/a2264/node_preflight.py`。
+以下三個案例都以 `a2264` 身分執行；輸出是當時 VM 回傳的完整 JSON，僅調整縮排方便閱讀。
+
+### 正常需求
 
 ```bash
 sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 1 --memory-mib 256
 ```
 
+```json
+{
+  "checks": [
+    {
+      "detail": "目前使用者可讀寫並進入工作目錄",
+      "name": "work_directory",
+      "status": "pass"
+    },
+    {
+      "detail": "idle",
+      "name": "node_state",
+      "status": "pass"
+    },
+    {
+      "detail": "需求 1；節點設定 2",
+      "name": "cpus",
+      "status": "pass"
+    },
+    {
+      "detail": "需求 256；節點設定 3000",
+      "name": "memory_mib",
+      "status": "pass"
+    }
+  ],
+  "effective_uid": 1000,
+  "node": "instance-20260923-104239",
+  "observed": {
+    "cpus": 2,
+    "memory_mib": 3000,
+    "name": "instance-20260923-104239",
+    "state": "idle"
+  },
+  "path": "/home/a2264",
+  "requested": {
+    "cpus": 1,
+    "memory_mib": 256
+  },
+  "status": "pass"
+}
+```
+
+**判讀：**四個檢查都是 `pass`；`effective_uid=1000` 證明以工作帳號檢查。
+
+### CPU 需求超過節點設定
+
 ```bash
 sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 3 --memory-mib 256
 ```
+
+```json
+{
+  "checks": [
+    {
+      "detail": "目前使用者可讀寫並進入工作目錄",
+      "name": "work_directory",
+      "status": "pass"
+    },
+    {
+      "detail": "idle",
+      "name": "node_state",
+      "status": "pass"
+    },
+    {
+      "detail": "需求 3；節點設定 2",
+      "name": "cpus",
+      "status": "fail"
+    },
+    {
+      "detail": "需求 256；節點設定 3000",
+      "name": "memory_mib",
+      "status": "pass"
+    }
+  ],
+  "effective_uid": 1000,
+  "node": "instance-20260923-104239",
+  "observed": {
+    "cpus": 2,
+    "memory_mib": 3000,
+    "name": "instance-20260923-104239",
+    "state": "idle"
+  },
+  "path": "/home/a2264",
+  "requested": {
+    "cpus": 3,
+    "memory_mib": 256
+  },
+  "status": "fail"
+}
+```
+
+**判讀：**`cpus` 為 `fail`，因需求 3 大於設定 2；其他三項通過。
+
+### 工作帳號無法存取目錄
 
 ```bash
 sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /root --cpus 1 --memory-mib 256
 ```
 
-| 工作目錄 | 請求 | 實際 `status` | 重要 `checks` 欄位與判讀 |
-|---|---|---|---|
-| `/home/a2264` | 1 CPU、256 MiB | `pass` | `effective_uid=1000`；目錄可進入、節點 `idle`、1 ≤ 2 CPU、256 ≤ 3000 MiB |
-| `/home/a2264` | 3 CPU、256 MiB | `fail` | `cpus=fail`：需求 3 大於節點設定 2 |
-| `/root` | 1 CPU、256 MiB | `fail` | `work_directory=fail`：`a2264` 無法讀寫並進入 `/root` |
+```json
+{
+  "checks": [
+    {
+      "detail": "目前使用者無法讀寫並進入工作目錄",
+      "name": "work_directory",
+      "status": "fail"
+    },
+    {
+      "detail": "idle",
+      "name": "node_state",
+      "status": "pass"
+    },
+    {
+      "detail": "需求 1；節點設定 2",
+      "name": "cpus",
+      "status": "pass"
+    },
+    {
+      "detail": "需求 256；節點設定 3000",
+      "name": "memory_mib",
+      "status": "pass"
+    }
+  ],
+  "effective_uid": 1000,
+  "node": "instance-20260923-104239",
+  "observed": {
+    "cpus": 2,
+    "memory_mib": 3000,
+    "name": "instance-20260923-104239",
+    "state": "idle"
+  },
+  "path": "/root",
+  "requested": {
+    "cpus": 1,
+    "memory_mib": 256
+  },
+  "status": "fail"
+}
+```
 
-這兩個 `fail` 是刻意驗證工具能辨認真實的不符合條件，
-不是部署失敗。測試沒有建立假目錄或提交新工作。
+**判讀：**`work_directory` 為 `fail`；資源需求本身符合設定。
 
 ## 完成範圍
 

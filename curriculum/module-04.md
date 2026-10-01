@@ -2,6 +2,12 @@
 
 [能力路線](ROADMAP.md)｜職缺核心：網路設定與管理；支撐能力：叢集架構規劃。
 
+## 這個模組在做什麼
+
+把獨立 GPU VM 接入現有教學叢集，檢查兩台 VM 如何找到彼此、
+能否連上服務、讀到相同資料，以及工作能否跨節點執行。
+本模組也要在 GPU VM 上辨認實際裝置，留下可核對的節點與資料證據。
+
 ## 目前做到哪裡
 
 | 項目 | 已確認的結果 |
@@ -157,6 +163,24 @@ gcloud compute instances describe compute-gpu01 \
   --format='json(name,status,zone,machineType,networkInterfaces,serviceAccounts,disks,resourcePolicies,terminationTime,maxRunDuration,instanceTerminationAction,scheduling)'
 ```
 
+從實際回傳擷取必要欄位，省略其他 API 欄位：
+
+```json
+{
+  "name": "compute-gpu01",
+  "status": "RUNNING",
+  "machineType": "https://www.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/machineTypes/g2-standard-4",
+  "networkInterfaces": [{"networkIP": "10.146.0.3"}],
+  "disks": [{"boot": true, "diskSizeGb": "40", "autoDelete": true}],
+  "scheduling": {
+    "maxRunDuration": {"seconds": "7200"},
+    "instanceTerminationAction": "STOP"
+  }
+}
+```
+
+`networkInterfaces` 沒有外部位址欄位，回傳也沒有 `serviceAccounts` 欄位。
+
 | 欄位 | 實際結果 | 意義 |
 |---|---|---|
 | `status` | `RUNNING` | 查詢當時 VM 已啟動 |
@@ -178,7 +202,13 @@ gcloud compute instances stop compute-gpu01 \
   --quiet
 ```
 
-停止命令回報 `Updated`。再以唯讀命令核對：
+停止命令的完成訊息：
+
+```text
+Updated [https://compute.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
+```
+
+再以唯讀命令核對：
 
 ```bash
 gcloud compute instances describe compute-gpu01 \

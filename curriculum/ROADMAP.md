@@ -9,8 +9,8 @@
 | 階段 | 模組 | 要解決的職缺問題 | 本階段過關證據 |
 |---|---|---|---|
 | 1. 叢集與系統 | [01 架構與單節點排程](module-01.md) | CPU／GPU 節點分工、資源規劃、排程與 Linux 服務 | 資源及拓撲決策、單節點工作與故障判讀 |
-| 2. 程式開發 | [02 Python／Linux 健檢](module-02.md)、[03 C/C++ 與 MPI 工作](module-03.md) | 寫能在叢集環境處理錯誤的軟體 | 可測試的工具、正確的編譯型工作與排程輸出 |
-| 3. 網路與儲存 | [04 多節點網路與資料路徑](module-04.md) | 設定 CPU 與 GPU 節點互通並定位連線或存取故障 | 獨立 VM 的連線、共享資料與 GPU 節點證據 |
+| 2. 程式開發 | [02 Python／Linux 健檢](module-02.md)、[03 C/C++ 與單節點 MPI 工作](module-03.md) | 寫能處理錯誤、答案可核對的軟體 | 健檢工具、C/C++ 程式與單節點 Slurm 工作 |
+| 3. 網路與儲存 | [04 多節點網路與資料路徑](module-04.md) | 設定獨立 VM 互通、共享資料，驗證跨節點工作與 GPU 裝置 | 兩台 VM 的連線、共享資料、跨節點工作與 GPU 節點證據 |
 | 4. 自動化 | [05 可重建叢集](module-05.md) | 將人工建置及 GPU 資源設定轉成可重跑的部署 | 乾淨環境部署、重跑、CPU 與 GPU 工作 |
 | 5. 維運與決策 | [06 故障與監控](module-06.md)、[07 效能與架構取捨](module-07.md)、[08 作品與面試](module-08.md) | 復原服務、觀測 GPU、評估規模、說明設計與證據 | 事件報告、原始量測、CPU／GPU 架構決策與作品 |
 
@@ -18,14 +18,14 @@
 
 ## 工具取捨與範圍
 
-職缺沒有指定排程器、MPI、NFS 或 Ansible。本課程選 [Slurm](https://slurm.schedmd.com/quickstart_admin.html) 作排程範例、[Ansible](https://docs.ansible.com/projects/ansible/latest/getting_started/index.html) 作設定自動化、NFS 作第一個共享資料案例、[Open MPI](https://docs.open-mpi.org/en/main/launching-apps/index.html) 作跨節點工作驗證。學的是節點、工作、網路、身分、部署與故障處理的可遷移能力，不把這些品牌說成職缺原文。
+職缺沒有指定排程器、MPI、NFS 或 Ansible。本課程選 [Slurm](https://slurm.schedmd.com/quickstart_admin.html) 作排程範例、[Ansible](https://docs.ansible.com/projects/ansible/latest/getting_started/index.html) 作設定自動化、NFS 作第一個共享資料案例、[MPICH](https://www.mpich.org/documentation/) 作 MPI 工作驗證。學的是節點、工作、網路、身分、部署與故障處理的可遷移能力，不把這些品牌說成職缺原文。
 
 Python 是自動化與健檢主語言；C 和 C++ 用於交付可編譯、可核對結果的系統觀察與計算工作。Go 不再另外開一條完整主線，除非面試或實際工作要求。OpenStack、K8s、Zabbix 先建立角色與適用邊界；核心作品穩定後，優先選一項做有證據的加分實作，預設為與故障告警直接相關的 Zabbix。
 
-**GPU 現在是核心架構與實作項目。** 規劃一台獨立 GPU VM 作 compute-gpu01，接入既有控制節點；教會 GPU 記憶體、CPU／GPU 資料傳輸、PCIe／NUMA、單卡與多卡拓撲、驅動／CUDA 相容性、Slurm GPU 資源分配與監控。實機要完成驅動辨認、GPU 工作提交、正確性核對和使用率觀察；[Slurm GRES](https://slurm.schedmd.com/gres.html) 是排程 GPU 的具體機制。單卡 VM 能驗證單 GPU 管理，不能宣稱驗證了 NVLink、多 GPU、跨 GPU RDMA 或大規模 GPU 訓練。RDMA、平行檔案系統與機櫃供電等沒有設備時只做架構判斷。
+**GPU 是核心架構與實作項目。** 獨立 GPU VM `compute-gpu01` 已建立並依要求停止；接下來先在模組 04 完成網路、資料路徑與裝置辨認，再在相應模組完成 GPU 資源設定、工作與監控。課程會說明 GPU 記憶體、CPU／GPU 資料傳輸、PCIe／NUMA、單卡與多卡拓撲，以及驅動／CUDA 相容性；[Slurm GRES](https://slurm.schedmd.com/gres.html) 是排程 GPU 的具體機制。單卡 VM 能驗證單 GPU 管理，不能宣稱驗證了 NVLink、多 GPU、跨 GPU RDMA 或大規模 GPU 訓練。RDMA、平行檔案系統與機櫃供電等沒有設備時只做架構判斷。
 
 ## 執行與判定
 
-先在目前 VM 完成單節點工作。GPU VM 暫以一張卡的 G2／L4 作**候選**，因為它足以練習驅動、排程與單卡工作；若目標是 FP64 科學計算，需重新比較 A2／A100 等型號，不能用 L4 的結果替代。實際機型、區域／zone、GPU 與 vCPU quota、即時可用容量、映像／驅動相容性及完整費用，須在建立前核對；[GCP quota 不保證容量](https://docs.cloud.google.com/compute/resource-usage)，[GPU 價格還要連同 VM 與磁碟估算](https://cloud.google.com/products/compute/gpus-pricing)。新增 VM、費用、套件安裝或服務變更之前，說明目標、影響與復原方式並取得同意。跨節點驗收要有不同 VM 的主機名及工作／資料證據；單機多程序不能代替。若資源不足，先交付誠實標示範圍的單機版，未做的 GPU／跨節點能力仍是未驗證。
+模組 01–03 的單節點成果已完成。模組 04 的 GPU VM 已建立；在此模組驗證兩台 VM 的私網、共享資料、跨節點工作與 GPU 裝置。G2／L4 適合單卡排程練習；若目標是 FP64 科學計算，需另比較 A2／A100，不能以 L4 結果代替。新增 VM、費用、套件安裝或服務變更之前，說明目標、影響與復原方式並取得同意。跨節點驗收須有不同 VM 的主機名及工作／資料證據；單機多程序不能代替。
 
-開始一次帶練前，在當前模組文件寫下本次確定要用的命令、目的與檔案／服務影響；學員執行後才記錄輸出和判讀。每個模組依其「過關證據」決定能否前進，不按日曆或指令數結束。可重跑程式、設定、測試與量測進入 project/；教學命令與解釋留在模組文件。
+開始一次帶練前，在當前模組文件寫下本次確定要用的命令、目的與檔案／服務影響；執行後才記錄輸出和判讀。完成當前模組約定的成果後再進下一個，不按日曆或指令數推進。可重跑程式、設定、測試與量測進入 project/；教學命令與解釋留在各自模組文件。

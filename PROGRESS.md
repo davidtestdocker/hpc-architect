@@ -2,15 +2,15 @@
 
 課程已依學員要求重建，舊每日教學與操作紀錄已移除；以下重新從作品證據起算。沒有實際程式、部署或測試，就不寫成已完成。
 
-| 模組 | 狀態 | 下一個可驗證成果 |
-|---|---|---|
-| [1 HPC 架構與單節點排程](curriculum/module-01.md) | 已完成：正常／資源不符工作、控制服務復原、拓撲與 GPU 候選比較皆有紀錄 | 轉模組 02，完成可測試的 Python 健檢 CLI |
-| [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、VM 正常與兩種失敗案例 | 轉模組 03，完成可核對正確性的 C/C++ 與 MPI 工作 |
-| [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 進行中：C++ 工具已在單節點 Slurm 執行；C 序列版與本機三 rank MPI 版已核對多種輸入；單節點 Slurm 兩 rank 工作得到 `sum=55`、`ExitCode=0:0` | 取得獨立節點後驗證跨節點，GPU VM 可用後驗證 GPU 工作 |
-| [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 進行中：東京 `asia-northeast1-c` 的 `compute-gpu01`（G2／L4、私有 IP `10.146.0.3`）已建立後依要求停止，狀態 `TERMINATED`；磁碟保留，尚未登入客體或驗證 GPU 工作 | 要使用時再啟動 VM，驗證台灣控制節點與東京 GPU VM 的私網、登入、資料路徑和 GPU 裝置 |
-| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 未開始 | 乾淨環境部署及無非預期變更的重跑 |
-| [6 叢集維運、監控與故障復原](curriculum/module-06.md) | 未開始 | 告警、恢復與真實故障紀錄 |
-| [7 效能證據與軟硬體架構取捨](curriculum/module-07.md) | 未開始 | 原始量測、瓶頸與設計取捨 |
-| [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 | 可重建作品與逐項有證據的履歷主張 |
+| 模組 | 狀態與已交付成果 |
+|---|---|
+| [1 HPC 架構與單節點排程](curriculum/module-01.md) | 已完成：單節點正常與資源不符工作、控制服務復原、拓撲及資源取捨 |
+| [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、正常與兩種條件不符案例 |
+| [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 已完成：C++ 工具、C 序列版、本機 MPI 分工及單節點 Slurm 兩 rank 工作；工作 9 的答案 `55`、退出碼 `0:0` |
+| [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 進行中：東京 `compute-gpu01` 已建立，依要求停止，私有 IP `10.146.0.3`；下一步在使用時驗證私網與共享資料 |
+| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 未開始 |
+| [6 叢集維運、監控與故障復原](curriculum/module-06.md) | 未開始 |
+| [7 效能證據與軟硬體架構取捨](curriculum/module-07.md) | 未開始 |
+| [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 |
 
-狀態依當前模組的實際驗收更新，不按日曆自動推進。模組可交錯，但未驗證的能力不可標成完成。
+依模組順序推進；目前只進行模組 04。每份模組的完成判定只看該模組約定的成果。

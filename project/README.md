@@ -4,7 +4,7 @@
 跨節點建置、MPI 工作及整合展示仍待後續模組交付。
 依[能力路線](../curriculum/ROADMAP.md)逐步完成作品。
 
-目標：在 GCP 私有網路內，以 Ansible 部署 Slurm 叢集，執行 C/MPI 工作，配合 Python 健檢、共享儲存與 Zabbix，展示部署、排程、觀測、除錯和復原能力。
+目標：在 GCP 私有網路內，以 Ansible 部署 Slurm 叢集，執行 C/MPI 工作，配合 Python 健檢、共享儲存與 Zabbix，展示部署、排程、觀測、除錯和復原能力。再用 K8s／GKE 執行適合容器的可核對工作，與 Slurm 比較工作及資源管理；對照 OpenStack 與目前 VM 供給流程。
 
 ```mermaid
 flowchart LR
@@ -28,6 +28,8 @@ flowchart LR
 | 叢集建置自動化 | inventory、roles、乾淨 VM 重建與第二次執行結果 |
 | Linux 與程式能力 | Python 健檢工具及測試、C/MPI 程式與正確性驗證 |
 | 開源維運經驗 | Slurm 操作與 Zabbix 告警、服務故障到工作恢復的紀錄 |
+| K8s／GKE | 工作定義、實際執行結果、Pod 狀態與日誌、資源清除及 Slurm 對照 |
+| OpenStack | VM、網路、映像與身分管理的供給流程對照；有可用平台時再加實際操作證據 |
 
 ## 必做驗收
 
@@ -40,10 +42,12 @@ flowchart LR
 - [ ] Python 工具有 help、結構化輸出、逾時及部分失敗處理，保留測試結果。
 - [ ] 量測至少三次，保留原始 CSV、資源配置、版本與圖表生成方式；不要求一定加速。
 - [ ] Zabbix 有持續更新的節點指標，至少一項故障可觸發且恢復告警。
+- [ ] GKE 上的 K8s 工作有可核對結果、狀態、日誌與資源清除證據；事先確認預算。
+- [ ] OpenStack 與現有 VM 供給流程有具體對照；實作範圍按是否取得平台如實標示。
 - [ ] 至少三份故障紀錄：名稱解析、工作資料路徑／權限、slurmd 停止或節點不可用。
 - [ ] README、部署手冊、操作／復原手冊與十分鐘展示完整，沒有將規劃寫成完成。
 
-若資源只能做單節點，先交付縮小版並明確標記跨節點驗收未完成。K8s 完整叢集、OpenStack 部署、GPU、RDMA、Lustre、Slurm accounting 資料庫列為後續選修，不阻塞核心作品。
+若資源只能做單節點，先交付縮小版並明確標記跨節點驗收未完成。沒有 OpenStack 平台時不能宣稱實際操作經驗。RDMA、Lustre、Slurm accounting 資料庫需有需求與相應環境才展開；GPU、Zabbix 和 GKE 已納入模組目標。
 
 ## 建議實作目錄
 

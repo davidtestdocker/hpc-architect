@@ -9,7 +9,8 @@
 | 3 | [GCC 文件](https://gcc.gnu.org/onlinedocs/)、[Open MPI 文件](https://docs.open-mpi.org/en/main/) | 編譯、rank、通訊與 Slurm 整合；以實際版本核對 |
 | 4 | [GCP 網路文件](https://docs.cloud.google.com/compute/docs/networking/network-overview)、本機 `man ip`、`man ssh`、`man exports` | 網路規則、名稱、SSH 與 NFS |
 | 5 | [Ansible 入門](https://docs.ansible.com/projects/ansible/latest/getting_started/index.html) | inventory、playbook、roles、handlers 與冪等性 |
-| 6 | [Zabbix 文件](https://www.zabbix.com/documentation/current/en/manual/quickstart) | 若採用 Zabbix，核對 host、item、trigger 與版本 |
-| 7 | [Linux CPU 拓撲](https://docs.kernel.org/arch/x86/topology.html)、[Kubernetes 概念](https://kubernetes.io/docs/concepts/)、[OpenStack 文件](https://docs.openstack.org/) | 量測解釋與技術邊界；不要求部署完整平台 |
+| 5 | [OpenStack 文件](https://docs.openstack.org/) | 對照 VM、網路、映像與身分管理的供給流程；有平台時再核對實作版本 |
+| 6 | [Zabbix 文件](https://www.zabbix.com/documentation/current/en/manual/quickstart) | 核對 host、item、trigger、event 與實際版本 |
+| 7 | [Linux CPU 拓撲](https://docs.kernel.org/arch/x86/topology.html)、[Kubernetes 概念](https://kubernetes.io/docs/concepts/)、[GKE 文件](https://cloud.google.com/kubernetes-engine/docs) | 量測解釋、K8s 工作及 GKE 資源管理；實作前核對費用與目前版本 |
 
 需要容器實作時再查 [Apptainer 指南](https://apptainer.org/docs/user/latest/)；GPU、RDMA 或平行檔案系統須有具體需求和硬體條件，才加深到安裝或調校。

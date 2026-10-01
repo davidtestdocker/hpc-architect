@@ -224,3 +224,64 @@ TERMINATED
 **判讀：** VM 已停止，未刪除 VM 或磁碟；磁碟仍保留並計費。
 下一次使用前要再啟動 VM，先確認私網與客體系統，
 再進行共享資料和 GPU 驅動驗證。
+
+## 2026-10-01：續作前確認 VM 狀態
+
+先從控制節點查 Compute Engine 上 `compute-gpu01` 的目前狀態，
+避免根據上一次的 `TERMINATED` 紀錄推測現在狀態。
+這條命令只讀雲端 VM 中繼資料，不改 VM、磁碟、服務或檔案。
+
+```bash
+gcloud compute instances describe compute-gpu01 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c \
+  --format='value(status)'
+```
+
+```text
+TERMINATED
+```
+
+**判讀：** 續作前查得 VM 仍關機；此查詢沒有改動 VM。
+
+## GPU VM 開機後：先核對客體網路位址
+
+在 `compute-gpu01` 的終端執行 `ip -br addr`，確認實際啟用的網路介面
+與客體系統取得的私有 IP，對照建機紀錄的 `10.146.0.3`。
+這條命令只讀網路狀態，不改 VM、介面、服務或檔案。
+
+```bash
+ip -br addr
+```
+
+```text
+lo               UNKNOWN        127.0.0.1/8 ::1/128
+eth0             UP             10.146.0.3/32 fe80::e8c5:bdc0:3c16:4b48/64
+```
+
+**判讀：** `eth0` 已啟用，客體私有 IPv4 `10.146.0.3`
+與建機時的位址相符。介面上的 `/32` 不代表整個 VPC 子網的大小。
+
+接著在同一台 GPU VM 查路由表，確認送往其他位址時會使用的下一跳。
+這條命令只讀，不改路由、介面或檔案。
+
+```bash
+ip route
+```
+
+```text
+default via 10.146.0.1 dev eth0 proto dhcp src 10.146.0.3 metric 100
+10.146.0.1 dev eth0 proto dhcp scope link src 10.146.0.3 metric 100
+```
+
+**判讀：** `eth0` 使用 `10.146.0.1` 作預設下一跳，來源位址為
+`10.146.0.3`。有路由只表示本機知道把封包交給誰，尚未證明控制節點可達。
+
+控制節點先前執行工作時的主機名是 `instance-20260923-104239`。
+在 GPU VM 查系統目前會把這個名稱解析成哪個位址；
+若沒有輸出或不是 `10.140.0.2`，先定位名稱解析設定，不直接假設網路故障。
+這條命令只讀，不改 DNS、`/etc/hosts` 或網路設定。
+
+```bash
+getent hosts instance-20260923-104239
+```

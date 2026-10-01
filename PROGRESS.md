@@ -7,7 +7,7 @@
 | [1 HPC 架構與單節點排程](curriculum/module-01.md) | 已完成：單節點正常與資源不符工作、控制服務復原、拓撲及資源取捨 |
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、正常與兩種條件不符案例 |
 | [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 已完成：C++ 工具、C 序列版、本機 MPI 分工及單節點 Slurm 兩 rank 工作；工作 9 的答案 `55`、退出碼 `0:0` |
-| [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 進行中：東京 `compute-gpu01` 已建立；使用者開機後在客體確認 `10.146.0.3` 與預設路由。下一步查控制節點名稱解析，兩台 VM 互通尚未驗證 |
+| [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 進行中：東京 `compute-gpu01` 對控制節點的 ICMP 可往返，完整名稱解析到 `10.140.0.2`，TCP 22 收到 OpenSSH 識別行；短名未解析。東京 Public Cloud NAT 已建立，GPU VM 對 GitHub 的 HTTPS 請求回報 HTTP `200`。SSH 登入、共享資料與跨節點工作尚未驗證 |
 | [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 未開始 |
 | [6 叢集維運、Zabbix 監控與故障復原](curriculum/module-06.md) | 未開始 |
 | [7 效能證據、K8s／GKE 與架構取捨](curriculum/module-07.md) | 未開始 |

@@ -106,160 +106,16 @@ default via 10.140.0.1 dev eth0 proto dhcp src 10.140.0.2 metric 100
 磁碟為 10 GiB `pd-balanced`。G2 要求開機磁碟至少 40 GiB，
 所以 GPU 節點不能直接複製控制節點的磁碟大小。
 
-### 配額與登入
-
-當天以控制 VM 的服務帳戶查 Compute Engine API：
-
-| 範圍 | 配額 | 上限 | 已用 |
-|---|---|---:|---:|
-| 專案全域 | `GPUS_ALL_REGIONS` | 1 | 0 |
-| 專案全域 | `CPUS_ALL_REGIONS` | 24 | 2 |
-| 台灣 `asia-east1` | `NVIDIA_L4_GPUS` | 1 | 0 |
-| 台灣 `asia-east1` | `CPUS` | 100 | 2 |
-| 台灣 `asia-east1` | `INSTANCES` | 24 | 1 |
-
-數量足以提出一張 L4、4 vCPU 的建機請求，**配額不保證即時容量**。
-[Google 官方 GPU 地點表](https://docs.cloud.google.com/compute/docs/regions-zones/gpu-regions-zones)
-列出 `asia-east1-b` 支援 G2。
-
-控制 VM 的服務帳戶只有 `compute.readonly` 等唯讀 API scope；
-起初 root 和一般帳號的 `gcloud` 都沒有使用者登入，無法建立 VM。
-之後 root 執行：
-
-```bash
-gcloud auth login --no-launch-browser
-```
-
-完成瀏覽器授權後，登入憑證保存在 root 的 gcloud 設定中；
-這條命令沒有建立 VM。授權碼與 token 沒有寫入文件。
-
-## 2026-09-30：台灣 GPU 容量測試
-
-候選節點名為 `compute-gpu01`。第一個方案是
-`g2-standard-4`（4 vCPU、16 GiB、一張 NVIDIA L4），
-同樣使用 AlmaLinux 10、`default` VPC、40 GiB `pd-balanced` 磁碟。
-不配置外部 IP 或 VM 服務帳戶；設定連續執行最多 2 小時後停止。
-成功建機會產生 VM 與磁碟費用；停止後磁碟仍計費。
-
-### G2／L4
-
-先在 `asia-east1-b` 使用以下命令：
-
-```bash
-gcloud compute instances create compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-east1-b \
-  --machine-type=g2-standard-4 \
-  --image-project=almalinux-cloud \
-  --image=almalinux-10-v20260811 \
-  --boot-disk-type=pd-balanced \
-  --boot-disk-size=40GB \
-  --network=default \
-  --subnet=default \
-  --no-address \
-  --no-service-account \
-  --no-scopes \
-  --maintenance-policy=TERMINATE \
-  --max-run-duration=2h \
-  --instance-termination-action=STOP
-```
-
-第一次送出時原命令漏了 `--no-scopes`；
-gcloud 在本機參數檢查要求它與 `--no-service-account` 一起指定，
-所以第一次沒有送出建機請求。上面是補正後實際送出的版本。
-
-補正後依序試三個 zone。後兩次只更換上述命令的 `--zone`；
-每次確認未建成才試下一個，避免建立多台 VM。
-
-| Zone | 結果 | 判讀 |
-|---|---|---|
-| `asia-east1-b` | `ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS` | G2＋L4 即時容量不足 |
-| `asia-east1-a` | 同上 | 即時容量不足 |
-| `asia-east1-c` | 同上 | 即時容量不足；另提醒 40 GiB 磁碟可能需要檢查根分割區擴展 |
-
-三次都沒有建立 VM 或磁碟；錯誤原因是容量，並非前述配額不足。
-
-### N1／T4
-
-同區域 `NVIDIA_T4_GPUS` 配額上限 1、已用 0。
-[官方 GPU 地點表](https://docs.cloud.google.com/compute/docs/regions-zones/gpu-regions-zones)
-列出 `asia-east1-a` 支援 N1＋T4，於是改試一張 T4、
-4 vCPU 的 `n1-standard-4`。網路、映像、磁碟和停止設定保持相同。
-
-```bash
-gcloud compute instances create compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-east1-a \
-  --machine-type=n1-standard-4 \
-  --accelerator=type=nvidia-tesla-t4,count=1 \
-  --image-project=almalinux-cloud \
-  --image=almalinux-10-v20260811 \
-  --boot-disk-type=pd-balanced \
-  --boot-disk-size=40GB \
-  --network=default \
-  --subnet=default \
-  --no-address \
-  --no-service-account \
-  --no-scopes \
-  --maintenance-policy=TERMINATE \
-  --max-run-duration=2h \
-  --instance-termination-action=STOP
-```
-
-| Zone | 變更 | 結果 |
-|---|---|---|
-| `asia-east1-a` | 上述命令 | `ZONE_RESOURCE_POOL_EXHAUSTED` |
-| `asia-east1-c` | 只改 `--zone=asia-east1-c` | `ZONE_RESOURCE_POOL_EXHAUSTED` |
-
-兩次都沒有建立 VM 或磁碟。當天暫停時，台灣三個 L4 zone、
-兩個 T4 zone 均無即時容量。
-當時查得東京、新加坡、首爾與孟買各有一張 L4 的區域配額；
-2026-09-30 沒有在那些區域提出建機請求。
-
 ## 2026-10-01：東京 GPU 節點建立
 
-當天確認登入有效，專案中沒有 `compute-gpu01`。
-東京 `asia-northeast1` 的配額如下：
+建成的節點是 `compute-gpu01`：`g2-standard-4`（4 vCPU、16 GiB、
+一張 NVIDIA L4），位於東京 `asia-northeast1-c`。
+使用 AlmaLinux 10、`default` VPC、40 GiB `pd-balanced` 開機磁碟；
+只配置私有 IP，不配置 VM 服務帳戶。設定單次執行最多 2 小時後停止。
+建立 VM 與磁碟會產生費用，停止後磁碟仍計費；
+東京與台灣節點間的流量也可能計費。
 
-| 配額 | 上限 | 已用 |
-|---|---:|---:|
-| `NVIDIA_L4_GPUS` | 1 | 0 |
-| `CPUS` | 100 | 0 |
-| `INSTANCES` | 24 | 0 |
-
-東京 `asia-northeast1-a` 支援 G2，因此先試該 zone。
-沿用私有 IP、無 VM 服務帳戶、40 GiB 磁碟和 2 小時停止設定。
-若成功，會建立付費 VM 與磁碟；跨東京與台灣的流量也可能計費。
-
-### 第一次：`asia-northeast1-a`
-
-```bash
-gcloud compute instances create compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-northeast1-a \
-  --machine-type=g2-standard-4 \
-  --image-project=almalinux-cloud \
-  --image=almalinux-10-v20260811 \
-  --boot-disk-type=pd-balanced \
-  --boot-disk-size=40GB \
-  --network=default \
-  --subnet=default \
-  --no-address \
-  --no-service-account \
-  --no-scopes \
-  --maintenance-policy=TERMINATE \
-  --max-run-duration=2h \
-  --instance-termination-action=STOP \
-  --quiet
-```
-
-回報 `ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS`：
-這個 zone 當下沒有 G2＋L4 容量，沒有建立 VM。
-錯誤訊息建議改試 `asia-northeast1-c` 或 `asia-northeast1-b`。
-
-### 第二次：`asia-northeast1-c`
-
-只改 zone，其餘設定相同：
+### 建立命令與結果
 
 ```bash
 gcloud compute instances create compute-gpu01 \
@@ -281,15 +137,14 @@ gcloud compute instances create compute-gpu01 \
   --quiet
 ```
 
-這次建立成功。建機輸出的必要欄位：
+建機成功。輸出的必要欄位：
 
 ```text
 NAME           ZONE               MACHINE_TYPE   INTERNAL_IP  EXTERNAL_IP  STATUS
 compute-gpu01  asia-northeast1-c  g2-standard-4  10.146.0.3               RUNNING
 ```
 
-40 GiB 磁碟大於映像原本的 10 GiB；gcloud 提醒日後要進入 VM
-確認根分割區是否自動擴展。這不是建機失敗。
+映像原本為 10 GiB；日後進入 VM 時，要確認根分割區是否擴展至 40 GiB。
 
 ### 建立後核對
 

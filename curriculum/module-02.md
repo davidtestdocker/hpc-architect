@@ -1,234 +1,120 @@
 # 模組 02：Linux 問題判斷與 Python 健檢工具
 
-[能力路線](ROADMAP.md)｜職缺核心：Linux 使用與程式開發；支撐能力：獨立診斷叢集節點。
+[能力路線](ROADMAP.md)｜職缺核心：Linux 與程式開發；支撐能力：獨立診斷節點。
 
-## 先教會的概念
+## 目前成果
 
-程序是一次執行中的程式，服務是由系統管理並可能長期運行的程序。退出狀態表示命令是否按約定成功；管線中的最後一個成功不保證前面的步驟成功。路徑存取要逐層通過目錄權限；sudo 授權與普通工作帳號能否讀寫資料是兩回事。主機總資源、程序的 ulimit 和 cgroup 配額是不同層的限制，不能看到 free 記憶體就斷言某工作一定能跑。這些概念只對照實際健檢需求補教，不重做無意義的純指令練習。
+| 項目 | 已驗證的結果 |
+|---|---|
+| 程式 | [node_preflight.py](../project/healthcheck/node_preflight.py) 與 [使用說明](../project/healthcheck/README.md) 已建立 |
+| 執行環境 | AlmaLinux VM 的 Python 3.12.14；程式使用標準函式庫 |
+| 正常案例 | 工作帳號 `a2264`、可存取目錄、1 CPU／256 MiB：`pass` |
+| 條件不符 | 請求 3 CPU 超過節點設定 2 CPU：`fail`；`a2264` 無法存取 `/root`：`fail` |
+| 尚未實測 | `unknown` 分支及無效參數退出碼的 VM 實例 |
 
-Python CLI 要有清楚的輸入、穩定的輸出格式、退出狀態和錯誤分類。「條件不符」與「檢查本身失敗」不同；部分節點無回應不能把全部結果寫成 OK。實際使用時要看每項證據，不能只憑一次成功結果推論其他情況也正常。
+**`pass` 是提交前檢查通過，不保證 Slurm 當下能排到工作。**
+CPU 與記憶體比較的是節點設定總量，不是剩餘可用量。
 
-例：指定的資料路徑確實不存在是「條件不符」；工具連權限資訊都讀不到是「無法判斷」。兩者都不能輸出 OK，但後續處理方式不同。
+## 這支程式解決什麼問題
 
-## 指令先講清楚，再操作
+在提交 Slurm 工作前，使用工作帳號執行健檢 CLI，
+讓它檢查工作目錄、節點狀態、CPU 和記憶體需求。
+它只讀取權限與 Slurm 資料，不提交工作或修改服務。
 
-首次用到時說明 id／namei -l 查身分和路徑每一層，ulimit -a 與 /proc/self/cgroup 查程序及 cgroup 邊界，df／findmnt 查檔案系統；它們觀察的層次不同。python3 --version 查直譯器，工具的 --help 應說明參數。只有當檢查邏輯需要某命令時才使用；環境與版本確定後再寫本次精確指令。
+| 輸入 | 用途 |
+|---|---|
+| `--node` | 要查的 Slurm 節點 |
+| `--path` | 工作將使用的目錄；以執行程式的帳號判斷權限 |
+| `--cpus`、`--memory-mib` | 工作需要的 CPU 數與記憶體 MiB |
 
-## 實作主線與過關證據
+結果輸出一行 JSON。先看整體 `status`，再看 `checks` 中各項原因：
 
-在 project/healthcheck/ 做一個可重跑的 Python 工具：接受工作路徑與資源需求，回報觀察值、限制來源和判定；輸出 JSON 供後續監控使用。使用 argparse、例外處理、逾時與明確退出碼；檢查命令失敗時保留錯誤訊息但不洩漏秘密。用真實 VM 查看正常結果，並以資源需求超額和工作目錄不可存取兩種情況核對失敗原因；不建立純測試目錄或施加高記憶體負載。
+| `status` | 意思 |
+|---|---|
+| `pass` | 列出的檢查都通過 |
+| `fail` | 至少一項明確不符 |
+| `unknown` | 沒有已知不符，但資料不足或檢查失敗，不能判定可執行 |
 
-過關需有原始碼、使用說明與真實 VM 的正常及失敗結果；程式至少能區分可執行、條件不符、無法判斷三類。能說明每個判定由什麼證據支持，以及哪些情況工具不能保證。Git 只在管理這個真實程式時教分支、提交和回復，不拿現有工作樹的其他變更練習。
+例如目錄確定不存在是 `fail`；連權限資料都讀不到則是 `unknown`。
+若有一項確定失敗，即使另一項查詢逾時，整體仍是 `fail`，
+細項保留逾時原因。
+程式保留退出碼 `2` 給無效命令列參數，`unknown` 使用 `3`；
+此區分已寫進程式與說明，但沒有留下 VM 上的分支實測。
 
-開始帶練前，先在本文件追加本次確定的 VM 指令、目的及檔案影響；執行後才記錄輸出與判讀。
+### 用到的概念與檢查工具
 
-## 第一次帶練：確認 Python 執行環境
+程序是正在執行的程式；服務通常由系統管理並長期運作。
+退出碼表示命令如何結束，管線最後一步成功不代表前面也成功。
+路徑存取要通過每一層目錄權限，root 可讀不代表工作帳號可讀。
+主機總資源、程序 `ulimit` 和 cgroup 配額也是不同限制。
 
-本模組要把現有單節點 Slurm 環境的健檢需求做成可重跑的 Python CLI。
-開始寫程式前，先確認 VM 上的 Python 版本，才能選擇相容的標準函式庫用法；
-目前不安裝套件，也不建立虛擬環境。
+| 指令 | 用途 | 限制 |
+|---|---|---|
+| `id`、`namei -l` | 查使用者身分與目錄逐層權限 | root 的結果不能代替工作帳號 |
+| `ulimit -a`、`/proc/self/cgroup` | 查程序與 cgroup 邊界 | 不等於 Slurm 分配結果 |
+| `df`、`findmnt` | 查容量與掛載 | 掛載存在仍須驗證權限 |
+| `python3 --version` | 確認直譯器版本 | 不驗證程式功能 |
+| `sinfo -N -h -n ... -o ...` | 讀 Slurm 節點設定值 | 不表示當下剩餘資源 |
 
-第一條確定要在 VM 執行的指令是 `python3 --version`。
-它只印出 `python3` 直譯器版本，不建立或修改檔案，
-不影響 Slurm、MUNGE、其他服務或雲端資源。
-收到實際輸出後再決定工具的檔案結構與實作方式。
+只在檢查邏輯需要時使用這些工具；上表不表示全部都已在本模組執行。
 
-實際執行與輸出：
+## VM 上的必要輸入資料
 
-```console
-# python3 --version
+確認 Python 版本的唯讀命令與結果：
+
+```text
+$ python3 --version
 Python 3.12.14
 ```
 
-VM 已有 Python 3.12.14；本工具可先使用標準函式庫，不需為此安裝套件。
+健檢程式從 Slurm 讀取節點名、狀態、CPU 與記憶體設定值。
+在這台 VM 使用下列唯讀格式查詢：
 
-## 第二次帶練：確認 Slurm 節點資料
-
-健檢程式需要用結構化欄位讀取排程器看到的節點狀態，而非解析給人看的表格。
-JSON 是以欄位名稱與值表示資料的格式；先看這台 VM 的實際輸出，
-再決定程式要讀哪些欄位及如何處理缺欄位。
-
-本次確定要在 VM 執行的指令是
-`scontrol --json show node instance-20260923-104239`。
-`show node` 讀取指定節點的 Slurm 資料，`--json` 要求 JSON 輸出。
-此指令不建立或修改檔案，也不變更節點、工作、服務或雲端資源。
-收到實際輸出後，才記錄有用欄位並設計 CLI 的判斷。
-
-實際執行與輸出：
-
-```console
-# scontrol --json show node instance-20260923-104239
-scontrol: fatal: serializer_required: could not find plugin for application/json
+```bash
+sinfo -N -h -n instance-20260923-104239 -o '%N|%T|%c|%m'
 ```
 
-這個 `scontrol` 無法載入 JSON 序列化外掛，因此沒有取得節點資料。
-先用 Slurm 現有的自訂輸出格式讀取需要的欄位，不為健檢工具額外安裝外掛。
-
-下一條確定要在 VM 執行的指令是
-`sinfo -N -h -n instance-20260923-104239 -o '%N|%T|%c|%m'`。
-`-N` 按節點列出、`-h` 不印表頭、`-n` 指定節點，`-o` 指定欄位：
-節點名、完整狀態、設定 CPU 數及設定記憶體 MiB。
-豎線作欄位分隔，供之後的程式辨識；數量是 Slurm 的節點設定值，
-不是當下可分配給工作的剩餘量。
-這條指令只讀取排程資訊，不建立或修改檔案，也不影響服務或雲端資源。
-
-實際執行與輸出：
-
-```console
-# sinfo -N -h -n instance-20260923-104239 -o '%N|%T|%c|%m'
+```text
 instance-20260923-104239|idle|2|3000
 ```
 
-Slurm 目前回報此節點為 `idle`，設定總量為 2 CPU、3000 MiB 記憶體。
-這些數字足以判斷「需求是否超過節點設定」，不能保證工作當下有足夠剩餘資源，
-也不能代替分區限制與實際 `srun`／`sbatch` 驗證。
+當時節點為 `idle`，設定總量為 2 CPU、3000 MiB。
+這些數值只支持「需求是否超過設定總量」的判斷。
 
-## 健檢 CLI 第一版
+## 部署與實測
 
-### 這支程式是什麼、怎麼用
+原始碼放在專案中；工作帳號無法穿越 `/root` 讀取它，
+所以在 VM 上複製一份到 `/home/a2264`：
 
-[node_preflight.py](../project/healthcheck/node_preflight.py) 是提交 Slurm 工作前的簡單檢查表。
-你給它工作目錄、指定節點和資源需求，它會找出明顯的阻礙；它不會提交工作。
-例如，讓工作帳號 `a2264` 檢查一個需要 1 CPU、256 MiB 記憶體的工作：
+```bash
+install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py
+```
+
+這會建立或覆蓋工作帳號可讀的部署副本，不修改 Slurm 或雲端資源。
+以下三個案例都以 `a2264` 身分執行，從 JSON 擷取的必要結果列於表中。
 
 ```bash
 sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 1 --memory-mib 256
 ```
 
-`sudo -iu a2264` 讓目錄權限按工作帳號判斷；`--node` 是要查的節點，
-`--path` 是工作目錄，`--cpus` 和 `--memory-mib` 是這份工作的需求。
-程式接著查四件事：
-
-1. `a2264` 能不能讀、寫、進入 `/home/a2264`。
-2. Slurm 回報的節點狀態：`idle` 通過；`mixed` 無法判斷；其他狀態不通過。
-   不通過不一定是節點故障，也可能只是節點正在被使用。
-3. CPU 需求有沒有超過節點的設定總量。
-4. 記憶體需求有沒有超過節點的設定總量。
-
-結果是一行 JSON：先看 `status`，再看 `checks` 中各項的原因。
-`pass` 表示這些檢查都通過；`fail` 表示至少一項明確不符；
-`unknown` 表示沒有已知不符，但有資料查不到或不足以判斷。
-例如目錄已知不存在且 Slurm 查詢逾時，整體是 `fail`，`checks` 仍會保留查詢逾時的原因。
-
-CPU 和記憶體比較的是節點**設定總量**，不是當下剩餘量。
-`pass` 不代表工作一定排得上；實際結果仍要看 Slurm 排程。
-
-### 實際帶練與證據
-
-已建立 [程式](../project/healthcheck/node_preflight.py)、
-[使用說明](../project/healthcheck/README.md)。
-以下保留 VM 上實際執行的命令、輸出與判讀；完整參數及退出碼見使用說明。
-
-在 VM 上用工作帳號驗證前，先將程式複製到它可讀取的位置。
-下一條確定要在 VM 執行的指令是
-`install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py`。
-它建立或覆蓋 `/home/a2264/node_preflight.py`，內容取自版本庫中的程式；
-不執行程式、不修改 Slurm／MUNGE 服務，也不新增雲端資源。
-日後更新程式可用同一條指令重新複製，移除部署檔即可復原。
-
-實際執行：
-
-```console
-# install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py
-#
+```bash
+sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 3 --memory-mib 256
 ```
 
-指令沒有錯誤輸出，已在 `/home/a2264/` 部署第一版程式；
-此步尚未驗證 `a2264` 執行結果。
-
-依學員要求，原始程式的每個函式已補中文用途註解，
-並將此要求寫入 `AGENTS.md`。部署檔仍是註解更新前的版本，
-下一條確定要在 VM 執行的指令仍是
-`install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py`。
-這次會覆蓋同一檔案，使部署檔與專案原始碼一致；
-不執行程式、不變更服務或雲端資源，必要時可移除部署檔復原。
-
-實際再次執行：
-
-```console
-# install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py
+```bash
+sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /root --cpus 1 --memory-mib 256
 ```
 
-指令沒有錯誤輸出，部署檔已更新為含每個函式中文註解的版本。
+| 工作目錄 | 請求 | 實際 `status` | 重要 `checks` 欄位與判讀 |
+|---|---|---|---|
+| `/home/a2264` | 1 CPU、256 MiB | `pass` | `effective_uid=1000`；目錄可進入、節點 `idle`、1 ≤ 2 CPU、256 ≤ 3000 MiB |
+| `/home/a2264` | 3 CPU、256 MiB | `fail` | `cpus=fail`：需求 3 大於節點設定 2 |
+| `/root` | 1 CPU、256 MiB | `fail` | `work_directory=fail`：`a2264` 無法讀寫並進入 `/root` |
 
-下一條確定要在 VM 執行的指令是
-`sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 1 --memory-mib 256`。
-`sudo -iu a2264` 使檢查以工作使用者身分執行；`--node` 指定 Slurm 節點，
-`--path` 是要檢查的工作目錄，`--cpus` 與 `--memory-mib` 是本次工作需求。
-程式會印出一行 JSON 並用退出碼表示結果；這次只讀取目錄權限與 Slurm 資料，
-不建立或修改檔案、不提交工作、不變更服務或雲端資源。
+這兩個 `fail` 是刻意驗證工具能辨認真實的不符合條件，
+不是部署失敗。測試沒有建立假目錄或提交新工作。
 
-實際執行與輸出：
+## 完成範圍
 
-```console
-# sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 1 --memory-mib 256
-{"checks": [{"detail": "目前使用者可讀寫並進入工作目錄", "name": "work_directory", "status": "pass"}, {"detail": "idle", "name": "node_state", "status": "pass"}, {"detail": "需求 1；節點設定 2", "name": "cpus", "status": "pass"}, {"detail": "需求 256；節點設定 3000", "name": "memory_mib", "status": "pass"}], "effective_uid": 1000, "node": "instance-20260923-104239", "observed": {"cpus": 2, "memory_mib": 3000, "name": "instance-20260923-104239", "state": "idle"}, "path": "/home/a2264", "requested": {"cpus": 1, "memory_mib": 256}, "status": "pass"}
-```
-
-`checks` 四項均為 `pass`：
-工作目錄可讀寫並進入、節點為 `idle`、CPU 需求 1 ≤ 設定 2、
-記憶體需求 256 MiB ≤ 設定 3000 MiB。
-`effective_uid=1000` 表示以工作帳號執行，而非用 root 權限測路徑。
-這只是工作前檢查，沒有提交排程工作，也不保證後續一定獲得資源。
-
-下一條確定要在 VM 執行的指令是
-`sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 3 --memory-mib 256`。
-只把 CPU 需求改成 3，超過節點設定的 2 CPU；
-這與模組 01 中工作 5 因 3 CPU 需求進入 `PartitionConfig` 待排狀態的經驗對應。
-本次仍只讀取工作目錄和 Slurm 資料，不提交工作、修改檔案、服務或雲端資源。
-
-實際執行與輸出：
-
-```console
-# sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /home/a2264 --cpus 3 --memory-mib 256
-{"checks": [{"detail": "目前使用者可讀寫並進入工作目錄", "name": "work_directory", "status": "pass"}, {"detail": "idle", "name": "node_state", "status": "pass"}, {"detail": "需求 3；節點設定 2", "name": "cpus", "status": "fail"}, {"detail": "需求 256；節點設定 3000", "name": "memory_mib", "status": "pass"}], "effective_uid": 1000, "node": "instance-20260923-104239", "observed": {"cpus": 2, "memory_mib": 3000, "name": "instance-20260923-104239", "state": "idle"}, "path": "/home/a2264", "requested": {"cpus": 3, "memory_mib": 256}, "status": "fail"}
-```
-
-目錄、節點狀態與記憶體仍通過；`cpus` 明確指出需求 3 高於節點設定 2，
-所以整體為 `fail`。這與先前工作 5 的排程結果一致，但本次沒有提交新工作。
-
-下一條確定要在 VM 執行的指令是
-`sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /root --cpus 1 --memory-mib 256`。
-它保持可符合節點設定的資源需求，只把工作目錄換成現有的 `/root`，
-用 `a2264` 身分檢查實際路徑權限。
-這是唯讀檢查；不建立或修改 `/root`、其他檔案、服務或雲端資源。
-
-實際執行與輸出：
-
-```console
-# sudo -iu a2264 python3 /home/a2264/node_preflight.py --node instance-20260923-104239 --path /root --cpus 1 --memory-mib 256
-{"checks": [{"detail": "目前使用者無法讀寫並進入工作目錄", "name": "work_directory", "status": "fail"}, {"detail": "idle", "name": "node_state", "status": "pass"}, {"detail": "需求 1；節點設定 2", "name": "cpus", "status": "pass"}, {"detail": "需求 256；節點設定 3000", "name": "memory_mib", "status": "pass"}], "effective_uid": 1000, "node": "instance-20260923-104239", "observed": {"cpus": 2, "memory_mib": 3000, "name": "instance-20260923-104239", "state": "idle"}, "path": "/root", "requested": {"cpus": 1, "memory_mib": 256}, "status": "fail"}
-```
-
-`a2264` 無法讀寫並進入 `/root`，因此工作目錄檢查與整體狀態為 `fail`；
-其餘節點與資源條件仍為 `pass`。這是實際路徑權限的驗證，沒有改動 `/root`。
-
-收尾檢查發現原程式用退出碼 2 表示 `unknown`，而 argparse 也用 2 表示
-無效命令列參數，呼叫者無法只靠退出碼區分。
-已將 `unknown` 改為退出碼 3，保留 2 給無效參數，
-並在使用說明中明確記錄；`pass` 和 `fail` 的判斷邏輯沒有改變。
-
-下一條確定要在 VM 執行的指令是
-`install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py`。
-它將更新過的退出碼邏輯覆蓋到既有部署檔；不執行程式、不修改 Slurm／MUNGE、
-不新增雲端資源。需要復原時可移除 `/home/a2264/node_preflight.py`，
-專案原始碼仍保留於版本庫工作區。
-
-實際執行：
-
-```console
-# install -o a2264 -g a2264 -m 0644 /root/hpc-arch/project/healthcheck/node_preflight.py /home/a2264/node_preflight.py
-```
-
-沒有錯誤輸出，更新版程式已部署至 `/home/a2264/node_preflight.py`。
-本次更新只改 `unknown` 退出碼及註解，先前 VM 上的 `pass`／`fail` 判斷邏輯沒有變。
-
-## 模組 02 完成判定
-
-[健檢程式](../project/healthcheck/node_preflight.py)、
-[使用說明](../project/healthcheck/README.md)已交付。
-VM 實例證明 `a2264` 的正常路徑與 1 CPU／256 MiB 需求可通過前置檢查；
-3 CPU 需求與 `/root` 權限不符會分別指出失敗原因。
-`unknown` 分支與無效參數的退出碼區分沒有留下 VM 實例證據，
-因此本模組的實測結論只涵蓋上述正常與兩種失敗情況。
-此工具的 `pass` 代表列出的前置檢查通過，實際工作排程仍以 Slurm 執行結果為準。
+程式、使用說明、正常與兩種條件不符的 VM 證據已交付。
+工具能在提交前指出明顯問題；真正能否排程和完成，仍以 Slurm 工作結果為準。

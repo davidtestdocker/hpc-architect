@@ -4,10 +4,31 @@
 
 ## 這個模組在做什麼
 
-這個模組要讓台灣的控制節點和東京的 GPU 節點一起工作。
-最後要交付：兩台 VM 能互連、讀寫同一份資料，
-工作能實際跨節點執行，並確認 GPU 裝置。
-先交代為什麼建 GPU VM、連線時遇到什麼需求，再看驗證結果與實際指令。
+實際叢集的控制節點要把工作交給計算節點，計算節點還要讀到工作所需的
+程式與輸入資料，並把結果留在控制節點能取得的位置。如果兩台機器只能
+互相 `ping`，卻不能登入、找不到資料或無法執行工作，叢集仍不能使用。
+
+這個模組用台灣的控制節點與東京的 GPU 節點，處理三個實際工作問題：
+
+| 工作問題 | 本模組要交付的證據 | 對目標職缺的幫助 |
+|---|---|---|
+| 節點之間能否連線並由控制節點操作計算節點 | 私有網路連線、SSH 登入與遠端命令 | 網路設定、連線故障定位與節點管理 |
+| 工作在另一台機器上能否取得同一份輸入並留下結果 | 共享資料路徑及跨節點工作結果 | 叢集資料路徑規劃與工作部署 |
+| GPU 節點是否真的辨認到 GPU | 驅動與裝置辨認結果 | GPU 節點建置與資源驗收 |
+
+**目前已做到：** 兩台 VM 的私有網路可互通；控制節點能以 SSH 登入
+GPU VM 並執行命令；GPU VM 能連外取得軟體，驅動能辨認一張 L4。
+這些結果分別練到連線分層判斷（網路通不等於登入成功）、
+節點登入金鑰配置、無外部 IP 的出口設計，以及 GPU 節點驗收。
+共享資料與跨節點工作還沒有實作結果。
+
+**共享資料路徑**是兩台機器各自用同一個目錄位置，讀寫同一份實際資料。
+例如控制節點準備工作輸入，GPU 節點執行時讀取該輸入，完成後把結果
+寫回同一處，控制節點就能收集結果。這解決了工作換到另一台機器就
+找不到檔案、或各節點複製品不同步的問題。這會用 NFS 作第一個案例：
+一台 VM 提供資料目錄，另一台 VM 掛載後使用。它是工作資料的通道，與 SSH
+用來登入和執行遠端命令的用途不同；此處先解釋目的，尚未把共享資料
+或跨節點工作寫成已完成。
 
 ## 從跨節點工作到對外連線
 
@@ -297,10 +318,69 @@ a2264@10.146.0.3: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
 `a2264` 的登入認證也被拒絕；SSH 服務有回應，問題位於認證階段。
 控制節點後續 `ping` GPU VM 三次皆收到回覆，但 SSH 已回報認證拒絕；
 這個 ICMP 結果沒有改變故障定位。
-下列 GPU 驅動操作是從 GPU VM 自己的終端執行，
-不是控制節點透過 SSH 遠端執行。
+
+### 修復登入並驗證遠端執行
+
+控制節點的 `root` 只有 `known_hosts`，`a2264` 的 `.ssh` 目錄只有
+`authorized_keys`；兩者都沒有可用於登入 GPU VM 的私鑰。
+因此在控制節點替 `a2264` 建立專用金鑰，再把**公鑰**加入
+`compute-gpu01` 的執行個體中繼資料；原有的專案共用 SSH 金鑰未修改。
+
+在控制節點建立金鑰：
+
+```bash
+sudo -u a2264 -- ssh-keygen -t ed25519 -N '' \
+  -f /home/a2264/.ssh/hpc_gpu_ed25519 \
+  -C a2264@instance-20260923-104239
+```
+
+輸出確認私鑰位於 `/home/a2264/.ssh/hpc_gpu_ed25519`，
+公鑰位於同名 `.pub` 檔，指紋為
+`SHA256:AMM2zBstxpEzT/150e/m12tGzgOEC6dt+pQ51rgWpWw`。
+私鑰只留在控制節點。
+
+把公鑰整理成 `a2264:ssh-ed25519 ...` 的執行個體中繼資料格式；
+這條命令沒有終端輸出：
+
+```bash
+awk '{print "a2264:" $0}' /home/a2264/.ssh/hpc_gpu_ed25519.pub \
+  > /tmp/compute-gpu01-a2264-ssh-keys-20261003
+```
+
+只更新 GPU VM 的 `ssh-keys` 執行個體中繼資料：
+
+```bash
+gcloud compute instances add-metadata compute-gpu01 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c \
+  --metadata-from-file=ssh-keys=/tmp/compute-gpu01-a2264-ssh-keys-20261003 \
+  --quiet
+```
+
+```text
+Updated [https://www.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
+```
+
+最後從控制節點以 `a2264` 身分登入並執行遠端命令：
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 \
+  -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
+  -o ConnectTimeout=5 a2264@10.146.0.3 hostname
+```
+
+```text
+Warning: Permanently added '10.146.0.3' (ED25519) to the list of known hosts.
+compute-gpu01
+```
+
+`compute-gpu01` 是 GPU VM 回傳的主機名；控制節點現已能以
+`a2264` 金鑰登入 GPU VM 並執行遠端命令。
 
 ## 確認 GPU VM 能否辨認裝置
+
+以下 GPU 驅動操作當時從 GPU VM 自己的終端執行，
+不是控制節點透過 SSH 遠端執行。
 
 在 GPU VM 執行 NVIDIA 驅動提供的 `nvidia-smi -L`，
 列出驅動目前辨認到的 GPU 型號與識別碼。
@@ -367,61 +447,3 @@ GPU 0: NVIDIA L4 (UUID: GPU-a04f3d30-d585-9db4-0b68-795091a5d8ce)
 ```
 
 NVIDIA 驅動已能辨認一張 L4，且一般帳號 `a2264` 能讀到裝置資訊。
-
-## 控制節點 SSH 登入修復
-
-控制節點的 `root` 只有 `known_hosts`，`a2264` 的 `.ssh` 目錄只有
-`authorized_keys`；兩者都沒有可用於登入 GPU VM 的私鑰。
-因此在控制節點替 `a2264` 建立專用金鑰，再把**公鑰**加入
-`compute-gpu01` 的執行個體中繼資料；原有的專案共用 SSH 金鑰未修改。
-
-在控制節點建立金鑰：
-
-```bash
-sudo -u a2264 -- ssh-keygen -t ed25519 -N '' \
-  -f /home/a2264/.ssh/hpc_gpu_ed25519 \
-  -C a2264@instance-20260923-104239
-```
-
-輸出確認私鑰位於 `/home/a2264/.ssh/hpc_gpu_ed25519`，
-公鑰位於同名 `.pub` 檔，指紋為
-`SHA256:AMM2zBstxpEzT/150e/m12tGzgOEC6dt+pQ51rgWpWw`。
-私鑰只留在控制節點。
-
-把公鑰整理成 `a2264:ssh-ed25519 ...` 的執行個體中繼資料格式；
-這條命令沒有終端輸出：
-
-```bash
-awk '{print "a2264:" $0}' /home/a2264/.ssh/hpc_gpu_ed25519.pub \
-  > /tmp/compute-gpu01-a2264-ssh-keys-20261003
-```
-
-只更新 GPU VM 的 `ssh-keys` 執行個體中繼資料：
-
-```bash
-gcloud compute instances add-metadata compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-northeast1-c \
-  --metadata-from-file=ssh-keys=/tmp/compute-gpu01-a2264-ssh-keys-20261003 \
-  --quiet
-```
-
-```text
-Updated [https://www.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
-```
-
-最後從控制節點以 `a2264` 身分登入並執行遠端命令：
-
-```bash
-sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 \
-  -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
-  -o ConnectTimeout=5 a2264@10.146.0.3 hostname
-```
-
-```text
-Warning: Permanently added '10.146.0.3' (ED25519) to the list of known hosts.
-compute-gpu01
-```
-
-`compute-gpu01` 是 GPU VM 回傳的主機名；控制節點現已能以
-`a2264` 金鑰登入 GPU VM 並執行遠端命令。

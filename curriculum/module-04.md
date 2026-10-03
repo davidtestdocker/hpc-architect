@@ -281,3 +281,120 @@ root@10.146.0.3: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
 
 控制節點當時以 `root` 帳號嘗試登入；GPU VM 的 SSH 服務有回應，
 但拒絕了這個帳號提供的認證。主機金鑰已寫入控制節點的 `~/.ssh/known_hosts`。
+
+專案 SSH 登入設定列有帳號 `a2264`。在控制節點改用該帳號測試登入，
+成功時讓 GPU VM 回傳主機名。`BatchMode=yes` 不詢問密碼；
+命令不改 VM 設定或檔案，GPU VM 可能記錄一次登入嘗試。
+
+```bash
+ssh -o BatchMode=yes -o ConnectTimeout=5 a2264@10.146.0.3 hostname
+```
+
+```text
+a2264@10.146.0.3: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
+```
+
+`a2264` 的登入認證也被拒絕；SSH 服務有回應，問題位於認證階段。
+
+## 從控制節點測試 GPU VM 的私有 IP
+
+在控制節點向 GPU VM `10.146.0.3` 送出三個 ICMP 測試封包，
+檢查控制節點發起的私有網路連線。這只產生少量封包，不改 VM 或檔案。
+
+```bash
+ping -c 3 -W 2 10.146.0.3
+```
+
+```text
+PING 10.146.0.3 (10.146.0.3) 56(84) bytes of data.
+64 bytes from 10.146.0.3: icmp_seq=1 ttl=64 time=35.8 ms
+64 bytes from 10.146.0.3: icmp_seq=2 ttl=64 time=35.0 ms
+64 bytes from 10.146.0.3: icmp_seq=3 ttl=64 time=35.3 ms
+
+--- 10.146.0.3 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 34.993/35.368/35.820/0.341 ms
+```
+
+控制節點送出的三個封包都收到 GPU VM 回覆，遺失率 `0%`，
+平均往返時間約 `35.4 ms`。
+
+## 確認 GPU VM 能否辨認裝置
+
+在 GPU VM 執行 NVIDIA 驅動提供的 `nvidia-smi -L`，
+列出驅動目前辨認到的 GPU 型號與識別碼。
+這條命令只讀，不修改 VM 設定；若工具不存在或驅動無法工作，
+輸出會指出下一步需查的是工具或驅動。
+
+```bash
+nvidia-smi -L
+```
+
+```text
+-bash: nvidia-smi: command not found
+```
+
+目前系統找不到 `nvidia-smi` 指令。這是工具可用性的結果，
+接著直接查 PCI 裝置，確認 GPU 硬體是否呈現在 VM 裡。
+
+Linux 在 `/sys/bus/pci/devices/` 列出目前辨認到的 PCI 裝置；
+每個 `vendor` 檔案記錄廠商代碼，`0x10de` 代表 NVIDIA。
+在 GPU VM 讀取這些檔案並尋找 NVIDIA 代碼，不修改裝置或設定。
+
+```bash
+grep -H '^0x10de$' /sys/bus/pci/devices/*/vendor
+```
+
+```text
+/sys/bus/pci/devices/0000:00:03.0/vendor:0x10de
+```
+
+VM 的 PCI 清單中有一個 NVIDIA 裝置（`0000:00:03.0`）。
+硬體已呈現在客體系統裡；下一步需安裝驅動與 `nvidia-smi` 工具，
+讓 GPU 能實際供計算程式使用。
+
+## GPU 驅動安裝
+
+已在 GPU VM 安裝套件庫設定包 `almalinux-release-nvidia-driver-10-5.el10_1.x86_64`；
+本次一併安裝 `epel-release-10-6.el10.noarch`、
+`selinux-policy-extra-42.1.18-4.el10_2.3.noarch`、
+`selinux-policy-targeted-extra-42.1.18-4.el10_2.2.noarch`。
+套件交易回報 `Complete!`。
+
+GPU VM 的驅動安裝交易回報 `Complete!`；與 GPU 使用直接相關的已安裝套件：
+
+| 套件 | 版本 |
+|---|---|
+| `nvidia-open-kmod`、`kmod-nvidia-open` | `615.71.09-1.el10_2` |
+| `nvidia-driver`、`nvidia-driver-cuda` | `3:615.71.09-1.el10` |
+
+安裝後要重開 GPU VM，讓新驅動隨開機載入；這會暫時中斷
+GPU VM 的終端連線，不影響控制節點或雲端網路設定。
+
+```bash
+reboot
+```
+
+`reboot` 沒有可保存的終端輸出；重新進入 GPU VM 後，`a2264` 執行：
+
+```bash
+nvidia-smi -L
+```
+
+```text
+GPU 0: NVIDIA L4 (UUID: GPU-a04f3d30-d585-9db4-0b68-795091a5d8ce)
+```
+
+NVIDIA 驅動已能辨認一張 L4，且一般帳號 `a2264` 能讀到裝置資訊。
+
+## 共享資料前核對帳號身分
+
+NFS（網路檔案系統）讓 GPU VM 經由網路讀寫控制節點上的同一份檔案。
+共享檔案的權限依 UID/GID 數字判斷；兩台 VM 的帳號名稱相同，
+仍要核對數字是否相符。控制節點先前記錄的 `a2264` UID 為 `1000`、
+GID 為 `1005`。在 GPU VM 目前的 `a2264` 終端執行下列只讀命令，
+查看實際 UID、GID 與附加群組；不修改帳號或檔案。
+
+```bash
+id
+```

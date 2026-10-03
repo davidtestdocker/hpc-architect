@@ -21,7 +21,6 @@ GPU VM 用私有 IP `ping` 控制節點收到三次回覆，完整名稱解析�
 控制節點短主機名在 GPU VM 上仍查不到。
 東京 Public Cloud NAT 已建立，GPU VM 對 GitHub 的 HTTPS HEAD 請求
 回報 HTTP `200`。尚未驗證 SSH 登入、共享資料或跨節點工作。
-歷史上曾停止 GPU VM；那次 `TERMINATED` 輸出不是現在的狀態。
 
 ## 要驗證的工作路徑
 
@@ -44,7 +43,7 @@ NFS 讓兩台 VM 使用同一份檔案，但有單點故障與效能限制。
 以及 GPU 裝置辨認；單卡 VM 不代表多卡互連或 RDMA 已驗證。
 可重跑設定與拓撲決策放在 [project/docs/](../project/docs/)。
 
-## 2026-09-30：控制節點基線
+## 控制節點的網路基線
 
 專案為 `project-78b8a95c-a2c0-461f-a08`。
 控制節點位於台灣 `asia-east1-b`，使用 `default` VPC。
@@ -80,7 +79,7 @@ default via 10.140.0.1 dev eth0 proto dhcp src 10.140.0.2 metric 100
 `default` VPC 的 `asia-east1/default` 子網，子網 CIDR 為
 `10.140.0.0/20`。
 
-## 2026-10-01：東京 GPU 節點建立
+## 東京 GPU 節點的配置
 
 建成的節點是 `compute-gpu01`：`g2-standard-4`（4 vCPU、16 GiB、
 一張 NVIDIA L4），位於東京 `asia-northeast1-c`。
@@ -148,45 +147,10 @@ gcloud compute instances describe compute-gpu01 \
 **判讀：** 查詢當時為 `RUNNING`，私有 IP `10.146.0.3`，
 回傳沒有外部 IP 或服務帳戶欄位。開機磁碟為 40 GiB；
 `autoDelete: true` 表示刪除 VM 時會刪除該磁碟。
-`7200` 秒與 `STOP` 是當時查得的單次執行限制及到時動作，
-不能用這次建立後的查詢結果代表現在的 VM 狀態。
+`7200` 秒與 `STOP` 是單次執行上限及到時動作，避免運算資源無限期運行。
+這份建立後的查詢僅證明當時配置，不代表目前的 VM 狀態。
 
-## 2026-10-01：依要求停止 VM
-
-建機後當天先停止 VM，以免繼續累積運算費；
-這個操作保留開機磁碟，日後可再啟動。
-
-```bash
-gcloud compute instances stop compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-northeast1-c \
-  --quiet
-```
-
-停止命令的完成訊息：
-
-```text
-Updated [https://compute.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
-```
-
-再以唯讀命令核對：
-
-```bash
-gcloud compute instances describe compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-northeast1-c \
-  --format='value(status)'
-```
-
-```text
-TERMINATED
-```
-
-**判讀：** VM 已停止，未刪除 VM 或磁碟；磁碟仍保留並計費。
-之後使用者自行開機；以下客體命令及輸出證明開機後進入過 GPU VM，
-但沒有再查 Compute Engine 的最新 `status`。
-
-## GPU VM 開機後：先核對客體網路位址
+## GPU VM 的客體網路位址與連線
 
 在 `compute-gpu01` 的終端執行 `ip -br addr`，確認實際啟用的網路介面
 與客體系統取得的私有 IP，對照建機紀錄的 `10.146.0.3`。
@@ -336,68 +300,51 @@ SSH-2.0-OpenSSH_9.9
 這證明 SSH 服務入口當時可達；尚未驗證 `a2264` 帳號能否登入、
 金鑰是否可用，也沒有執行遠端命令。
 
-## 東京 GPU VM 對外出口
+## 東京 GPU VM 的網際網路出口
 
-### 原本缺少什麼
+### 為什麼需要 Public Cloud NAT
 
-建機命令中的 `--no-address` 讓 `compute-gpu01` 只有私有 IP
-`10.146.0.3`，沒有直接附在 VM 上的外部 IP。
-這能避免 VM 直接暴露在網際網路上，但主動連外仍需要
-把私有來源位址轉換成可在網際網路上使用的來源位址，稱為**來源位址轉換**。
-建機時沒有同時配置東京子網的 Public Cloud NAT，因此缺少這個轉換出口。
+`compute-gpu01` 的 `--no-address` 表示 VM 只有私有 IP `10.146.0.3`，
+沒有可供網際網路辨識的外部 IP。這不妨礙它用私有 IP 連上台灣控制節點，
+但要從東京 VM 主動向 GitHub 下載內容，回應必須有辦法找到這台 VM。
 
-GPU VM 原本已有客體預設下一跳 `10.146.0.1`；
-專案 `default` VPC 也有通往預設網際網路閘道的 `0.0.0.0/0` 路由。
-**有路由只表示封包知道往哪裡送**，不會替沒有外部 IP 的 VM
-完成來源位址轉換，所以當時仍無法直接連到 GitHub 下載套件。
-DNS 伺服器 `169.254.169.254` 用來解析名稱，不是對外出口。
-先前 GPU VM 能 `ping` 到控制節點，是兩台 VM 在 VPC 內用私有 IP
-互通的證據，與能否連上網際網路是兩條不同路徑。
+**NAT 是位址轉換。** GPU VM 發出 HTTPS 連線時，Google Cloud 把封包的
+來源 `10.146.0.3` 換成 NAT 使用的外部 IP，並記住這條連線對應哪台 VM。
+GitHub 回覆該外部 IP 後，Google Cloud 依連線紀錄把回應送回
+`10.146.0.3`。這裡使用的 **Public Cloud NAT** 就是 Google Cloud
+替沒有外部 IP 的 VM 提供的對外位址轉換服務。
+它只接受既有對外連線的回應，不讓網際網路主機藉此主動連入 GPU VM。
+[Google Cloud 的 Public NAT 說明](https://docs.cloud.google.com/nat/docs/public-nat)
 
-### 新增了什麼、各自做什麼
+**Cloud Router 在這裡存放 NAT 設定。** 名字雖有 Router，它不是一台需要
+登入或維護的 VM，也不是 GPU VM 封包實際穿過的設備。
+Cloud NAT 必須掛在同區域、同 VPC 的 Cloud Router 上；
+Google Cloud 的網路系統依這份設定完成位址轉換。
+[Google Cloud 的 Cloud Router 說明](https://docs.cloud.google.com/network-connectivity/docs/router/concepts/overview)
 
-已唯讀確認 GPU VM 位於 `default` VPC 的東京 `default` 子網
-`10.146.0.0/20`。建立前東京沒有 Cloud Router；
-當時該子網只有 `compute-gpu01` 一台 VM。
+GPU VM 已有客體預設下一跳 `10.146.0.1`，VPC 也有對外預設路由。
+路由決定封包往哪裡送，NAT 解決私有來源 IP 如何取得回應；
+兩者作用不同。`169.254.169.254` 則是 VM 使用的 DNS 伺服器，
+負責把 `github.com` 查成位址，並非對外出口。
 
-| 新增資源 | 位置與範圍 | 功能 |
-|---|---|---|
-| Cloud Router `gpu-egress-router` | 東京 `asia-northeast1`、`default` VPC | 承載 NAT 設定；不是 GPU VM 封包會經過的一台路由器 |
-| Public Cloud NAT `gpu-egress-nat` | 東京 `default` 子網的主要 IP 範圍 | 讓符合範圍且沒有外部 IP 的 VM 主動連外，並把回應送回原 VM |
-| NAT 自動分配的外部 IP | 指派給 NAT，不指派給 GPU VM | 對外連線使用的來源 IP；實際數值尚未在紀錄中查出 |
+### 這次資源涵蓋哪些 VM
 
-這個 NAT 範圍目前涵蓋 GPU VM；日後加入同一子網主要 IP 範圍、
-且沒有外部 IP 的 VM，也會使用它。Public Cloud NAT 只處理主動連線的回應，
-不開放網際網路上的主機主動連入 GPU VM；GPU VM 仍沒有外部 IP。
-[Cloud NAT 機制](https://docs.cloud.google.com/nat/docs/overview)
+GPU VM 位於 `default` VPC 的東京 `default` 子網 `10.146.0.0/20`。
+NAT 設定只涵蓋這個東京子網的主要 IP 範圍；台灣控制節點不在涵蓋範圍。
 
-### 從 GPU VM 連到 GitHub 的流程
+| 資源 | 設定與作用 |
+|---|---|
+| Cloud Router `gpu-egress-router` | 位於東京 `asia-northeast1` 的 `default` VPC，保存 NAT 設定 |
+| Public Cloud NAT `gpu-egress-nat` | 對東京 `default` 子網中符合條件、沒有外部 IP 的 VM 提供主動連外位址轉換 |
+| 自動分配的 NAT 外部 IP | 出站連線對外顯示的來源 IP；不直接掛在 GPU VM 上，本紀錄未查其數值 |
 
-`curl` 先由客體的 DNS 解析 `github.com`，再送出 HTTPS 連線。
-下圖的實線是主動連外路徑，虛線是回應或設定關係；
-Cloud Router 僅保存 NAT 設定，不在封包傳輸路徑上。
+`curl` 先由 DNS 查出 GitHub 位址，再依預設路由送出 HTTPS 封包。
+Google Cloud 的分散式網路在出站時套用 NAT 轉換，回應依既有連線映射
+送回 GPU VM。**Cloud Router 和 Cloud NAT 是設定資源，不是封包會依序穿過的兩台機器。**
 
-```mermaid
-flowchart LR
-    VM["GPU VM<br/>10.146.0.3<br/>無外部 IP"]
-    DNS["客體 DNS<br/>169.254.169.254"]
-    VPC["東京 default 子網<br/>下一跳 10.146.0.1<br/>VPC 預設路由"]
-    NAT["Public Cloud NAT<br/>gpu-egress-nat<br/>轉換來源位址"]
-    WEB["網際網路<br/>GitHub HTTPS"]
-    ROUTER["Cloud Router<br/>gpu-egress-router<br/>保存 NAT 設定"]
-    VM -->|"查 github.com"| DNS
-    DNS -.->|"回傳目的 IP"| VM
-    VM -->|"送出 HTTPS"| VPC
-    VPC --> NAT
-    NAT -->|"以 NAT 外部 IP 送出"| WEB
-    WEB -.->|"回應沿原連線返回"| NAT
-    NAT -.->|"還原目的位址並送回"| VM
-    ROUTER -.->|"提供設定"| NAT
-```
-
-NAT 資源會留下並持續計費；以目前一台 VM 和一個 NAT IP 估算，
-基本費用約 US$0.0064／小時，另計處理流量與對外傳輸。
-不再需要時，先刪 NAT 再刪 Router，即可撤銷對外出口及其持續費用。
+NAT 與其外部 IP 可能持續計費，也會計入處理與對外傳輸費用。
+不再需要對外出口時，可刪除 NAT 和專用 Router；
+這會影響同一 NAT 涵蓋範圍內所有符合條件的 VM。
 [Cloud NAT 計價](https://cloud.google.com/nat/pricing)
 
 ### 建立與核對紀錄

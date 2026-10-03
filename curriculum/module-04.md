@@ -4,43 +4,64 @@
 
 ## 這個模組在做什麼
 
-把獨立 GPU VM 接入現有教學叢集，檢查兩台 VM 如何找到彼此、
-能否連上服務、讀到相同資料，以及工作能否跨節點執行。
-本模組也要在 GPU VM 上辨認實際裝置，留下可核對的節點與資料證據。
+這個模組要讓台灣的控制節點和東京的 GPU 節點一起工作。
+最後要交付：兩台 VM 能互連、讀寫同一份資料，
+工作能實際跨節點執行，並確認 GPU 裝置。
+以下先說清楚兩種不同的網路需求，再列已取得的證據與實際指令。
 
-## 目前做到哪裡
+## 先看兩台 VM 和兩條連線
 
-| 節點 | 已確認的位址與位置 | 目前有的證據 |
-|---|---|---|
-| 控制節點 `instance-20260923-104239` | 台灣 `asia-east1-b`，`10.140.0.2` | 客體位址與路由輸出 |
-| GPU 節點 `compute-gpu01` | 東京 `asia-northeast1-c`，`10.146.0.3` | 建機結果；使用者開機後的客體位址與路由輸出 |
+| VM | 位置 | 私有 IP | 角色 |
+|---|---|---|---|
+| `instance-20260923-104239` | 台灣 | `10.140.0.2` | 控制節點 |
+| `compute-gpu01` | 東京 | `10.146.0.3` | GPU 節點 |
 
-**目前進度：** 已保存兩台 VM 的位址與路由輸出。
-GPU VM 用私有 IP `ping` 控制節點收到三次回覆，完整名稱解析到
-`10.140.0.2`，TCP 22 連線收到 OpenSSH 識別行；
-控制節點短主機名在 GPU VM 上仍查不到。
-東京 Public Cloud NAT 已建立，GPU VM 對 GitHub 的 HTTPS HEAD 請求
-回報 HTTP `200`。尚未驗證 SSH 登入、共享資料或跨節點工作。
+**第一條：GPU VM → 控制節點。** 兩台 VM 在同一個 Google Cloud
+虛擬網路（VPC）裡，使用各自的私有 IP 通訊。
+這條路徑用來檢查節點間連線，不需要 Public Cloud NAT。
 
-## 要驗證的工作路徑
+**第二條：GPU VM → GitHub。** GitHub 在網際網路上。
+GPU VM 沒有外部 IP，所以需要 Public Cloud NAT 幫它主動連外。
+這是下載工具所需的出口，不能拿來證明兩台 VM 能一起跑工作。
 
-控制節點要把工作交給 GPU 節點，工作還要讀得到資料。
-從「找到主機」到「工作完成」是不同關卡，不能用一條 `ping` 代替整條路徑。
+### Public Cloud NAT 和 Cloud Router 到底做什麼
 
-**下一跳**是 VM 送出封包時先交給的網路位址，不是封包的最終目的地。
-路由表的 `default via ... dev eth0` 表示：沒有更明確的路由時，
-從 `eth0` 把封包交給 `via` 後面的位址，再由網路繼續轉送。
+**NAT 是改寫連線位址的機制。** GPU VM 用私有 IP `10.146.0.3`
+發出連線；Google Cloud 把對外顯示的來源改成 NAT 的外部 IP，
+記住這條連線屬於 GPU VM，再把 GitHub 的回應送回它。
+Public Cloud NAT 只允許這種主動連線及其回應；
+外部主機不能因此主動連入 GPU VM。
+[Public NAT 官方說明](https://docs.cloud.google.com/nat/docs/public-nat)
 
-| 關卡 | 用什麼看 | 要得到的證據 |
-|---|---|---|
-| 位址與路由 | `ip -br addr`、`ip route` | 各 VM 的私有 IP、介面與下一跳；有路由不等於服務可連 |
-| 名稱與連線 | `getent hosts`、`ssh`、`ss` | 名稱解析到預期 IP、SSH 實際連線；必要時分查雲端及客體防火牆 |
-| 共享資料 | `findmnt`、`namei -l`、兩端 UID/GID | 同一路徑可讀寫，掛載與逐層權限相符 |
-| GPU 與工作 | `nvidia-smi`、實際工作輸出 | 裝置可見、工作取得資源且答案正確；看見 GPU 不等於排程已分配 |
+**Cloud Router 保存 NAT 的設定。** 建立這個 NAT 時，Google Cloud
+要求先有同一區域、同一 VPC 的 Cloud Router。
+它不是另一台 VM，也不是封包會經過的實體路由器。
+這次真正要解決「沒有外部 IP 怎麼連 GitHub」的是 Public Cloud NAT；
+Cloud Router 是放置其設定的必要資源。
+[Cloud Router 官方說明](https://docs.cloud.google.com/network-connectivity/docs/router/concepts/overview)
 
-NFS 讓兩台 VM 使用同一份檔案，但有單點故障與效能限制。
-本模組的完成證據是兩台獨立 VM 互通、共享資料讀寫、跨節點工作，
-以及 GPU 裝置辨認；單卡 VM 不代表多卡互連或 RDMA 已驗證。
+不要把名稱解析、路由和 NAT 混在一起：
+
+| 問題 | 本例的答案 |
+|---|---|
+| `github.com` 是哪個位址？ | DNS 查出目的 IP |
+| 封包先交給誰？ | VM 依路由表交給網路下一跳 `10.146.0.1` |
+| 沒有外部 IP，GitHub 的回應怎麼回來？ | Public Cloud NAT 改寫來源位址並記住連線 |
+
+## 目前取得的證據
+
+| 已驗證 | 結果代表什麼 |
+|---|---|
+| 兩台 VM 的位址與路由 | 確認各自私有 IP 和預設下一跳 |
+| GPU VM `ping` 控制節點私有 IP | 三次收到回覆；ICMP 可以往返 |
+| 查控制節點名稱 | 完整名稱解析到 `10.140.0.2`；短名稱沒有結果 |
+| 連控制節點 TCP 22 | 收到 OpenSSH 識別行；尚未測試登入 |
+| GPU VM 連 GitHub | NAT 建立後，HTTPS HEAD 請求回報 HTTP `200` |
+
+這些證據只到「網路可達」。尚未驗證 SSH 登入、兩端讀寫同一份資料、
+跨節點工作或 GPU 裝置，因此模組仍在進行中。
+要證明整條工作路徑，還需讓控制節點把工作交給 GPU 節點，
+確認工作讀到資料並產生可核對的結果。
 可重跑設定與拓撲決策放在 [project/docs/](../project/docs/)。
 
 ## 控制節點的網路基線
@@ -300,51 +321,16 @@ SSH-2.0-OpenSSH_9.9
 這證明 SSH 服務入口當時可達；尚未驗證 `a2264` 帳號能否登入、
 金鑰是否可用，也沒有執行遠端命令。
 
-## 東京 GPU VM 的網際網路出口
+## 東京 GPU VM 的對外出口：建立與驗證
 
-### 為什麼需要 Public Cloud NAT
+GPU VM 位於東京 `default` 子網 `10.146.0.0/20`。
+建立的 NAT 只涵蓋這個子網的主要 IP 範圍，不涵蓋台灣控制節點。
+同一範圍內日後新增的無外部 IP VM，也可能使用這個出口。
 
-`compute-gpu01` 的 `--no-address` 表示 VM 只有私有 IP `10.146.0.3`，
-沒有可供網際網路辨識的外部 IP。這不妨礙它用私有 IP 連上台灣控制節點，
-但要從東京 VM 主動向 GitHub 下載內容，回應必須有辦法找到這台 VM。
-
-**NAT 是位址轉換。** GPU VM 發出 HTTPS 連線時，Google Cloud 把封包的
-來源 `10.146.0.3` 換成 NAT 使用的外部 IP，並記住這條連線對應哪台 VM。
-GitHub 回覆該外部 IP 後，Google Cloud 依連線紀錄把回應送回
-`10.146.0.3`。這裡使用的 **Public Cloud NAT** 就是 Google Cloud
-替沒有外部 IP 的 VM 提供的對外位址轉換服務。
-它只接受既有對外連線的回應，不讓網際網路主機藉此主動連入 GPU VM。
-[Google Cloud 的 Public NAT 說明](https://docs.cloud.google.com/nat/docs/public-nat)
-
-**Cloud Router 在這裡存放 NAT 設定。** 名字雖有 Router，它不是一台需要
-登入或維護的 VM，也不是 GPU VM 封包實際穿過的設備。
-Cloud NAT 必須掛在同區域、同 VPC 的 Cloud Router 上；
-Google Cloud 的網路系統依這份設定完成位址轉換。
-[Google Cloud 的 Cloud Router 說明](https://docs.cloud.google.com/network-connectivity/docs/router/concepts/overview)
-
-GPU VM 已有客體預設下一跳 `10.146.0.1`，VPC 也有對外預設路由。
-路由決定封包往哪裡送，NAT 解決私有來源 IP 如何取得回應；
-兩者作用不同。`169.254.169.254` 則是 VM 使用的 DNS 伺服器，
-負責把 `github.com` 查成位址，並非對外出口。
-
-### 這次資源涵蓋哪些 VM
-
-GPU VM 位於 `default` VPC 的東京 `default` 子網 `10.146.0.0/20`。
-NAT 設定只涵蓋這個東京子網的主要 IP 範圍；台灣控制節點不在涵蓋範圍。
-
-| 資源 | 設定與作用 |
-|---|---|
-| Cloud Router `gpu-egress-router` | 位於東京 `asia-northeast1` 的 `default` VPC，保存 NAT 設定 |
-| Public Cloud NAT `gpu-egress-nat` | 對東京 `default` 子網中符合條件、沒有外部 IP 的 VM 提供主動連外位址轉換 |
-| 自動分配的 NAT 外部 IP | 出站連線對外顯示的來源 IP；不直接掛在 GPU VM 上，本紀錄未查其數值 |
-
-`curl` 先由 DNS 查出 GitHub 位址，再依預設路由送出 HTTPS 封包。
-Google Cloud 的分散式網路在出站時套用 NAT 轉換，回應依既有連線映射
-送回 GPU VM。**Cloud Router 和 Cloud NAT 是設定資源，不是封包會依序穿過的兩台機器。**
-
-NAT 與其外部 IP 可能持續計費，也會計入處理與對外傳輸費用。
-不再需要對外出口時，可刪除 NAT 和專用 Router；
-這會影響同一 NAT 涵蓋範圍內所有符合條件的 VM。
+Cloud Router 名稱為 `gpu-egress-router`；掛在其上的 Public Cloud NAT
+名稱為 `gpu-egress-nat`。NAT 外部 IP 由 Google Cloud 自動分配，
+本紀錄沒有查到實際數值。NAT 及使用的外部 IP 可能持續計費；
+若要移除此出口，須考慮同一範圍內其他 VM 的連線。
 [Cloud NAT 計價](https://cloud.google.com/nat/pricing)
 
 ### 建立與核對紀錄

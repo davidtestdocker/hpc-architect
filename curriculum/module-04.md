@@ -105,9 +105,11 @@ default via 10.140.0.1 dev eth0 proto dhcp src 10.140.0.2 metric 100
 10.140.0.1 dev eth0 proto dhcp scope link src 10.140.0.2 metric 100
 ```
 
-`10.140.0.1` 是預設下一跳。Compute Engine API 顯示控制節點位於
-`default` VPC 的 `asia-east1/default` 子網，子網 CIDR 為
-`10.140.0.0/20`。
+第一行 `default via 10.140.0.1 dev eth0` 的意思是：
+控制節點要連到路由表沒有另外列出的位址時，
+先從 `eth0` 把封包交給 `10.140.0.1`，由網路繼續轉送。
+例如要連東京 GPU VM `10.146.0.3`，封包的目的地仍是
+`10.146.0.3`；`10.140.0.1` 只是它先交給的位址。
 
 ## 東京 GPU 節點的配置
 

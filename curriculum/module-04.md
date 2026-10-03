@@ -95,8 +95,6 @@ default via 10.140.0.1 dev eth0 proto dhcp src 10.140.0.2 metric 100
 一張 NVIDIA L4），位於東京 `asia-northeast1-c`。
 使用 AlmaLinux 10、`default` VPC、40 GiB `pd-balanced` 開機磁碟；
 只配置私有 IP，不配置 VM 服務帳戶。
-建立 VM 與磁碟會產生費用，停止後磁碟仍計費；
-東京與台灣節點間的流量也可能計費。
 
 ### 建立命令與結果
 
@@ -186,21 +184,12 @@ default via 10.146.0.1 dev eth0 proto dhcp src 10.146.0.3 metric 100
 
 ## 東京 GPU VM 的對外出口：建立與驗證
 
-GPU VM 位於東京 `default` 子網 `10.146.0.0/20`。
-建立的 NAT 只涵蓋這個子網的主要 IP 範圍，不涵蓋台灣控制節點。
-同一範圍內日後新增的無外部 IP VM，也可能使用這個出口。
-
 Cloud Router 名稱為 `gpu-egress-router`；掛在其上的 Public Cloud NAT
-名稱為 `gpu-egress-nat`。NAT 外部 IP 由 Google Cloud 自動分配，
-本紀錄沒有查到實際數值。NAT 及使用的外部 IP 可能持續計費；
-若要移除此出口，須考慮同一範圍內其他 VM 的連線。
-[Cloud NAT 計價](https://cloud.google.com/nat/pricing)
+名稱為 `gpu-egress-nat`，為沒有外部 IP 的 GPU VM 提供對外出口。
 
-### 建立與核對紀錄
+### 建立紀錄
 
-以下命令在控制節點執行，作用於專案
-`project-78b8a95c-a2c0-461f-a08`，不更改 GPU VM 的外部 IP、
-入站防火牆或客體檔案。
+以下命令在控制節點執行，建立東京 GPU VM 的對外出口。
 
 **建立 Cloud Router：**
 
@@ -238,31 +227,7 @@ Creating NAT [gpu-egress-nat] in router [gpu-egress-router]...
 ......done.
 ```
 
-**判讀：** NAT 建立命令成功；下方記錄其涵蓋範圍與連線結果。
-
-**核對 NAT 設定：**
-
-```bash
-gcloud compute routers nats describe gpu-egress-nat \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --router=gpu-egress-router \
-  --region=asia-northeast1
-```
-
-實際輸出中與出口範圍有關的欄位：
-
-```text
-name: gpu-egress-nat
-natIpAllocateOption: AUTO_ONLY
-subnetworks:
-- name: https://www.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/regions/asia-northeast1/subnetworks/default
-  sourceIpRangesToNat:
-  - PRIMARY_IP_RANGE
-type: PUBLIC
-```
-
-**判讀：** NAT 類型為 Public，對外 IP 自動分配；
-作用範圍是東京 `default` 子網的主要 IP 範圍。
+**判讀：** NAT 建立成功；下方用 GPU VM 的對外連線檢查效果。
 
 ### 從 GPU VM 驗證 HTTPS 對外連線
 

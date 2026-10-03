@@ -125,6 +125,22 @@ NAME           ZONE               MACHINE_TYPE   INTERNAL_IP  EXTERNAL_IP  STATU
 compute-gpu01  asia-northeast1-c  g2-standard-4  10.146.0.3               RUNNING
 ```
 
+為確認目前的 VM 位址，唯讀查詢狀態、私有 IP 與 VM 外部 IP：
+
+```bash
+gcloud compute instances describe compute-gpu01 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c \
+  --format='value(status,networkInterfaces[0].networkIP,networkInterfaces[0].accessConfigs[0].natIP)'
+```
+
+```text
+RUNNING  10.146.0.3
+```
+
+第三個欄位（VM 外部 IP）為空：**GPU VM 本身沒有外部 IP**。
+前述 Public Cloud NAT 使用的外部 IP 不會掛在 VM 的網路介面上。
+
 ## GPU VM 的客體網路位址與連線
 
 在 `compute-gpu01` 的終端執行 `ip -br addr`，確認實際啟用的網路介面
@@ -244,3 +260,24 @@ curl --head --max-time 15 https://github.com
 
 **判讀：** GPU VM 完成 HTTPS 請求，GitHub 回傳成功狀態；
 對外路徑可用。
+
+## 從控制節點登入 GPU VM
+
+在控制節點執行下列命令，以目前帳號登入 `10.146.0.3`，
+並讓 GPU VM 回傳自己的主機名。首次連線可能詢問主機金鑰，
+接受後會寫入控制節點的 `~/.ssh/known_hosts`；登入會留下 SSH 日誌。
+
+```bash
+ssh -o ConnectTimeout=5 10.146.0.3 hostname
+```
+
+實際輸出中的關鍵行：
+
+```text
+ED25519 key fingerprint is SHA256:lauNURUrtIZzUXcqNIrRCrITbYvmuZ4rK57HF7cT/6c.
+Warning: Permanently added '10.146.0.3' (ED25519) to the list of known hosts.
+root@10.146.0.3: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
+```
+
+控制節點當時以 `root` 帳號嘗試登入；GPU VM 的 SSH 服務有回應，
+但拒絕了這個帳號提供的認證。主機金鑰已寫入控制節點的 `~/.ssh/known_hosts`。

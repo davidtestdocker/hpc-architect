@@ -1,0 +1,3 @@
+# 只向東京 GPU VM 的私有 IP 分享控制節點的工作資料目錄。
+# rw 允許讀寫；sync 等寫入落盤再回覆；root_squash 不給遠端 root 本機 root 權限。
+/srv/hpc-share 10.146.0.3(rw,sync,root_squash)

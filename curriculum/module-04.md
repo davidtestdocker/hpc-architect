@@ -464,3 +464,61 @@ GPU 0: NVIDIA L4 (UUID: GPU-a04f3d30-d585-9db4-0b68-795091a5d8ce)
 ```
 
 NVIDIA 驅動已能辨認一張 L4，且一般帳號 `a2264` 能讀到裝置資訊。
+
+## NFS 共享：先確認帳號身分
+
+NFS 讀寫權限會用數字 UID／GID 判斷。先在 GPU VM 查 `a2264` 的身分，
+再對照控制節點，避免掛載後因兩邊同名帳號的數字不同而無法寫入。
+這條命令只讀帳號資訊，不更改檔案、服務或雲端資源：
+
+```bash
+id a2264
+```
+
+```text
+uid=1000(a2264) gid=1005(a2264) groups=1005(a2264),4(adm),39(video),1000(google-sudoers),1001(dip),1002(docker),1003(lxd),1004(plugdev)
+```
+
+GPU VM 的 UID/GID 是 `1000/1005`，與控制節點先前查得的值相同。
+這次讓 `a2264` 擁有共享目錄即可讀寫，不需要讓所有帳號都能寫。
+
+### 建立共享目錄
+
+在控制節點以 root 建立 `/srv/hpc-share`，設為 `a2264` 擁有、
+權限 `0750`：擁有者能讀寫與進入，群組只能讀取與進入，其他帳號無權限。
+命令只建立或調整這個目錄，不啟動服務或修改雲端資源；
+成功時不會有終端輸出。
+
+```bash
+install -d -o a2264 -g a2264 -m 0750 /srv/hpc-share
+```
+
+執行成功，終端沒有輸出。`/srv/hpc-share` 已建立，之後由控制節點
+提供給 GPU VM 掛載；此時尚未啟動 NFS。
+
+### 設定允許掛載的節點
+
+NFS 的「匯出」是指定哪個本機目錄能被哪些遠端主機掛載。
+[匯出設定檔](../project/nfs/hpc-share.exports) 只列 GPU VM 私有 IP
+`10.146.0.3`，允許它讀寫 `/srv/hpc-share`；設定檔中的註解說明其餘選項。
+在控制節點以 root 將這份設定複製到 `/etc/exports.d/`：
+
+```bash
+cp /root/hpc-arch/project/nfs/hpc-share.exports /etc/exports.d/hpc-share.exports
+```
+
+這條命令只新增或覆寫 `/etc/exports.d/hpc-share.exports`，
+不會立即啟動 NFS 服務；成功時沒有終端輸出。
+
+執行成功，終端沒有輸出；控制節點已有匯出設定檔。
+
+### 啟動控制節點的 NFS 服務
+
+在控制節點以 root 啟動 `nfs-server`，並設定重開機後自動啟動。
+服務會讀取上述匯出設定，讓 GPU VM 能透過私有網路掛載共享目錄；
+這一步不修改 GPU VM。若要停止並取消開機自動啟動，
+可在控制節點執行 `systemctl disable --now nfs-server`。
+
+```bash
+systemctl enable --now nfs-server
+```

@@ -297,6 +297,8 @@ a2264@10.146.0.3: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
 `a2264` 的登入認證也被拒絕；SSH 服務有回應，問題位於認證階段。
 控制節點後續 `ping` GPU VM 三次皆收到回覆，但 SSH 已回報認證拒絕；
 這個 ICMP 結果沒有改變故障定位。控制節點的 SSH 登入仍待處理。
+下列 GPU 驅動操作是從 GPU VM 自己的終端執行，
+不是控制節點透過 SSH 遠端執行。
 
 ## 確認 GPU VM 能否辨認裝置
 

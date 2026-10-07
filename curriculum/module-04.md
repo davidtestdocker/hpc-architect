@@ -20,15 +20,15 @@
 GPU VM 並執行命令；GPU VM 能連外取得軟體，驅動能辨認一張 L4。
 這些結果分別練到連線分層判斷（網路通不等於登入成功）、
 節點登入金鑰配置、無外部 IP 的出口設計，以及 GPU 節點驗收。
-共享資料與跨節點工作還沒有實作結果。
+共享資料的雙向讀寫已完成；跨節點計算工作還沒有實作結果。
 
 **共享資料路徑**是兩台機器各自用同一個目錄位置，讀寫同一份實際資料。
 例如控制節點準備工作輸入，GPU 節點執行時讀取該輸入，完成後把結果
 寫回同一處，控制節點就能收集結果。這解決了工作換到另一台機器就
 找不到檔案、或各節點複製品不同步的問題。這會用 NFS 作第一個案例：
 一台 VM 提供資料目錄，另一台 VM 掛載後使用。它是工作資料的通道，與 SSH
-用來登入和執行遠端命令的用途不同；此處先解釋目的，尚未把共享資料
-或跨節點工作寫成已完成。
+用來登入和執行遠端命令的用途不同。共享資料已完成雙向讀寫，
+跨節點工作仍須執行。
 
 **這次的實作範圍與限制：** 在現有兩台 VM 上，由台灣控制節點提供
 `/srv/hpc-share`，東京 GPU VM 透過私有網路掛載，只用小型工作檔確認
@@ -58,6 +58,11 @@ Slurm 決定工作在哪個節點執行；NFS 讓不同節點能從共享目錄�
 先建立東京 GPU VM，並確認它能連上台灣控制節點。
 兩台 VM 在同一個 Google Cloud 虛擬網路（VPC）裡，
 用私有 IP `10.146.0.3` 和 `10.140.0.2` 通訊。
+**它們不在同一子網：** 台灣是 `10.140.0.0/20`，東京是 `10.146.0.0/20`。
+同一個 VPC 可以包含不同區域的子網；Google Cloud 為各子網建立路由，
+`default-allow-internal` 防火牆規則允許這兩個私有位址之間的 ICMP 與 TCP。
+所以 `ping` 和後面的 NFS 連線都走 VPC 私有網路，不靠 Public Cloud NAT。
+[VPC 內部通訊說明](https://docs.cloud.google.com/vpc/docs/vpc#communications_and_access)
 從東京 GPU VM 對台灣控制節點 `10.140.0.2` 執行 `ping`：
 送出三個測試封包，收到三個來自 `10.140.0.2` 的回覆。
 這表示兩台 VM 當時能透過私有網路交換封包。
@@ -162,6 +167,11 @@ gcloud compute instances create compute-gpu01 \
 NAME           ZONE               MACHINE_TYPE   INTERNAL_IP  EXTERNAL_IP  STATUS
 compute-gpu01  asia-northeast1-c  g2-standard-4  10.146.0.3               RUNNING
 ```
+
+建機時的 `--max-run-duration=2h` 與 `--instance-termination-action=STOP`
+會讓 VM **每次開機約兩小時後自動停止**。後續雲端操作紀錄有兩次
+`compute.instances.deferredStop`，均緊接各自開機約兩小時；這是先前
+兩次自行停機的原因，與 NFS 設定或檔案操作無關。
 
 為確認目前的 VM 位址，唯讀查詢狀態、私有 IP 與 VM 外部 IP：
 
@@ -522,3 +532,202 @@ cp /root/hpc-arch/project/nfs/hpc-share.exports /etc/exports.d/hpc-share.exports
 ```bash
 systemctl enable --now nfs-server
 ```
+
+```text
+Created symlink '/etc/systemd/system/multi-user.target.wants/nfs-server.service' → '/usr/lib/systemd/system/nfs-server.service'
+```
+
+命令成功，`nfs-server` 已啟動並設為開機自動啟動；GPU VM 尚未掛載。
+
+### 在 GPU VM 準備掛載位置
+
+在 GPU VM 以 `a2264` 使用 `sudo` 建立空的 `/srv/hpc-share` 作為掛載位置。
+這個目錄目前只是本機目錄；掛載後才會顯示控制節點分享的資料。
+使用相同路徑方便工作腳本在兩台 VM 上讀取檔案，NFS 本身不要求路徑相同。
+這條命令只建立目錄，成功時沒有終端輸出：
+
+```bash
+sudo mkdir -p /srv/hpc-share
+```
+
+執行成功，終端沒有輸出；GPU VM 的本機掛載位置已建立。
+
+### 將控制節點的目錄掛到 GPU VM
+
+在 GPU VM 以 `sudo` 將控制節點 `10.140.0.2` 的 `/srv/hpc-share`
+掛到本機同一路徑。`vers=4.2` 指定 NFS 協定版本；這是手動掛載，
+不修改開機設定。成功時通常沒有輸出；之後在這個路徑讀寫會作用於
+控制節點的共享資料，卸載可用 `sudo umount /srv/hpc-share`。
+
+```bash
+sudo mount -t nfs -o vers=4.2 10.140.0.2:/srv/hpc-share /srv/hpc-share
+```
+
+執行成功，終端沒有輸出；GPU VM 已掛載控制節點分享的目錄。
+目前只確認掛載成功，接著以工作帳號讀寫實際檔案。
+
+### 用現有程式檔驗證共享讀寫
+
+先用模組 03 已有的 `sum_mpi.c` 作為實際檔案，確認控制節點放入後
+GPU VM 能讀到，並能將檢查結果寫回共享目錄。這一步只驗證資料路徑，
+不把檔案檢查當成跨節點計算工作。
+
+在控制節點以 root 複製原始碼到共享目錄；原檔不變，目標檔
+`/srv/hpc-share/sum_mpi.c` 會建立或覆寫，成功時沒有終端輸出：
+
+```bash
+cp /root/hpc-arch/project/workloads/sum_mpi.c /srv/hpc-share/sum_mpi.c
+```
+
+執行成功，終端沒有輸出；控制節點的共享目錄已有程式檔副本。
+
+在 GPU VM 以 `a2264` 執行：`sha256sum` 後面的第一個路徑是**輸入檔**，
+命令會讀取檔案並算出一行摘要；Shell 的 `>` 把這行輸出寫到右邊的
+**輸出檔**，若檔案已存在就覆寫。兩個路徑都在 NFS 共享目錄中，
+因此這一步同時使用 GPU VM 對共享目錄的讀取與寫入權限。
+終端沒有印出摘要，是因為輸出已寫入檔案；這裡不做額外的摘要比對。
+
+```bash
+sha256sum /srv/hpc-share/sum_mpi.c > /srv/hpc-share/sum_mpi.sha256
+```
+
+命令沒有回報錯誤。接著在 GPU VM 列出共享目錄中的檔名；`ls` 只列名稱，
+不讀取或比對檔案內容：
+
+```bash
+ls /srv/hpc-share
+```
+
+```text
+sum_mpi.c  sum_mpi.sha256
+```
+
+GPU VM 看得到控制節點放入的原始檔，也看得到自己寫出的摘要檔。
+最後在控制節點列出同一目錄，確認 GPU VM 寫出的檔案也出現在控制節點；
+命令只讀，不改檔案或服務：
+
+```bash
+ls /srv/hpc-share
+```
+
+```text
+sum_mpi.c  sum_mpi.sha256
+```
+
+控制節點也看得到 GPU VM 寫出的 `sum_mpi.sha256`，
+共享目錄的雙向檔案讀寫已驗證。這仍是資料路徑驗證，尚非跨節點工作執行。
+
+## 移除 GPU VM 的兩小時自動停止
+
+前述兩次停機來自建機時的 `maxRunDuration=2h` 與到時 `STOP`。
+修改排程設定前必須先停止 VM；停機會中斷連線，GPU VM 上的手動 NFS
+掛載也會消失，但不刪除開機磁碟或控制節點上的共享資料。
+
+先從控制節點停止 GPU VM：
+
+```bash
+gcloud compute instances stop compute-gpu01 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c --quiet
+```
+
+```text
+Updated [https://compute.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
+```
+
+停機操作完成；現在可修改排程設定。
+
+再清除單次運行上限和對應的到時動作；這會讓 VM 之後持續運行，
+直到有人停止它或發生其他系統事件：
+
+```bash
+gcloud compute instances set-scheduling compute-gpu01 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c \
+  --clear-max-run-duration --clear-instance-termination-action --quiet
+```
+
+```text
+Updated [https://www.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
+```
+
+排程設定更新成功；接著重新開機。
+
+最後重新啟動 GPU VM：
+
+```bash
+gcloud compute instances start compute-gpu01 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c --quiet
+```
+
+```text
+Updated [https://compute.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
+Instance internal IP is 10.146.0.3
+```
+
+VM 已重新開機，私有 IP 不變。唯讀核對目前狀態與原本造成停機的兩個欄位：
+
+```bash
+gcloud compute instances describe compute-gpu01 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c \
+  --format='json(status,scheduling.maxRunDuration,scheduling.instanceTerminationAction)'
+```
+
+```json
+{
+  "status": "RUNNING"
+}
+```
+
+`maxRunDuration` 與 `instanceTerminationAction` 已不在排程設定中；
+先前每次開機兩小時自動停止的設定已移除。目前共享目錄的掛載已恢復。
+
+## 下一步：跨節點 MPI 工作
+
+MPI 讓同一個計算工作中的多個程序交換資料；這裡要讓程序分別在控制節點
+和 GPU VM 執行，再用主機名與計算結果確認確實跨越兩台機器。
+這能驗證共享工作檔、遠端啟動及程序間通訊是否能一起運作。
+
+GPU VM 已從 AlmaLinux AppStream 安裝
+`mpich-4.1.2-15.el10.x86_64` 與 `mpich-devel-4.1.2-15.el10.x86_64`，
+版本與控制節點目前安裝的套件相同。套件交易回報 `Complete!`；
+安裝清單另包含 GCC、Lmod 等相依套件。這只確認套件已裝入 GPU VM，
+尚未驗證 MPI 命令、跨節點啟動或計算結果。
+
+### 確認 GPU VM 的 MPI 命令
+
+在 GPU VM 查詢 MPICH 提供的編譯器包裝命令與啟動命令。
+這一步只讀套件安裝後的檔案，不建立或修改檔案、服務或雲端資源；
+輸出中的完整路徑可用於後續編譯與執行。
+
+```bash
+ls -l /usr/lib64/mpich/bin/mpicc /usr/lib64/mpich/bin/mpirun
+```
+
+```text
+-rwxr-xr-x. 1 root root 11432 Oct 29  2024 /usr/lib64/mpich/bin/mpicc
+lrwxrwxrwx. 1 root root    13 Oct 29  2024 /usr/lib64/mpich/bin/mpirun -> mpiexec.hydra
+```
+
+這次以 `root` 查詢；兩個路徑存在，`mpirun` 是指向 `mpiexec.hydra`
+的符號連結。這尚未驗證 `a2264` 能編譯或啟動工作。
+
+### 重啟後確認工作帳號仍可讀共享資料
+
+在 GPU VM 的 `root` shell 中，用 `sudo -u a2264` 讓實際工作帳號
+讀取先前放進共享目錄的 `sum_mpi.c`，計算 SHA-256 摘要。
+這只讀取檔案，不修改帳號、權限、掛載或雲端資源。
+NFS 匯出設有 `root_squash`，因此工作檔案應由 `a2264` 存取。
+
+```bash
+sudo -u a2264 -- sha256sum /srv/hpc-share/sum_mpi.c
+```
+
+```text
+b8cad8e43967e45b7a37004229ed0181aca8512bdb820e8789135c75752a7a17  /srv/hpc-share/sum_mpi.c
+```
+
+`a2264` 成功讀取共享目錄中的程式檔；這只驗證資料可讀，
+尚未執行跨節點 MPI 工作。

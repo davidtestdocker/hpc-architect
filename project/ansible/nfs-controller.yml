@@ -1,0 +1,43 @@
+---
+# 在台灣控制節點部署已驗證的 NFS 分享；目標只選 inventory 的 controller 群組。
+# 本檔不建立雲端 VM，也不配置東京 GPU VM；套用前先用 --check 檢查預期變更。
+- name: 設定控制節點的 NFS 工作資料分享
+  hosts: controller
+  become: true  # 套件、/srv 與 /etc 設定需要管理員權限。
+  tasks:
+    # 乾淨節點先取得 NFS 伺服器套件；已安裝時不重複安裝。
+    - name: 確保 NFS 套件已安裝
+      ansible.builtin.package:
+        name: nfs-utils
+        state: present
+
+    # 與模組 04 已驗證的 UID/GID 對應；僅 a2264 可寫入共享目錄。
+    - name: 確保共享目錄的擁有者與權限正確
+      ansible.builtin.file:
+        path: /srv/hpc-share
+        state: directory
+        owner: a2264
+        group: a2264
+        mode: '0750'
+
+    # 複用 project/nfs 的真實設定，避免在 playbook 另存一份容易分岔的內容。
+    - name: 部署只允許 GPU VM 讀寫的 NFS 匯出設定
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../nfs/hpc-share.exports"
+        dest: /etc/exports.d/hpc-share.exports
+        owner: root
+        group: root
+        mode: '0644'
+      notify: 重新載入 NFS 匯出
+
+    # 服務保持啟動與開機自動啟動；已符合時不要求重啟。
+    - name: 確保 NFS 服務正在運行
+      ansible.builtin.systemd_service:
+        name: nfs-server
+        enabled: true
+        state: started
+
+  handlers:
+    # 只有匯出檔真的變更才更新 NFS 分享清單；不因每次重跑而執行。
+    - name: 重新載入 NFS 匯出
+      ansible.builtin.command: /usr/sbin/exportfs -ra

@@ -12,10 +12,11 @@
 
 ## 目前狀態
 
-**安裝準備完成，尚未部署節點。** 台灣控制節點已從 AlmaLinux
+**已確認 Ansible 連線，尚未套用部署程式。** 台灣控制節點已從 AlmaLinux
 AppStream 安裝 `ansible-core-1:2.16.16-2.el10_2.1.noarch`；
 套件交易回報 `Complete!`，並安裝所需的 Python 相依套件。
-目前沒有 inventory、playbook 或部署結果。
+inventory 已列出現有兩台 VM，Ansible 已成功連到 GPU VM；
+第一份 NFS playbook 已建立，但沒有部署結果。
 
 ## 要解決的問題
 
@@ -141,6 +142,31 @@ inventory 中的 `ansible_host=10.146.0.3`、`ansible_user=a2264`
 `SUCCESS` 與 `pong` 證明 Ansible 已透過這條連線在 GPU VM 執行模組；
 `discovered_interpreter_python` 表示找到遠端 Python，
 `changed: false` 表示這次沒有改動受管設定。
+
+## 第一份部署程式：控制節點的 NFS 分享
+
+[nfs-controller.yml](../project/ansible/nfs-controller.yml) 是第一份
+**playbook**：寫出控制節點應有的狀態，而不是逐台手敲命令。
+它只選 inventory 的 `controller` 群組，確保 `nfs-utils` 已安裝、
+`/srv/hpc-share` 屬於 `a2264` 且權限為 `0750`、
+匯出檔與 [既有設定來源](../project/nfs/hpc-share.exports) 一致，
+並讓 `nfs-server` 保持啟動與開機自動啟動。
+匯出檔真的變更時才由 **handler** 執行 `exportfs -ra` 更新分享清單；
+各參數與副作用寫在 playbook 的中文註解中。
+
+這份 playbook 目前只處理 NFS 伺服器，不能單獨建成整個叢集；
+它假設控制節點已有 `a2264` 帳號，尚未處理 GPU VM 的掛載。
+實際套用可能安裝套件、改動目錄或 `/etc/exports.d/`、
+啟動服務並更新 NFS 匯出；這些動作尚未執行。
+
+先在台灣控制節點以 `root` 執行 **`--syntax-check`**。
+`-i` 指向已驗證的 inventory；命令只檢查 playbook 能否解析，
+不 SSH 到 GPU VM，也不修改檔案或服務。成功時會列出 playbook 路徑；
+這只能證明語法可讀，不能代替預演或實際部署。
+
+```bash
+ansible-playbook -i /root/hpc-arch/project/ansible/inventory/hosts.yml /root/hpc-arch/project/ansible/nfs-controller.yml --syntax-check
+```
 
 ## 實作與過關證據
 

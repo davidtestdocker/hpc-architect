@@ -8,12 +8,11 @@
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、正常與兩種條件不符案例 |
 | [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 已完成：C++ 工具、C 序列版、本機 MPI 分工及單節點 Slurm 兩 rank 工作；工作 9 的答案 `55`、退出碼 `0:0` |
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 已完成：兩台 VM 私有 IP 可互通，控制節點能 SSH 遠端執行；GPU VM 透過 NAT 連 GitHub 回報 HTTP `200`，並辨認出一張 NVIDIA L4；NFS 已驗證雙向讀寫；兩台 VM 各執行一個 MPI rank，主機名不同，部分總和 `15+40=55` |
-| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 未開始 |
+| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 進行中：控制節點已安裝 `ansible-core 2.16.16-2.el10_2.1`；尚未建立部署程式或實際部署節點 |
 | [6 叢集維運、Zabbix 監控與故障復原](curriculum/module-06.md) | 未開始 |
 | [7 效能證據、K8s／GKE 與架構取捨](curriculum/module-07.md) | 未開始 |
 | [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 |
 
-依模組順序推進；模組 04 已交付約定的連線、共享資料、GPU 辨認
-與跨節點 MPI 證據。下一個模組是 05 叢集建置與管理自動化。
-跨節點 MPI 由 `mpirun` 透過 SSH 啟動，只用 CPU；
+依模組順序推進；目前進行模組 05 叢集建置與管理自動化。
+模組 04 的跨節點 MPI 由 `mpirun` 透過 SSH 啟動，只用 CPU；
 這不代表已驗證跨節點 Slurm 排程或 GPU 計算。

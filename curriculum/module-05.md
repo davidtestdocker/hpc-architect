@@ -12,7 +12,10 @@
 
 ## 目前狀態
 
-**未開始實作。** 本文件記錄自動化的目標、工具用途與過關證據。
+**安裝準備完成，尚未部署節點。** 台灣控制節點已從 AlmaLinux
+AppStream 安裝 `ansible-core-1:2.16.16-2.el10_2.1.noarch`；
+套件交易回報 `Complete!`，並安裝所需的 Python 相依套件。
+目前沒有 inventory、playbook 或部署結果。
 
 ## 要解決的問題
 
@@ -67,7 +70,59 @@
 | `ansible-playbook` | 套用設定，再看失敗節點和變更數 | 退出碼為零仍須驗證工作功能 |
 | `--diff` | 比較設定檔變化 | 可能顯示敏感設定，使用前先確認輸出範圍 |
 
-實際命令、版本、目標主機和檔案路徑要等環境確認後再記錄。
+其餘實際命令、版本、目標主機和檔案路徑等環境確認後再記錄。
+
+## 第一個成果：列出已確認的節點角色
+
+[inventory](../project/ansible/inventory/hosts.yml) 目前只列已存在的
+台灣控制節點與東京 GPU VM。控制節點標為 `controller`，
+因為 Ansible 從該處執行，所以使用本機連線；GPU VM 標為
+`gpu_compute`，使用私有 IP `10.146.0.3`、帳號 `a2264`
+及控制節點已存在的專用私鑰路徑。清單只保存**私鑰路徑**，
+不保存私鑰內容；尚未建立的 CPU 運算節點不會被虛構進清單。
+建立這個檔案只改動專案目錄，沒有連線或修改 VM。
+
+`ansible-inventory` 是 Ansible 用來讀取與顯示節點清單的命令。
+先從台灣控制節點以 `root` 執行下列唯讀檢查，確認分組與主機名
+被正確讀入。`-i` 指向清單檔，`--graph` 把群組和成員列成樹狀；
+它不會 SSH 登入目標，也不會套用設定或改動檔案、服務。
+預期看到 `controller` 下有 `instance-20260923-104239`，
+`gpu_compute` 下有 `compute-gpu01`；這只驗證清單語法與分組，
+還不能證明目標 VM 目前可連線。
+
+```bash
+ansible-inventory -i /root/hpc-arch/project/ansible/inventory/hosts.yml --graph
+```
+
+```text
+@all:
+  |--@ungrouped:
+  |--@controller:
+  |  |--instance-20260923-104239
+  |--@gpu_compute:
+  |  |--compute-gpu01
+```
+
+`controller` 與 `gpu_compute` 各有預期的一台 VM；
+`ungrouped` 沒有成員。清單已能被 Ansible 解析，
+但這一步沒有測試 SSH 或遠端執行。
+
+### 用 Ansible 確認 GPU 節點可管理
+
+這裡的 `ansible.builtin.ping` **不是**前面使用的 ICMP `ping`。
+它讓控制節點依 inventory 透過 SSH 連到 GPU VM，
+以 `a2264` 執行一個很小的 Ansible 模組，再回傳 `pong`。
+成功會證明清單中的位址、帳號、金鑰和遠端 Python 執行通路可用；
+不代表部署設定或 GPU 工作已成功。
+
+在台灣控制節點的 `root` shell 執行。`-i` 指定剛驗證的清單，
+`gpu_compute` 只選東京 GPU VM，`-m` 指定這個測試模組。
+它不改服務或雲端資源；SSH 會留下登入紀錄，
+Ansible 可能短暫建立並清理遠端模組暫存檔。
+
+```bash
+ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -m ansible.builtin.ping
+```
 
 ## 實作與過關證據
 

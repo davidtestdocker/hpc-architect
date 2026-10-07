@@ -124,6 +124,24 @@ Ansible 可能短暫建立並清理遠端模組暫存檔。
 ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -m ansible.builtin.ping
 ```
 
+```text
+compute-gpu01 | SUCCESS => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}
+```
+
+`gpu_compute` 群組選中 `compute-gpu01`。Ansible 從控制節點讀取
+inventory 中的 `ansible_host=10.146.0.3`、`ansible_user=a2264`
+與 `ansible_ssh_private_key_file`；該私鑰已在模組 04 建立，
+對應公鑰也已加入 GPU VM 的 SSH 登入設定，不是這次新建立的金鑰。
+`SUCCESS` 與 `pong` 證明 Ansible 已透過這條連線在 GPU VM 執行模組；
+`discovered_interpreter_python` 表示找到遠端 Python，
+`changed: false` 表示這次沒有改動受管設定。
+
 ## 實作與過關證據
 
 1. 將已驗證的控制／運算節點角色、服務帳號、MUNGE 驗證、共享路徑及 Slurm 設定轉為部署程式。

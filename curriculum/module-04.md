@@ -20,15 +20,16 @@
 GPU VM 並執行命令；GPU VM 能連外取得軟體，驅動能辨認一張 L4。
 這些結果分別練到連線分層判斷（網路通不等於登入成功）、
 節點登入金鑰配置、無外部 IP 的出口設計，以及 GPU 節點驗收。
-共享資料的雙向讀寫已完成；跨節點計算工作還沒有實作結果。
+共享資料的雙向讀寫與跨節點 MPI 工作已完成驗證；兩個 rank
+分別在控制節點與 GPU VM 執行，部分結果 `15+40=55`。
 
 **共享資料路徑**是兩台機器各自用同一個目錄位置，讀寫同一份實際資料。
 例如控制節點準備工作輸入，GPU 節點執行時讀取該輸入，完成後把結果
 寫回同一處，控制節點就能收集結果。這解決了工作換到另一台機器就
 找不到檔案、或各節點複製品不同步的問題。這會用 NFS 作第一個案例：
 一台 VM 提供資料目錄，另一台 VM 掛載後使用。它是工作資料的通道，與 SSH
-用來登入和執行遠端命令的用途不同。共享資料已完成雙向讀寫，
-跨節點工作仍須執行。
+用來登入和執行遠端命令的用途不同。共享資料已完成雙向讀寫；
+跨節點工作也已從共享目錄啟動並核對結果。
 
 **這次的實作範圍與限制：** 在現有兩台 VM 上，由台灣控制節點提供
 `/srv/hpc-share`，東京 GPU VM 透過私有網路掛載，只用小型工作檔確認
@@ -167,11 +168,6 @@ gcloud compute instances create compute-gpu01 \
 NAME           ZONE               MACHINE_TYPE   INTERNAL_IP  EXTERNAL_IP  STATUS
 compute-gpu01  asia-northeast1-c  g2-standard-4  10.146.0.3               RUNNING
 ```
-
-建機時的 `--max-run-duration=2h` 與 `--instance-termination-action=STOP`
-會讓 VM **每次開機約兩小時後自動停止**。後續雲端操作紀錄有兩次
-`compute.instances.deferredStop`，均緊接各自開機約兩小時；這是先前
-兩次自行停機的原因，與 NFS 設定或檔案操作無關。
 
 為確認目前的 VM 位址，唯讀查詢狀態、私有 IP 與 VM 外部 IP：
 
@@ -617,74 +613,7 @@ sum_mpi.c  sum_mpi.sha256
 控制節點也看得到 GPU VM 寫出的 `sum_mpi.sha256`，
 共享目錄的雙向檔案讀寫已驗證。這仍是資料路徑驗證，尚非跨節點工作執行。
 
-## 移除 GPU VM 的兩小時自動停止
-
-前述兩次停機來自建機時的 `maxRunDuration=2h` 與到時 `STOP`。
-修改排程設定前必須先停止 VM；停機會中斷連線，GPU VM 上的手動 NFS
-掛載也會消失，但不刪除開機磁碟或控制節點上的共享資料。
-
-先從控制節點停止 GPU VM：
-
-```bash
-gcloud compute instances stop compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-northeast1-c --quiet
-```
-
-```text
-Updated [https://compute.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
-```
-
-停機操作完成；現在可修改排程設定。
-
-再清除單次運行上限和對應的到時動作；這會讓 VM 之後持續運行，
-直到有人停止它或發生其他系統事件：
-
-```bash
-gcloud compute instances set-scheduling compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-northeast1-c \
-  --clear-max-run-duration --clear-instance-termination-action --quiet
-```
-
-```text
-Updated [https://www.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
-```
-
-排程設定更新成功；接著重新開機。
-
-最後重新啟動 GPU VM：
-
-```bash
-gcloud compute instances start compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-northeast1-c --quiet
-```
-
-```text
-Updated [https://compute.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
-Instance internal IP is 10.146.0.3
-```
-
-VM 已重新開機，私有 IP 不變。唯讀核對目前狀態與原本造成停機的兩個欄位：
-
-```bash
-gcloud compute instances describe compute-gpu01 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-northeast1-c \
-  --format='json(status,scheduling.maxRunDuration,scheduling.instanceTerminationAction)'
-```
-
-```json
-{
-  "status": "RUNNING"
-}
-```
-
-`maxRunDuration` 與 `instanceTerminationAction` 已不在排程設定中；
-先前每次開機兩小時自動停止的設定已移除。目前共享目錄的掛載已恢復。
-
-## 下一步：跨節點 MPI 工作
+## 跨節點 MPI 工作
 
 MPI 讓同一個計算工作中的多個程序交換資料；這裡要讓程序分別在控制節點
 和 GPU VM 執行，再用主機名與計算結果確認確實跨越兩台機器。
@@ -693,8 +622,8 @@ MPI 讓同一個計算工作中的多個程序交換資料；這裡要讓程序�
 GPU VM 已從 AlmaLinux AppStream 安裝
 `mpich-4.1.2-15.el10.x86_64` 與 `mpich-devel-4.1.2-15.el10.x86_64`，
 版本與控制節點目前安裝的套件相同。套件交易回報 `Complete!`；
-安裝清單另包含 GCC、Lmod 等相依套件。這只確認套件已裝入 GPU VM，
-尚未驗證 MPI 命令、跨節點啟動或計算結果。
+安裝清單另包含 GCC、Lmod 等相依套件。跨節點執行結果見下方；
+沒有在 GPU VM 單獨編譯程式。
 
 ### 確認 GPU VM 的 MPI 命令
 
@@ -712,22 +641,75 @@ lrwxrwxrwx. 1 root root    13 Oct 29  2024 /usr/lib64/mpich/bin/mpirun -> mpiexe
 ```
 
 這次以 `root` 查詢；兩個路徑存在，`mpirun` 是指向 `mpiexec.hydra`
-的符號連結。這尚未驗證 `a2264` 能編譯或啟動工作。
+的符號連結。這項查詢只確認命令位置。
 
-### 重啟後確認工作帳號仍可讀共享資料
+### 在共享目錄編譯跨節點通路驗證程式
 
-在 GPU VM 的 `root` shell 中，用 `sudo -u a2264` 讓實際工作帳號
-讀取先前放進共享目錄的 `sum_mpi.c`，計算 SHA-256 摘要。
-這只讀取檔案，不修改帳號、權限、掛載或雲端資源。
-NFS 匯出設有 `root_squash`，因此工作檔案應由 `a2264` 存取。
+先用模組 03 的 `sum_mpi.c` 驗證兩台 VM 能否啟動同一個 MPI 工作、
+交換部分結果並回報各 rank 的主機名。這是跨節點通路的初期驗證，
+不是代表性的效能工作負載。
+
+在台灣控制節點的 `root` shell 中，以 `a2264` 執行 MPICH 編譯器，
+讀取 `/srv/hpc-share/sum_mpi.c`，產生共享目錄中的
+`/srv/hpc-share/sum_mpi`。兩台 VM 之後使用同一個執行檔；
+這一步只新增或覆寫該執行檔，不更動來源檔、服務或雲端設定。
+成功時編譯器通常沒有輸出；若有錯誤或警告，依實際輸出處理。
 
 ```bash
-sudo -u a2264 -- sha256sum /srv/hpc-share/sum_mpi.c
+sudo -u a2264 -- /usr/lib64/mpich/bin/mpicc -std=c11 -Wall -Wextra -Wpedantic -O2 -o /srv/hpc-share/sum_mpi /srv/hpc-share/sum_mpi.c
+```
+
+實際執行沒有錯誤或警告輸出；編譯步驟完成，
+`/srv/hpc-share/sum_mpi` 已產生。跨節點執行結果見下方。
+
+### 在控制節點啟動兩台 VM 的 MPI 程序
+
+模組 03 已用 `mpirun` 在同一台 VM 啟動多個 rank。這套 MPICH 的
+`mpirun` 指向 `mpiexec.hydra`；Hydra 負責在指定主機啟動程序，
+程序啟動後才由 MPI 函式交換計算資料。
+
+在台灣控制節點以 `a2264` 發起工作，使用專用 SSH 金鑰在東京 GPU VM
+啟動另一個 rank。兩台 VM 都從共享目錄執行同一個程式；
+`-wdir /srv/hpc-share` 指定 `a2264` 可進入的工作目錄，
+`-iface eth0` 讓遠端 Hydra 程序透過控制節點的私有網路介面回連。
+這次直接由 MPICH 啟動，不經 Slurm 排程；程式只用 CPU，不使用 GPU。
+命令短暫占用兩台 VM 的 CPU 並產生少量跨區流量，不建立檔案或修改服務。
+[MPICH Hydra 的啟動器與網路介面說明](https://github.com/pmodels/mpich/blob/main/doc/wiki/how_to/Using_the_Hydra_Process_Manager.md)
+
+每行末尾的 `\` 表示下一行仍屬於同一條命令。
+以下按行說明實際執行的命令：
+
+1. `sudo -u a2264 -- env \`：在控制節點以工作帳號執行；`env` 只設定這次命令的環境。
+2. `HYDRA_LAUNCHER_EXTRA_ARGS='...' \`：讓 SSH 使用既有專用金鑰，並在無法登入時直接報錯。
+3. `MPIEXEC_TIMEOUT=60 \`：工作最多等待 60 秒。
+4. `/usr/lib64/mpich/bin/mpirun \`：啟動 MPICH 的 Hydra 程序管理器。
+5. `-launcher ssh -hosts localhost,10.146.0.3 -ppn 1 -n 2 \`：
+   以 SSH 在控制節點與 GPU VM 各啟動一個 rank。
+6. `-iface eth0 \`：讓 Hydra 使用控制節點的私有網路介面，
+   供 GPU VM 上的程序回連。
+7. `-wdir /srv/hpc-share \`：讓兩台 VM 上的程序從 `a2264` 可進入的共享目錄開始。
+8. `/srv/hpc-share/sum_mpi 10`：執行共享程式，以 `10` 為輸入。
+
+```bash
+sudo -u a2264 -- env \
+  HYDRA_LAUNCHER_EXTRA_ARGS='-i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes' \
+  MPIEXEC_TIMEOUT=60 \
+  /usr/lib64/mpich/bin/mpirun \
+  -launcher ssh -hosts localhost,10.146.0.3 -ppn 1 -n 2 \
+  -iface eth0 \
+  -wdir /srv/hpc-share \
+  /srv/hpc-share/sum_mpi 10
 ```
 
 ```text
-b8cad8e43967e45b7a37004229ed0181aca8512bdb820e8789135c75752a7a17  /srv/hpc-share/sum_mpi.c
+rank=0 size=2 host=instance-20260923-104239 first=1 count=5 partial=15
+rank=1 size=2 host=compute-gpu01 first=6 count=5 partial=40
+n=10
+sum=55
 ```
 
-`a2264` 成功讀取共享目錄中的程式檔；這只驗證資料可讀，
-尚未執行跨節點 MPI 工作。
+`rank 0` 在台灣控制節點計算 `1–5=15`，`rank 1` 在東京 GPU VM
+計算 `6–10=40`，合併答案為 `55`。不同主機名與正確總和證明
+兩台 VM 上的程序已共同完成同一份 MPI 工作，並能使用共享執行檔。
+這支小程式只驗證跨節點啟動、通訊及資料路徑；它使用 CPU，
+不代表 GPU 計算、跨節點 Slurm 排程或效能成果。

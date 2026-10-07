@@ -20,6 +20,30 @@
 新建一台 VM 時容易漏掉帳號、金鑰、共享路徑或服務順序。
 本模組用 Ansible 把**已驗證的人工步驟**變成可重跑的部署。
 
+### Ansible 是什麼，會在哪裡使用
+
+模組 04 曾從台灣控制節點用 SSH 登入東京 GPU VM，遠端執行一條命令。
+若新建多台節點，再逐台手動安裝套件、放設定檔、啟動服務，
+很容易漏步驟，之後也難確認每台是否一致。
+
+**Ansible 是把這些主機設定步驟寫成可重跑規則的工具。**
+這次預計在台灣控制節點執行 Ansible，由它透過既有的 SSH 連線
+設定目標 VM。先把要管理的主機及角色寫進 **inventory**，
+再把希望各主機具備的帳號、套件、檔案與服務狀態寫進 **playbook**。
+例如 GPU VM 應有指定版本的驅動與 `slurmd` 設定；實際套用前
+會先核對現況，不把尚未部署的範例寫成成果。
+
+執行時要看每台主機的 `ok`、`changed`、`failed`、`unreachable`：
+`changed` 表示有狀態被改動；`failed` 是執行失敗，
+`unreachable` 表示連不到目標。第二次用相同設定執行時，
+若沒有新變更，應盡量沒有 `changed`，也不該無故重啟服務。
+這是要實測的性質，不因使用 Ansible 就自動成立。
+
+**Ansible 負責主機內的設定，Slurm 負責排工作。**
+安裝 `ansible-core` 只是在控制節點取得工具，本身不會配置 GPU VM、
+建立雲端 VM 或啟動 Slurm 工作；要明確執行 playbook 才會嘗試改動目標。
+[Ansible 的 playbook 與執行結果說明](https://docs.ansible.com/projects/ansible-core/devel/playbook_guide/playbooks_intro.html)
+
 | 概念 | 在這個叢集的作用 |
 |---|---|
 | inventory | 記錄哪些 VM 是控制、CPU 運算或 GPU 運算節點，以及連線所需的非敏感變數 |

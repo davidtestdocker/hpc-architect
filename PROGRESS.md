@@ -8,7 +8,7 @@
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、正常與兩種條件不符案例 |
 | [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 已完成：C++ 工具、C 序列版、本機 MPI 分工及單節點 Slurm 兩 rank 工作；工作 9 的答案 `55`、退出碼 `0:0` |
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 已完成：兩台 VM 私有 IP 可互通，控制節點能 SSH 遠端執行；GPU VM 透過 NAT 連 GitHub 回報 HTTP `200`，並辨認出一張 NVIDIA L4；NFS 已驗證雙向讀寫；兩台 VM 各執行一個 MPI rank，主機名不同，部分總和 `15+40=55` |
-| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 進行中：控制節點已安裝 `ansible-core 2.16.16-2.el10_2.1`；inventory 列出控制與 GPU 節點，Ansible 已透過既有 SSH 金鑰對 GPU VM 取得 `pong`；控制節點 NFS playbook 已通過語法檢查、預演及正式執行，正式執行 `ok=5`、`changed=0`，尚未以 Ansible 部署結果驗證 GPU VM 掛載與讀寫 |
+| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 進行中：控制節點已安裝 `ansible-core 2.16.16-2.el10_2.1` 與 `ansible.posix:2.2.2`；inventory 列出控制與 GPU 節點，Ansible 已透過既有 SSH 金鑰對 GPU VM 取得 `pong`；控制節點 NFS playbook 已通過語法檢查、預演及正式執行，正式執行 `ok=5`、`changed=0`；GPU VM 掛載與雙向讀寫已在模組 04 手動驗證，GPU VM 掛載 playbook 已建立但尚未套用 |
 | [6 叢集維運、Zabbix 監控與故障復原](curriculum/module-06.md) | 未開始 |
 | [7 效能證據、K8s／GKE 與架構取捨](curriculum/module-07.md) | 未開始 |
 | [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 |

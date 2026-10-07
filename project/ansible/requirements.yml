@@ -1,0 +1,6 @@
+---
+# 在控制節點重建 Ansible 環境時，安裝 GPU VM 掛載 playbook 使用的 collection。
+# 固定已安裝的版本，避免日後取得不同版本時改變掛載模組的行為。
+collections:
+  - name: ansible.posix
+    version: '2.2.2'

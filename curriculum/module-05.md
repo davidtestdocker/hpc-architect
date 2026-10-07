@@ -18,6 +18,8 @@ AppStream 安裝 `ansible-core-1:2.16.16-2.el10_2.1.noarch`；
 inventory 已列出現有兩台 VM，Ansible 已成功連到 GPU VM；
 第一份 NFS playbook 已通過語法檢查、預演及正式執行；
 正式執行回報 `ok=5`、`changed=0`、`failed=0`。
+控制節點也已安裝 `ansible.posix:2.2.2`，供後續管理 GPU VM 的 NFS 掛載。
+[GPU VM 掛載 playbook](../project/ansible/nfs-gpu-client.yml) 已建立，尚未套用。
 
 ## 要解決的問題
 
@@ -237,8 +239,46 @@ instance-20260923-104239 : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescu
 
 正式執行時，套件、目錄、匯出檔與服務都已符合指定狀態，
 所以 Ansible 沒有安裝、複製、修改或重新載入 NFS 匯出。
-`changed=0` 是這次正式套用沒有變更的證據；
-這份輸出本身沒有從 GPU VM 驗證掛載與讀寫。
+`changed=0` 是這次正式套用沒有變更的證據。
+模組 04 已驗證 GPU VM 的掛載與雙向讀寫；本次控制節點沒有
+設定變更，不重複執行相同的掛載檢查。
+
+### GPU VM 掛載自動化的準備
+
+控制節點已從 Ansible Galaxy 安裝 `ansible.posix:2.2.2`；
+安裝回報 `ansible.posix:2.2.2 was installed successfully`。
+這個 collection 提供 `ansible.posix.mount` 模組，
+可管理 GPU VM 的掛載設定與目前掛載狀態。
+安裝只增加控制節點的 Ansible 模組，沒有修改 GPU VM 或 NFS 服務；
+GPU VM 的掛載 playbook 尚未套用。
+
+[collection 需求檔](../project/ansible/requirements.yml) 固定已安裝的
+`ansible.posix:2.2.2`，供重建控制節點的 Ansible 環境時使用。
+[GPU VM 掛載 playbook](../project/ansible/nfs-gpu-client.yml) 只選
+inventory 的 `gpu_compute` 群組，先確保 `nfs-utils` 已安裝，
+再把控制節點 `10.140.0.2:/srv/hpc-share` 設成 GPU VM 的
+`/srv/hpc-share` 掛載來源。
+`ansible.posix.mount` 的 `state: mounted` 同時確保目前掛載與
+`/etc/fstab` 的開機設定；`vers=4.2` 沿用模組 04 已驗證的協定版本。
+修改 fstab 時，`backup: true` 會保留修改前的備份。
+`_netdev` 告知系統此掛載依賴網路，`nofail` 避免分享不可達時
+阻斷開機；它們不保證伺服器故障時工作仍能讀取資料。
+各欄位的具體作用也寫在 playbook 的中文註解中。
+
+這份 playbook 目前只存在於專案檔案，沒有連到或修改 GPU VM。
+正式套用可能安裝套件、寫入 GPU VM 的 `/etc/fstab` 並掛載共享目錄；
+若要撤回開機掛載設定，可參考修改前的 fstab 備份並移除該 NFS 項目；
+若也要停止目前掛載，再卸載 `/srv/hpc-share`，但應先確認沒有工作使用它。
+
+先在台灣控制節點以 `root` 執行語法檢查。
+`-i` 指向目前 inventory，playbook 路徑指定新檔案；
+`--syntax-check` 只檢查 Ansible 是否能解析檔案及找到所需模組，
+不 SSH 到 GPU VM，也不改動掛載或服務。
+預期成功時列出 playbook 路徑；這不代表預演或部署成功。
+
+```bash
+ansible-playbook -i /root/hpc-arch/project/ansible/inventory/hosts.yml /root/hpc-arch/project/ansible/nfs-gpu-client.yml --syntax-check
+```
 
 ## 實作與過關證據
 

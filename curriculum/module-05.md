@@ -254,6 +254,12 @@ GPU VM 的掛載 playbook 尚未套用。
 
 [collection 需求檔](../project/ansible/requirements.yml) 固定已安裝的
 `ansible.posix:2.2.2`，供重建控制節點的 Ansible 環境時使用。
+[Ansible 專案設定](../project/ansible/ansible.cfg) 指定預設 inventory
+為同目錄下的 `inventory/hosts.yml`。
+Ansible 從**目前工作目錄**尋找 `ansible.cfg`；所以從
+`/root/hpc-arch/project/ansible` 執行時會自動讀到這份設定，
+也能用 `-i` 明確指定其他 inventory。
+前面已實際執行的命令保留原本的 `-i`，不改寫歷史紀錄。
 [GPU VM 掛載 playbook](../project/ansible/nfs-gpu-client.yml) 只選
 inventory 的 `gpu_compute` 群組，先確保 `nfs-utils` 已安裝，
 再把控制節點 `10.140.0.2:/srv/hpc-share` 設成 GPU VM 的
@@ -270,14 +276,15 @@ inventory 的 `gpu_compute` 群組，先確保 `nfs-utils` 已安裝，
 若要撤回開機掛載設定，可參考修改前的 fstab 備份並移除該 NFS 項目；
 若也要停止目前掛載，再卸載 `/srv/hpc-share`，但應先確認沒有工作使用它。
 
-先在台灣控制節點以 `root` 執行語法檢查。
-`-i` 指向目前 inventory，playbook 路徑指定新檔案；
-`--syntax-check` 只檢查 Ansible 是否能解析檔案及找到所需模組，
-不 SSH 到 GPU VM，也不改動掛載或服務。
-預期成功時列出 playbook 路徑；這不代表預演或部署成功。
+先確認 Ansible 確實讀到新設定。
+在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄以 `root`
+執行 `ansible-inventory --graph`，不加 `-i`；
+若 `ansible.cfg` 生效，應列出 `controller` 下的控制節點與
+`gpu_compute` 下的 `compute-gpu01`。
+此命令只讀 inventory，不 SSH 到任何 VM，也不修改檔案或服務。
 
 ```bash
-ansible-playbook -i /root/hpc-arch/project/ansible/inventory/hosts.yml /root/hpc-arch/project/ansible/nfs-gpu-client.yml --syntax-check
+ansible-inventory --graph
 ```
 
 ## 實作與過關證據

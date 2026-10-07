@@ -12,11 +12,12 @@
 
 ## 目前狀態
 
-**已確認 Ansible 連線，尚未套用部署程式。** 台灣控制節點已從 AlmaLinux
+**控制節點 NFS playbook 已正式執行，沒有產生變更。** 台灣控制節點已從 AlmaLinux
 AppStream 安裝 `ansible-core-1:2.16.16-2.el10_2.1.noarch`；
 套件交易回報 `Complete!`，並安裝所需的 Python 相依套件。
 inventory 已列出現有兩台 VM，Ansible 已成功連到 GPU VM；
-第一份 NFS playbook 已建立，但沒有部署結果。
+第一份 NFS playbook 已通過語法檢查、預演及正式執行；
+正式執行回報 `ok=5`、`changed=0`、`failed=0`。
 
 ## 要解決的問題
 
@@ -62,7 +63,7 @@ inventory 已列出現有兩台 VM，Ansible 已成功連到 GPU VM；
 
 ## 指令用途
 
-本模組尚未執行下列工具；此表只說明之後會如何使用。
+下表說明本模組已使用的工具和仍未使用的 `--diff`。
 
 | 工具 | 要看什麼 | 限制 |
 |---|---|---|
@@ -156,8 +157,9 @@ inventory 中的 `ansible_host=10.146.0.3`、`ansible_user=a2264`
 
 這份 playbook 目前只處理 NFS 伺服器，不能單獨建成整個叢集；
 它假設控制節點已有 `a2264` 帳號，尚未處理 GPU VM 的掛載。
-實際套用可能安裝套件、改動目錄或 `/etc/exports.d/`、
-啟動服務並更新 NFS 匯出；這些動作尚未執行。
+實際套用時若狀態不符，可能安裝套件、改動目錄或
+`/etc/exports.d/`、啟動服務並更新 NFS 匯出；
+本次執行沒有產生變更。
 
 先在台灣控制節點以 `root` 執行 **`--syntax-check`**。
 `-i` 指向已驗證的 inventory；命令只檢查 playbook 能否解析，
@@ -167,6 +169,76 @@ inventory 中的 `ansible_host=10.146.0.3`、`ansible_user=a2264`
 ```bash
 ansible-playbook -i /root/hpc-arch/project/ansible/inventory/hosts.yml /root/hpc-arch/project/ansible/nfs-controller.yml --syntax-check
 ```
+
+```text
+playbook: /root/hpc-arch/project/ansible/nfs-controller.yml
+```
+
+Ansible 成功解析這份 playbook；這次沒有套用 NFS 設定，
+也還不知道目前控制節點是否需要變更。
+
+### 預演控制節點會發生的變更
+
+接著在台灣控制節點以 `root` 執行下列指令。
+它沿用同一份 inventory 和 playbook，`--check` 要求 Ansible
+盡可能只預演任務，列出會維持原狀、預計變更或失敗的項目；
+目標只有 inventory 中的 `controller`，不配置 GPU VM。
+預演仍會讀取控制節點狀態並可能留下 Ansible 暫存或操作紀錄，
+但不應安裝套件、改寫 NFS 匯出檔或重啟服務。
+看各任務的 `ok`、`changed`、`failed` 和最後的 recap；
+`changed` 是預計變更，不是已經部署成功。
+預演無法證明 NFS 分享已更新或 GPU VM 能掛載。
+
+```bash
+ansible-playbook -i /root/hpc-arch/project/ansible/inventory/hosts.yml /root/hpc-arch/project/ansible/nfs-controller.yml --check
+```
+
+```text
+PLAY [設定控制節點的 NFS 工作資料分享]
+TASK [Gathering Facts]                          ok: [instance-20260923-104239]
+TASK [確保 NFS 套件已安裝]                        ok: [instance-20260923-104239]
+TASK [確保共享目錄的擁有者與權限正確]              ok: [instance-20260923-104239]
+TASK [部署只允許 GPU VM 讀寫的 NFS 匯出設定]     ok: [instance-20260923-104239]
+TASK [確保 NFS 服務正在運行]                    ok: [instance-20260923-104239]
+PLAY RECAP
+instance-20260923-104239 : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+五項檢查都符合預期，沒有預計變更，也沒有連線或任務失敗。
+這表示目前控制節點狀態與 playbook 一致；
+`--check` 沒有實際部署，仍須正式套用與檢查結果。
+
+### 正式套用現有 NFS 設定
+
+在台灣控制節點以 `root` 執行下列指令，目標只限 inventory 的
+`controller`，不配置 GPU VM 或建立雲端資源。
+這次拿掉 `--check`，Ansible 會實際確保 `nfs-utils`、
+`/srv/hpc-share`、`/etc/exports.d/hpc-share.exports` 和
+`nfs-server` 符合 playbook；若匯出檔變動，handler 會執行
+`exportfs -ra`。剛才預演為 `changed=0`，因此預期正式套用也不需改動；
+若執行時環境已變，仍可能安裝套件、改動檔案或啟動服務。
+復原時須依實際 `changed` 項目處理：匯出設定可恢復原檔後執行
+`exportfs -ra`，目錄權限與服務狀態則恢復成執行前的值。
+
+```bash
+ansible-playbook -i /root/hpc-arch/project/ansible/inventory/hosts.yml /root/hpc-arch/project/ansible/nfs-controller.yml
+```
+
+```text
+PLAY [設定控制節點的 NFS 工作資料分享]
+TASK [Gathering Facts]                          ok: [instance-20260923-104239]
+TASK [確保 NFS 套件已安裝]                        ok: [instance-20260923-104239]
+TASK [確保共享目錄的擁有者與權限正確]              ok: [instance-20260923-104239]
+TASK [部署只允許 GPU VM 讀寫的 NFS 匯出設定]     ok: [instance-20260923-104239]
+TASK [確保 NFS 服務正在運行]                    ok: [instance-20260923-104239]
+PLAY RECAP
+instance-20260923-104239 : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+正式執行時，套件、目錄、匯出檔與服務都已符合指定狀態，
+所以 Ansible 沒有安裝、複製、修改或重新載入 NFS 匯出。
+`changed=0` 是這次正式套用沒有變更的證據；
+這份輸出本身沒有從 GPU VM 驗證掛載與讀寫。
 
 ## 實作與過關證據
 

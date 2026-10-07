@@ -1,5 +1,6 @@
 ---
-# 從台灣控制節點透過 inventory 的 SSH 連線，管理東京 GPU VM 的 NFS 掛載。
+# 執行時用 -i 指定 inventory/hosts.yml；下方 hosts: gpu_compute 會選到東京 GPU VM。
+# Ansible 從台灣控制節點 SSH 到這台 GPU VM，在 GPU VM 上設定 NFS 掛載。
 # 控制節點先依 requirements.yml 安裝 ansible.posix:2.2.2。
 # 套用前先預演；正式套用會寫入 GPU VM 的 /etc/fstab 並確保目前已掛載。
 - name: 設定 GPU VM 的 NFS 工作資料掛載
@@ -12,7 +13,8 @@
         name: nfs-utils
         state: present
 
-    # src 是控制節點的私有 IP 與已匯出的目錄；path 是 GPU VM 使用的路徑。
+    # 在 GPU VM 上，把控制節點 10.140.0.2 的 /srv/hpc-share 接到 GPU VM 自己的 /srv/hpc-share。
+    # src 的「IP:目錄」是資料來源；path 是 GPU VM 上使用資料的入口，不是把資料傳到 src。
     # mounted 會建立缺少的掛載目錄、寫入 /etc/fstab，並確保目前已掛載。
     # backup 保留修改前的 fstab，供非預期變更時比對或復原。
     # vers=4.2 沿用模組 04 實測版本；_netdev 表示需網路；nofail 避免分享不可達時阻斷開機。

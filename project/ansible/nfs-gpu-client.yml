@@ -18,12 +18,14 @@
     # src 的「IP:目錄」是資料來源；path 是 GPU VM 上使用資料的入口，不是把資料傳到 src。
     # mounted 會建立缺少的掛載目錄、寫入 /etc/fstab，並確保目前已掛載。
     # backup 保留修改前的 fstab，供非預期變更時比對或復原。
-    # vers=4.2 沿用模組 04 實測版本；_netdev 表示需網路；nofail 避免分享不可達時阻斷開機。
+    # rw 保留現有讀寫設定；vers=4.2 沿用模組 04 實測版本。
+    # _netdev 表示需要網路；nofail 避免分享不可達時阻斷開機。
+    # x-systemd.automount 保留 GPU VM 現有的開機行為：systemd 建立自動掛載點，存取時才觸發 NFS 掛載。
     - name: 確保控制節點的 NFS 分享已掛載
       ansible.posix.mount:
         src: 10.140.0.2:/srv/hpc-share
         path: /srv/hpc-share
         fstype: nfs
-        opts: vers=4.2,_netdev,nofail
+        opts: rw,vers=4.2,_netdev,nofail,x-systemd.automount
         backup: true
         state: mounted

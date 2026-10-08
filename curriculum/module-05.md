@@ -256,110 +256,14 @@ ansible-inventory --graph
 已讓 Ansible 使用專案的 `hosts.yml`；
 這一步沒有部署 GPU VM 掛載。
 
-### GPU VM 掛載 playbook 的語法檢查
+### 掛載設定與執行結果
 
-在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
-以 root 執行下列指令。
-`ansible.cfg` 會提供預設 inventory，
-`--syntax-check` 只檢查 `nfs-gpu-client.yml`
-能否被 Ansible 解析，以及 `ansible.posix.mount` 模組是否可用。
-這一步不會 SSH 到 GPU VM，也不修改掛載、`/etc/fstab` 或服務。
-成功時會列出 playbook 名稱；
-它不能證明預演或正式部署會成功。
-
-```bash
-ansible-playbook nfs-gpu-client.yml --syntax-check
-```
-
-```text
-playbook: nfs-gpu-client.yml
-```
-
-Ansible 成功解析 playbook 並找到所需模組。
-這一步沒有讀取 GPU VM 的套件或掛載狀態，
-也沒有修改 `/etc/fstab`。
-
-### 預演 GPU VM 的套件與掛載設定
-
-在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
-以 root 執行下列指令。
-`--check` 透過 inventory 的 SSH 連到 GPU VM，
-讀取現有套件與掛載狀態，預估 playbook 會改動什麼；
-它不應安裝套件、寫入 `/etc/fstab` 或更動目前掛載。
-看到 `changed` 時，只表示**預計**要變更，並非已經套用。
-預演仍可能留下 SSH 登入紀錄與 Ansible 暫存檔；
-結果不能代替正式部署與重跑驗證。
-
-```bash
-ansible-playbook nfs-gpu-client.yml --check
-```
-
-```text
-PLAY [設定 GPU VM 的 NFS 工作資料掛載]
-TASK [Gathering Facts]                    ok: [compute-gpu01]
-TASK [確保 NFS 用戶端套件已安裝]          ok: [compute-gpu01]
-TASK [確保控制節點的 NFS 分享已掛載]     changed: [compute-gpu01]
-PLAY RECAP
-compute-gpu01 : ok=3 changed=1 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
-```
-
-GPU VM 的 NFS 用戶端套件已符合要求。
-預計變更的是掛載任務，**沒有實際改動 GPU VM**。
-這份 playbook 的 `state: mounted` 也會核對開機掛載設定；
-現有 fstab 項目的選項是否一致，需要另行查明。
-此輸出沒有列出實際差異，不能據此斷言只有 fstab 會變，
-也不能把 `changed=1` 當作已重新掛載。
-
-### 查明 GPU VM 是否已有開機掛載設定
-
-在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
-以 root 執行下列命令。
-`ansible` 從預設 inventory 選 `gpu_compute`，
-用既有 SSH 連線在 GPU VM 執行 `findmnt`。
-`ansible.builtin.command` 只執行指定命令；
-`--fstab` 查的是 GPU VM 的 `/etc/fstab`，
-`--mountpoint` 只選 `/srv/hpc-share` 這個掛載點，
-`--output` 只顯示資料來源、類型和選項。
-如果有項目，會列出這三欄；
-若沒有項目，`findmnt` 會以非零退出碼回報找不到。
-這條指令不安裝套件、不修改 fstab，也不更動目前掛載。
-
-```bash
-ansible gpu_compute -m ansible.builtin.command -a "findmnt --fstab --mountpoint /srv/hpc-share --noheadings --output SOURCE,FSTYPE,OPTIONS"
-```
-
-```text
-compute-gpu01 | CHANGED | rc=0 >>
-10.140.0.2:/srv/hpc-share nfs rw,vers=4.2,_netdev,nofail,x-systemd.automount
-```
-
-`rc=0` 表示 GPU VM 的 `/etc/fstab` 已有這個掛載點；
-來源與檔案系統類型符合 playbook。
-`ansible.builtin.command` 預設把成功執行標為 `CHANGED`，
-這條只讀 `findmnt` 並未修改 fstab。
-現有選項多了 `rw` 和 `x-systemd.automount`，
-而 playbook 只宣告 `vers=4.2,_netdev,nofail`。
-其中 `x-systemd.automount` 會影響掛載啟動方式；
-預演的掛載任務 `changed=1` 可能由選項不一致造成，
-尚未核對實際差異，也尚未正式套用。
-
-為保留 GPU VM 已有的設定，已將 playbook 的 `opts`
-調整為 `rw,vers=4.2,_netdev,nofail,x-systemd.automount`。
-這只修改專案檔案，尚未在 GPU VM 上執行新版 playbook；
-先前 `changed=1` 是修改前的預演結果，
-仍須重新預演才能判斷新版是否有其他預計變更。
-
-### 核對新版 playbook 的預計差異
-
-在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
-以 root 執行下列指令。
-`--check` 預演套件與掛載任務，不應寫入 GPU VM 的 `/etc/fstab`
-或更動目前掛載；`--diff` 在模組支援時顯示預計差異。
-Ansible 仍會透過 SSH 讀取 GPU VM 狀態，
-可能留下登入紀錄與短暫的遠端暫存檔。
-若回報 `changed=0`，新版 playbook 預計無變更；
-若仍回報 `changed=1`，須看任務與差異內容，
-不能僅憑結果推定原因。
+在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄以 root 執行。
+playbook 的 `opts` 為
+`rw,vers=4.2,_netdev,nofail,x-systemd.automount`，
+與現有 GPU VM 的 fstab 選項一致。
+`--check` 只預演，`--diff` 在模組支援時顯示預計差異；
+預演仍會透過 SSH 讀取 GPU VM 狀態，但不應改動掛載或 fstab。
 
 ```bash
 ansible-playbook nfs-gpu-client.yml --check --diff
@@ -374,24 +278,13 @@ PLAY RECAP
 compute-gpu01 : ok=3 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-新版預演沒有預計變更，也沒有列出差異。
-在這次觀察中，只改了 playbook 的 `opts`，
-掛載任務由先前的預計 `changed=1` 變成 `ok`；
-這支持先前選項不一致是變更原因，
-但預演仍不能代替正式執行與重跑驗證。
-
-### 正式套用 GPU VM 掛載 playbook
-
-在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
-以 root 執行下列指令。
-不帶 `--check` 會讓 Ansible 經 SSH 正式核對 GPU VM 的
-`nfs-utils`、`/etc/fstab` 與目前掛載狀態。
-新版預演為 `changed=0`，預期正式執行也不需修改；
-若狀態在兩次執行之間變動，仍可能安裝套件、寫入 fstab
-或調整掛載，`backup: true` 會在修改 fstab 時保留舊版。
-若出現非預期變更，先核對任務輸出與備份，
-再依實際變更復原；不直接覆蓋設定或卸載使用中的目錄。
-這不建立新的 VM 或雲端資源。
+預演沒有預計變更或差異。
+接著不帶 `--check` 正式核對套件、fstab 與掛載。
+若實際狀態與預演不同，playbook 仍可能安裝套件、
+改寫 fstab 或調整掛載；修改 fstab 時會保留備份。
+如有非預期變更，先核對輸出與備份再復原，
+不直接卸載使用中的共享目錄。
+這些指令不建立新 VM 或雲端資源。
 
 ```bash
 ansible-playbook nfs-gpu-client.yml
@@ -406,33 +299,21 @@ PLAY RECAP
 compute-gpu01 : ok=3 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-正式執行沒有安裝套件、改寫 fstab 或調整掛載；
-現有 GPU VM 已符合這份 playbook。
-這次沒有從乾淨節點重建，因此不能當作全新部署成功的證據。
-
-### 重跑驗證
-
-在同一台控制節點、同一目錄以 root 再執行一次。
-這會重新透過 SSH 核對 GPU VM 的套件、fstab 與掛載，
-預期仍是 `changed=0`；若狀態在期間變動，
-正式執行仍可能重新寫入設定或調整掛載。
-重跑不建立雲端資源。
+正式執行沒有修改套件、fstab 或掛載。
+以相同命令重跑，核對已符合要求的節點是否仍無變更：
 
 ```bash
 ansible-playbook nfs-gpu-client.yml
 ```
 
 ```text
-PLAY [設定 GPU VM 的 NFS 工作資料掛載]
-TASK [Gathering Facts]                    ok: [compute-gpu01]
-TASK [確保 NFS 用戶端套件已安裝]          ok: [compute-gpu01]
-TASK [確保控制節點的 NFS 分享已掛載]     ok: [compute-gpu01]
 PLAY RECAP
 compute-gpu01 : ok=3 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-連續第二次正式執行仍沒有變更或失敗；
-現有 GPU VM 的掛載設定可重跑，但尚無從乾淨節點部署的證據。
+重跑仍沒有變更或失敗。
+這證明現有 GPU VM 符合 playbook 且可重跑；
+沒有從乾淨節點部署的證據。
 
 ## 尚需交付的能力證據
 

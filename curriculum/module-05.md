@@ -21,6 +21,8 @@
 | 節點清單與連線 | inventory 列出控制節點與 GPU VM；對 GPU VM 執行模組回傳 `pong` | 只證明 Ansible 可連線與遠端執行 |
 | 控制節點 NFS | playbook 通過語法檢查、預演及正式執行；正式執行 `ok=5`、`changed=0` | 現有設定已符合要求，這次沒有重建乾淨節點 |
 | GPU VM 掛載 | 已安裝 `ansible.posix:2.2.2`；掛載 playbook 經預演、正式執行與重跑，兩次正式執行皆 `ok=3`、`changed=0` | 現有 fstab 與掛載已符合要求；尚無乾淨節點部署證據，雙向讀寫是在模組 04 手動驗證 |
+| GPU VM 運算端套件 | 已安裝與控制節點同版的 MUNGE `0.5.15`、Slurm `26.05.4` 及運算端套件 | `slurmd` 尚未啟動，跨節點 Slurm 設定尚未部署 |
+| GPU VM MUNGE | 已分發控制節點現有金鑰、啟動服務；控制端憑證在 GPU VM 解碼為 `Success (0)`；重跑 `changed=0` | 尚未部署 GPU VM 的 Slurm 設定或提交 Slurm 工作 |
 | 預設 inventory | 不帶 `-i` 執行 `ansible-inventory --graph`，列出兩組預期主機 | 只證明清單被讀到，不代表部署成功 |
 
 ## Ansible 在這個叢集的角色
@@ -314,6 +316,253 @@ compute-gpu01 : ok=3 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignore
 重跑仍沒有變更或失敗。
 這證明現有 GPU VM 符合 playbook 且可重跑；
 沒有從乾淨節點部署的證據。
+
+## GPU VM 運算端套件
+
+GPU VM 已安裝下列套件；版本由安裝交易與安裝後的 RPM 查詢確認。
+套件準備不是本模組的操作重點，安裝過程不逐項保留。
+
+| 套件 | 已安裝版本 |
+|---|---|
+| `munge`、`munge-libs` | `0.5.15-11.el10_1.x86_64` |
+| `slurm`、`slurm-slurmd` | `26.05.4-1.el10.x86_64` |
+| `bash-completion` | `1:2.11-16.el10.noarch` |
+| `mariadb-connector-c` | `3.4.4-2.el10_2.x86_64` |
+| `mariadb-connector-c-config` | `3.4.4-2.el10_2.noarch` |
+
+控制節點的 Slurm 與 MUNGE 版本相同。
+GPU VM 的 MUNGE 金鑰與服務已在下節部署；
+跨節點 Slurm 設定與 `slurmd` 仍待處理。
+
+## 跨節點 MUNGE 身分驗證
+
+Slurm 的控制端與運算端需要辨認同一叢集的請求。
+MUNGE 使用兩台 VM 共用的私密金鑰建立及驗證憑證；
+金鑰只留在 VM 的 `/etc/munge/munge.key`，不進專案或輸出。
+先確認 GPU VM 是否已有金鑰，避免覆蓋未知內容。
+
+在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
+以 root 執行下列只讀查詢。
+`gpu_compute` 選 GPU VM，`-b` 讓遠端用管理員權限讀取檔案中繼資料；
+`get_checksum=false` 不計算或回傳金鑰雜湊值。
+結果中的 `exists` 表示檔案是否存在；若存在，再看擁有者和權限。
+查詢不回傳金鑰內容，不修改檔案或服務；
+可能留下 SSH 登入紀錄與短暫的 Ansible 暫存檔。
+
+```bash
+ansible gpu_compute -b -m ansible.builtin.stat -a "path=/etc/munge/munge.key get_checksum=false"
+```
+
+```text
+compute-gpu01 | SUCCESS => {
+    "changed": false,
+    "stat": {"exists": false}
+}
+```
+
+GPU VM 尚無 MUNGE 金鑰；這次查詢沒有變更檔案。
+接著在台灣控制節點以 root 只查來源金鑰的
+擁有者、群組、權限與檔案大小，不讀取金鑰內容。
+預期由 `munge` 擁有、權限為 `600`，且檔案非空。
+
+```bash
+stat -c '%U:%G %a %s %n' /etc/munge/munge.key
+```
+
+```text
+munge:munge 600 128 /etc/munge/munge.key
+```
+
+控制節點的來源金鑰存在、非空，且由 `munge` 擁有，
+權限只允許擁有者讀寫。
+
+### GPU VM MUNGE 設定 playbook
+
+[munge-gpu.yml](../project/ansible/munge-gpu.yml)
+只選 `gpu_compute`。它確保 GPU VM 的 MUNGE 目錄權限正確，
+從控制節點複製現有金鑰到 GPU VM，設為 `munge:munge`、`0600`，
+並讓服務啟動及開機自動啟動。
+金鑰不保存在專案，複製任務隱藏輸出與差異；
+日後金鑰真的變更時，handler 會重啟 GPU VM 的 MUNGE。
+若需撤回，先停用 GPU VM 的 MUNGE，
+確認沒有工作依賴後移除 GPU VM 上複製的金鑰；
+控制節點現有金鑰與服務不受這份 playbook 管理。
+
+先在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
+以 root 執行語法檢查。
+這只解析 playbook 與模組名稱，
+不連線到 GPU VM、不讀取金鑰內容，也不修改檔案或服務。
+
+```bash
+ansible-playbook munge-gpu.yml --syntax-check
+```
+
+```text
+playbook: munge-gpu.yml
+```
+
+Ansible 成功解析 playbook；尚未讀取 GPU VM 狀態或套用設定。
+
+接著在同一目錄以 root 執行預演。
+`--check` 預測目錄、金鑰與服務的變更，
+不應寫入 GPU VM 或啟動服務；`--diff` 只在任務允許時顯示差異，
+金鑰複製任務已禁止顯示內容。
+Ansible 仍會透過 SSH 讀取遠端狀態，
+可能留下登入紀錄與短暫暫存檔。
+預演中的 `changed` 只表示預計變更。
+
+```bash
+ansible-playbook munge-gpu.yml --check --diff
+```
+
+```text
+PLAY [設定 GPU VM 的 MUNGE 身分驗證]
+TASK [Gathering Facts]                          ok: [compute-gpu01]
+TASK [確保 MUNGE 目錄由服務帳號管理]            ok: [compute-gpu01] (三個目錄)
+TASK [部署叢集共用的 MUNGE 金鑰]                changed: [compute-gpu01]
+TASK [確保 GPU VM 的 MUNGE 已啟動]              changed: [compute-gpu01]
+RUNNING HANDLER [重新啟動 GPU VM 的 MUNGE]      changed: [compute-gpu01]
+PLAY RECAP
+compute-gpu01 : ok=5 changed=3 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+三個目錄已符合要求；金鑰複製、服務啟動與 handler
+各預計變更一次。預演未實際部署金鑰或啟動服務，
+且沒有顯示金鑰內容。
+
+### 正式部署 MUNGE
+
+在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
+以 root 執行下列指令。
+Ansible 會透過 SSH 將來源金鑰複製到 GPU VM，
+必要時修正目錄與金鑰權限，啟用並啟動 `munge`；
+金鑰變更會通知 handler 重啟 GPU VM 的服務。
+此指令不管理控制節點的 MUNGE，也不建立新 VM。
+若執行失敗或發現非預期變更，先檢查服務與檔案狀態，
+再依需要停止 GPU VM 的服務並移除複製的金鑰；
+不要將金鑰內容貼到終端輸出或文件。
+
+```bash
+ansible-playbook munge-gpu.yml
+```
+
+```text
+PLAY [設定 GPU VM 的 MUNGE 身分驗證]
+TASK [Gathering Facts]                          ok: [compute-gpu01]
+TASK [確保 MUNGE 目錄由服務帳號管理]            ok: [compute-gpu01] (三個目錄)
+TASK [部署叢集共用的 MUNGE 金鑰]                changed: [compute-gpu01]
+TASK [確保 GPU VM 的 MUNGE 已啟動]              changed: [compute-gpu01]
+RUNNING HANDLER [重新啟動 GPU VM 的 MUNGE]      changed: [compute-gpu01]
+PLAY RECAP
+compute-gpu01 : ok=5 changed=3 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+正式執行在 GPU VM 部署金鑰並啟動服務；
+三個目錄無須修改，金鑰內容未顯示。
+`changed=3` 包含金鑰複製、服務啟動與 handler 重啟，
+不能單靠 playbook 成功就宣稱跨節點憑證已驗證。
+
+### 核對金鑰保護
+
+在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
+以 root 執行下列只讀查詢。
+Ansible 在 GPU VM 上回傳檔案中繼資料；
+這裡核對是否存在、擁有者、權限和大小。
+`get_checksum=false` 不計算雜湊，也不顯示金鑰內容。
+預期是 `munge:munge`、`0600` 且檔案非空。
+
+```bash
+ansible gpu_compute -b -m ansible.builtin.stat -a "path=/etc/munge/munge.key get_checksum=false"
+```
+
+```text
+compute-gpu01 | SUCCESS => {
+    "changed": false,
+    "stat": {
+        "exists": true,
+        "pw_name": "munge",
+        "gr_name": "munge",
+        "mode": "0600",
+        "size": 128
+    }
+}
+```
+
+GPU VM 的金鑰檔存在且非空，擁有者與權限符合設定；
+查詢未顯示金鑰內容。下一步確認服務實際在運行。
+
+在同一控制節點目錄以 root 執行下列只讀查詢。
+Ansible 在 GPU VM 上用 `systemctl show` 讀取 MUNGE 的
+`ActiveState`（目前是否運行）與 `UnitFileState`（是否設為開機啟動）。
+預期為 `active` 與 `enabled`；它不啟動或重啟服務。
+
+```bash
+ansible gpu_compute -m ansible.builtin.command -a "systemctl show munge -p ActiveState -p UnitFileState"
+```
+
+```text
+compute-gpu01 | CHANGED | rc=0 >>
+ActiveState=active
+UnitFileState=enabled
+```
+
+GPU VM 的 MUNGE 正在運行，且已設定開機自動啟動。
+`CHANGED` 是 `ansible.builtin.command` 的預設標記；
+這條 `systemctl show` 只讀取狀態，沒有更動服務。
+
+### 控制節點產生、GPU VM 驗證 MUNGE 憑證
+
+在台灣控制節點以 root 執行下列單行指令。
+左半段以 `a2264` 身分呼叫本機 `munge -n` 產生短效憑證；
+管線把憑證直接交給右半段的 SSH 標準輸入，
+以既有私鑰登入 GPU VM，讓 GPU VM 的 `unmunge` 解碼。
+`-i` 指定既有 SSH 私鑰，`IdentitiesOnly=yes` 限定使用該金鑰，
+`BatchMode=yes` 避免互動詢問，`ConnectTimeout=5` 限制連線等待。
+預期看到 `STATUS: Success` 和控制節點的編碼主機；
+憑證與私鑰內容都不寫入專案或終端輸出。
+這只驗證兩台 VM 的 MUNGE 通路，不提交 Slurm 工作，
+也不修改兩台 VM 的設定。
+
+```bash
+sudo -u a2264 -- munge -n | sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 a2264@10.146.0.3 unmunge
+```
+
+```text
+STATUS:          Success (0)
+ENCODE_HOST:     instance-20260923-104239.asia-east1-b.c.project-78b8a95c-a2c0-461f-a08.internal (10.140.0.2)
+UID:             a2264 (1000)
+GID:             a2264 (1005)
+```
+
+GPU VM 成功解碼控制節點產生的短效憑證；
+這是跨 VM 的 MUNGE 驗證，不是 Slurm 工作或排程結果。
+
+### 重跑 MUNGE playbook
+
+在台灣控制節點的 `/root/hpc-arch/project/ansible` 目錄
+以 root 再執行同一份 playbook。
+Ansible 會重新核對 GPU VM 的目錄、金鑰與服務；
+若狀態未變，預期 `changed=0`，金鑰複製任務為 `ok`，
+handler 不會重啟 MUNGE。
+若期間狀態已改變，正式執行仍可能修正權限、複製金鑰
+或啟動服務；不建立新 VM。
+
+```bash
+ansible-playbook munge-gpu.yml
+```
+
+```text
+PLAY [設定 GPU VM 的 MUNGE 身分驗證]
+TASK [Gathering Facts]                          ok: [compute-gpu01]
+TASK [確保 MUNGE 目錄由服務帳號管理]            ok: [compute-gpu01] (三個目錄)
+TASK [部署叢集共用的 MUNGE 金鑰]                ok: [compute-gpu01]
+TASK [確保 GPU VM 的 MUNGE 已啟動]              ok: [compute-gpu01]
+PLAY RECAP
+compute-gpu01 : ok=4 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+重跑沒有複製金鑰、變更服務或觸發 handler；
+GPU VM 的 MUNGE 設定可重跑。
 
 ## 尚需交付的能力證據
 

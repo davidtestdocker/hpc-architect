@@ -1,0 +1,49 @@
+---
+# 從控制節點的 project/ansible 目錄執行；ansible.cfg 讀取 inventory/hosts.yml。
+# 只管理 gpu_compute：把控制節點現有的 MUNGE 金鑰經 SSH 送到 GPU VM，不把金鑰放進專案。
+# 第一次執行會建立／修正目錄、複製金鑰並啟動服務；重跑時狀態相同應不變更。
+- name: 設定 GPU VM 的 MUNGE 身分驗證
+  hosts: gpu_compute
+  become: true  # 遠端要修改 /etc/munge 並管理系統服務，須取得管理員權限。
+  tasks:
+    # loop 依序取出三個目錄；每次的 item 就是當次要設定的路徑。
+    # 金鑰目錄、執行狀態及日誌目錄都由 munge 帳號管理，避免服務因權限不符而無法啟動。
+    - name: 確保 MUNGE 目錄由服務帳號管理
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: munge
+        group: munge
+        mode: "0700"
+      loop:
+        - /etc/munge
+        - /var/lib/munge
+        - /var/log/munge
+
+    # src 是控制節點現有私密金鑰；dest 是 GPU VM 的金鑰路徑。
+    # no_log 避免任務結果洩露檔案資訊；diff: false 避免顯示金鑰內容差異。
+    # notify 只有這個 copy 任務真的變更時，才在本次 play 結尾呼叫同名 handler 重啟 MUNGE。
+    - name: 部署叢集共用的 MUNGE 金鑰
+      ansible.builtin.copy:
+        src: /etc/munge/munge.key
+        dest: /etc/munge/munge.key
+        owner: munge
+        group: munge
+        mode: "0600"
+      no_log: true
+      diff: false
+      notify: 重新啟動 GPU VM 的 MUNGE
+
+    # 啟動本次服務，並設定 GPU VM 開機時自動啟動；不管理控制節點的服務。
+    - name: 確保 GPU VM 的 MUNGE 已啟動
+      ansible.builtin.service:
+        name: munge
+        state: started
+        enabled: true
+
+  handlers:
+    # 金鑰變動後須讓 munged 重新讀取金鑰；這是重啟服務，不只是重載清單。
+    - name: 重新啟動 GPU VM 的 MUNGE
+      ansible.builtin.service:
+        name: munge
+        state: restarted

@@ -635,6 +635,14 @@ squeue -h -o '%i %T %u %j'
 ```
 
 **結果：** 命令沒有輸出，直接返回提示字元；目前佇列沒有工作。
+兩節點設定預演後、正式部署前，又在控制節點以 root 執行同一條查詢：
+
+```bash
+squeue -h -o '%i %T %u %j'
+```
+
+**結果：** 再次沒有輸出，直接返回提示字元；查詢當下沒有執行中或等待中的工作。
+這是執行前的狀態，不保證之後不會有新工作提交。
 
 ## 兩節點 Slurm 設定：已準備，尚未套用
 
@@ -662,7 +670,7 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
 | 機器 | 目前已知的檔案與來源 |
 |---|---|
 | 控制節點 | [模組 01 的實際命令](module-01.md#slurm-設定與啟動) 已用 `install -D` 把工作樹中的 `project/slurm/single-node-slurm.conf` 複製到**控制節點自己的** `/etc/slurm/slurm.conf`；`-D` 也會建立缺少的父目錄。當時 `stat` 與 `cmp` 已驗證檔案存在且內容一致。 |
-| GPU VM | `/etc/slurm` 是否已由套件建立尚未核對；兩節點 `slurm.conf` 與 `gres.conf` 尚未部署。Playbook 會先建立或核對目錄，再複製設定。 |
+| GPU VM | 預演查到 `/etc/slurm` 尚不存在；兩節點 `slurm.conf` 與 `gres.conf` 尚未部署。正式執行時，playbook 會先建立目錄，再複製設定。 |
 
 `project/slurm/two-node-slurm.conf` 是接下來要部署的**新版來源檔**，
 不是控制節點正在使用的 `/etc/slurm/slurm.conf`。
@@ -671,7 +679,7 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
 `ansible-playbook slurm-two-node.yml` 時，playbook 才會按下列順序操作：
 
 1. 在 GPU VM 建立或核對 `/etc/slurm` 目錄。
-   目前沒有核對它是否已由套件建立；若不存在，這一步才會建立。
+   預演查到目前不存在；正式執行時才會建立。
 2. 從控制節點工作樹複製 `../slurm/two-node-slurm.conf`
    到 GPU VM 的 `/etc/slurm/slurm.conf`；
    再複製 `../slurm/gpu-gres.conf` 到 GPU VM 的 `/etc/slurm/gres.conf`。
@@ -683,7 +691,8 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
    `slurm.conf` 與 `gres.conf`，印出兩份設定合併後的 GPU 資源結果就退出。
    這是設定檢查，不會啟動常駐服務或執行 GPU 工作。
    playbook 要求指令成功、輸出包含 `nvidia_l4` 且沒有 `error:`；
-   否則停止，不更新控制節點。
+   否則停止，不更新控制節點。通過後 Ansible 會印出實際退出碼與輸出，
+   供核對和記錄；顯示結果的任務不會修改 VM。
 4. GPU 檢查通過後，才把同一份 `two-node-slurm.conf` 複製到控制節點
    **已在模組 01 建立**的 `/etc/slurm/slurm.conf`，取代原本的單節點內容；
    接著以 `scontrol reconfigure`
@@ -693,7 +702,7 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
    是否真的能由 Slurm 執行 GPU 工作，仍須用實際工作驗證。
 
 下方已執行的 `--syntax-check` 只檢查 playbook 語法；
-預計執行的 `--check --diff` 只預演差異。
+`--check --diff` 只預演差異。
 兩者都不複製檔案，也不執行 GPU VM 上的 `slurmd -G`。
 若 VM 原本已有設定檔且內容被改動，`copy` 會在該 VM 留下舊版備份。
 這份 playbook 不建立新 VM、不安裝套件，也不管理 MUNGE 金鑰。
@@ -711,8 +720,8 @@ playbook: slurm-two-node.yml
 
 語法檢查通過；GPU 裝置對應與兩台服務的實際狀態仍須在套用時確認。
 
-**下一步預計執行，尚未實測：** 在台灣控制節點的 `project/ansible`
-目錄以 root 預演兩台 VM 的設定差異。
+在台灣控制節點的 `project/ansible` 目錄，
+以 root 預演兩台 VM 的設定差異。
 `--check` 只預估支援預演的任務會如何變更，`--diff` 顯示設定檔差異；
 不會修改遠端設定或啟動服務。
 預演不會實際執行 `slurmd -G`，因此也不能把預演成功當成 GPU 對應完成。
@@ -721,12 +730,83 @@ playbook: slurm-two-node.yml
 ansible-playbook slurm-two-node.yml --check --diff
 ```
 
+實際預演的關鍵輸出如下；`before` 是 VM 當時的狀態，
+`after` 是預計變更，不是已寫入的結果。
+
+```text
+TASK [建立或核對 GPU VM 的 /etc/slurm 目錄]
+--- before
++++ after
+@@ -1,4 +1,4 @@
+ {
+     "path": "/etc/slurm",
+-    "state": "absent"
++    "state": "directory"
+ }
+changed: [compute-gpu01]
+TASK [確保 GPU VM 的工作暫存目錄存在]
+--- before
++++ after
+@@ -1,4 +1,4 @@
+ {
+     "path": "/var/spool/slurmd",
+-    "state": "absent"
++    "state": "directory"
+ }
+changed: [compute-gpu01]
+TASK [部署 GPU VM 的共用 Slurm 設定]
+--- before
++++ after: /root/hpc-arch/project/slurm/two-node-slurm.conf
+changed: [compute-gpu01]
+TASK [部署 GPU VM 的 GPU 資源設定]
+--- before
++++ after: /root/hpc-arch/project/slurm/gpu-gres.conf
+changed: [compute-gpu01]
+TASK [核對 GPU VM 的 GRES 設定]
+skipping: [compute-gpu01]
+TASK [部署控制節點的共用 Slurm 設定]
+--- before: /etc/slurm/slurm.conf
++++ after: /root/hpc-arch/project/slurm/two-node-slurm.conf
+changed: [instance-20260923-104239]
+RUNNING HANDLER [重新讀取 Slurm 設定]
+skipping: [instance-20260923-104239]
+TASK [設定有變更時重啟 GPU VM 的 slurmd]
+changed: [compute-gpu01]
+TASK [確保 GPU VM 的 slurmd 已啟動]
+changed: [compute-gpu01]
+PLAY RECAP
+compute-gpu01              : ok=8 changed=6 unreachable=0 failed=0 skipped=1
+instance-20260923-104239   : ok=2 changed=1 unreachable=0 failed=0 skipped=1
+```
+
+預演確認 GPU VM 當時沒有 `/etc/slurm` 和 `/var/spool/slurmd` 目錄；
+預計建立兩個目錄並複製兩份設定。控制節點已有單節點
+`/etc/slurm/slurm.conf`，預計用兩節點版取代。
+`slurmd -G` 和控制端重新讀取設定都被跳過；GPU VM 的服務任務雖顯示
+`changed`，也只是預演預測，**沒有真的啟動或重啟服務**。
+本次 `failed=0` 只表示預演沒有失敗，不能當作 GPU 設定或排程已通過驗證。
+
 **尚未套用。** 正式執行會修改兩台 VM 的 `/etc/slurm/slurm.conf`、
-GPU VM 的 `/etc/slurm/gres.conf` 與 `slurmd` 服務狀態，
-並讓控制節點 Slurm 重新讀取設定；可能短暫影響排程。
+GPU VM 的 `/etc/slurm/gres.conf`，並建立 GPU VM 當時缺少的
+`/etc/slurm`、`/var/spool/slurmd` 目錄。
+`slurmd -G` 核對通過後，會讓控制節點重新讀取 Slurm 設定，
+再啟動 GPU VM 的 `slurmd`；可能短暫影響排程。
+不建立新 VM 或雲端資源；既有 GPU VM 若維持開機仍按原有方式計費。
 若套用失敗，先依實際任務輸出定位，
-必要時停止 GPU VM 的 `slurmd`、從備份還原兩台設定，
-再讓控制節點重新讀取原設定。
+必要時停止 GPU VM 的 `slurmd`；控制節點設定若已被取代，
+從 `copy` 留下的備份還原並重新讀取原設定。
+GPU VM 原本沒有的設定檔不會有舊版備份，
+若需完整復原，再依實際變更處理新增檔案。
+
+**已取得同意，待執行，尚無實際輸出：**
+在台灣控制節點的 `project/ansible` 目錄以 root 執行下列指令。
+`ansible-playbook` 會按檔案中的三個 play 順序連到兩台 VM，
+執行上述部署、GPU 核對、控制端設定重讀及 GPU VM 服務啟動。
+這條命令沒有 `--check`，因此會真的修改 VM。
+
+```bash
+ansible-playbook slurm-two-node.yml
+```
 
 ## 尚需交付的能力證據
 

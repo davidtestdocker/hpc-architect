@@ -8,14 +8,15 @@
 # 兩台各有一份檔案，不是共用一個磁碟檔案；目前尚未正式執行此 playbook。
 # 模組 01 已用 install -D 在控制節點建立 /etc/slurm/slurm.conf，內容來自
 # project/slurm/single-node-slurm.conf；本 playbook 正式執行時會以兩節點版取代它。
-# GPU VM 的 /etc/slurm 是否已由套件建立尚未核對，下方 file 任務會處理。
+# 預演已看到 GPU VM 的 /etc/slurm 與 /var/spool/slurmd 目前不存在；
+# 正式執行時下方 file 任務才會建立它們。
 # 執行順序：先備妥 GPU 設定並檢查 GRES，再更新控制端設定，最後啟動 GPU VM 的 slurmd。
 - name: 備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應
   hosts: gpu_compute
   become: true
   any_errors_fatal: true  # 這台 VM 設定失敗時，停止後續控制端變更。
   tasks:
-    # 若 /etc/slurm 不存在就建立；若已存在則核對目錄屬性，不代表此前已存在。
+    # 預演看到 /etc/slurm 不存在；正式執行時建立，重跑時核對目錄屬性。
     # 下方 copy 需要此目錄，才能把設定寫成 /etc/slurm/slurm.conf 與 gres.conf。
     - name: 建立或核對 GPU VM 的 /etc/slurm 目錄
       ansible.builtin.file:
@@ -72,6 +73,11 @@
         gpu_gres_probe.rc != 0 or
         'nvidia_l4' not in (gpu_gres_probe.stdout ~ gpu_gres_probe.stderr) or
         'error:' in ((gpu_gres_probe.stdout ~ gpu_gres_probe.stderr) | lower)
+
+    # 顯示檢查指令的實際退出碼與輸出，方便判讀及記錄；不改動 GPU VM。
+    - name: 顯示 GPU VM 的 GRES 檢查結果
+      ansible.builtin.debug:
+        var: gpu_gres_probe
 
 - name: 讓控制節點認得 GPU VM
   hosts: controller

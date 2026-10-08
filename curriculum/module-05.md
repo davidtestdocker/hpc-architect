@@ -27,6 +27,7 @@ GPU VM 早就是實際參與計算的節點。
 | GPU VM 掛載 | 已安裝 `ansible.posix:2.2.2`；掛載 playbook 經預演、正式執行與重跑，兩次正式執行皆 `ok=3`、`changed=0` | 現有 fstab 與掛載已符合要求；尚無乾淨節點部署證據，雙向讀寫是在模組 04 手動驗證 |
 | GPU VM 運算端套件 | 已安裝與控制節點同版的 MUNGE `0.5.15`、Slurm `26.05.4` 及運算端套件 | `slurmd` 尚未啟動，跨節點 Slurm 設定尚未部署 |
 | GPU VM MUNGE | 已分發控制節點現有金鑰、啟動服務；控制端憑證在 GPU VM 解碼為 `Success (0)`；重跑 `changed=0` | 尚未部署 GPU VM 的 Slurm 設定或提交 Slurm 工作 |
+| GPU VM 資源探測 | `slurmd -C` 回報 4 邏輯 CPU、15,983 MiB 記憶體，偵測到一張 NVIDIA L4 | 只讀硬體探測；尚未註冊進 Slurm 或驗證 GPU 工作 |
 | 預設 inventory | 不帶 `-i` 執行 `ansible-inventory --graph`，列出兩組預期主機 | 只證明清單被讀到，不代表部署成功 |
 
 ## Ansible 在這個叢集的角色
@@ -580,6 +581,42 @@ compute-gpu01 : ok=4 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignore
 
 重跑沒有複製金鑰、變更服務或觸發 handler；
 GPU VM 的 MUNGE 設定可重跑。
+
+## GPU VM 的 Slurm 資源探測
+
+GPU VM 已透過 SSH 執行過 MPI rank，但尚未交由 Slurm 排程。
+設定 Slurm 節點前，需要先知道它實際回報多少 CPU、記憶體和 GPU。
+Slurm 原本就用 CPU 數與記憶體容量決定節點能否接工作；
+**GRES**（Generic RESources，通用資源）是它計數 GPU 等額外資源的方式。
+在這台 VM，`gpu:nvidia_l4:1` 的意思是「L4 類型的 GPU 一張」。
+實體 GPU 由驅動辨認；Slurm 還需要在節點設定中宣告可分配的數量，
+並用 `gres.conf` 對應到運算節點偵測的裝置。
+例如工作用 `--gres=gpu:1` 請求一張 GPU 時，
+排程器才會把這項資源列入分配；本模組尚未執行這種工作。
+`slurmd -C` 只探測可作為設定依據的硬體，
+不會替排程器完成 GPU 宣告或工作分配。
+
+在 GPU VM `compute-gpu01` 上以 `a2264` 執行 `slurmd -C`；
+`-C` 只列出偵測到的硬體資訊後退出，
+不啟動 `slurmd` 服務、不註冊節點，也不修改設定。
+
+```bash
+slurmd -C
+```
+
+```text
+NodeName=compute-gpu01 CPUs=4 Boards=1 SocketsPerBoard=1 CoresPerSocket=2 ThreadsPerCore=2 RealMemory=15983 Gres=gpu:nvidia_l4:1
+Found gpu:nvidia_l4:1 with Autodetect=nvidia (Substring of gpu name may be used instead)
+UpTime=0-04:16:42
+```
+
+`CPUs=4` 是 2 個核心、每核心 2 個執行緒呈現的 4 個邏輯 CPU；
+`RealMemory=15983` 是偵測到的 MiB 數，不應全數分給工作。
+`Gres=gpu:nvidia_l4:1` 與下一行表示偵測到一張 NVIDIA L4；
+這可作節點設定的輸入，仍須在 `slurm.conf` 宣告預期 GPU 數量、
+核對 `gres.conf`，並實際驗證 Slurm 工作，
+才能說 GPU 已由 Slurm 管理。
+[Slurm 的 `slurmd -C` 與 GRES 說明](https://slurm.schedmd.com/gres.html)
 
 ## 尚需交付的能力證據
 

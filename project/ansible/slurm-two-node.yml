@@ -43,7 +43,9 @@
         backup: true
       register: gpu_slurm_config_result
 
-    # AutoDetect=nvidia 讓 slurmd 對應本機 L4；控制節點不需要這份裝置檔。
+    # 這項 copy 把控制節點工作樹中的 ../slurm/gpu-gres.conf 複製到 GPU VM 的
+    # /etc/slurm/gres.conf；只在正式執行 playbook 時發生，控制節點不需要這份檔案。
+    # 檔案中的 AutoDetect=nvidia 讓 GPU VM 的 slurmd 偵測本機 NVIDIA 裝置。
     - name: 部署 GPU VM 的 GPU 資源設定
       ansible.builtin.copy:
         src: ../slurm/gpu-gres.conf
@@ -54,7 +56,9 @@
         backup: true
       register: gpu_gres_config_result
 
-    # slurmd -G 只解析目前設定與 GPU 對應後退出；changed_when 避免把查詢當成變更。
+    # 在 GPU VM 執行 slurmd -G：讀當地 /etc/slurm/slurm.conf 的 GPU 宣告，
+    # 以及同目錄 gres.conf 的 AutoDetect=nvidia，列出合併後的 GPU 資源並退出。
+    # 它不啟動 slurmd 服務、不提交工作；changed_when 避免把查詢當成變更。
     # register 收集實際輸出；failed_when 遇到錯誤或找不到預期 L4 時停止後續控制端變更。
     # 預演時 command 不會執行，因此正式套用仍須看此任務的實際輸出。
     - name: 核對 GPU VM 的 GRES 設定

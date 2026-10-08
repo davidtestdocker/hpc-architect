@@ -649,21 +649,33 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
 各設定項目的用途直接寫在檔案的中文註解中。
 
 [slurm-two-node.yml](../project/ansible/slurm-two-node.yml)
-**目前尚未複製到 VM。** 只有日後在控制節點的 `project/ansible`
-目錄正式執行 `ansible-playbook slurm-two-node.yml`，
-playbook 才會讀取本機的 `../slurm/two-node-slurm.conf`，
-先複製到 GPU VM 的 `/etc/slurm/slurm.conf`；
-GPU VM 的 `slurmd -G` 檢查通過後，才複製到控制節點的同名路徑。
-下方已執行的 `--syntax-check` 只檢查語法；預計執行的
-`--check --diff` 只預演差異，兩者都不會複製檔案。
-「共用」只表示兩台使用相同設定內容，並非讀取同一個共享檔案。
-控制節點原有單節點用的 `/etc/slurm/slurm.conf`；
-GPU VM 的 `/etc/slurm` 是否已由套件建立尚未核對，
-playbook 的 `file` 任務會在缺少時建立該目錄，已存在時確認目錄屬性。
-部署順序是先將兩節點設定與 GPU 裝置設定寫入 GPU VM，
-執行 `slurmd -G` 核對 GPU 對應；通過後才更新控制節點的設定，
-由 `scontrol reconfigure` 請現有服務重新讀取設定，
-最後啟動 GPU VM 的 `slurmd`。
+**目前尚未部署，VM 尚未收到這兩份新設定。**
+在控制節點的 `project/ansible` 目錄正式執行
+`ansible-playbook slurm-two-node.yml` 時，playbook 才會按下列順序操作：
+
+1. 在 GPU VM 建立或核對 `/etc/slurm` 目錄。
+   目前沒有核對它是否已由套件建立；若不存在，這一步才會建立。
+2. 從控制節點工作樹複製 `../slurm/two-node-slurm.conf`
+   到 GPU VM 的 `/etc/slurm/slurm.conf`；
+   再複製 `../slurm/gpu-gres.conf` 到 GPU VM 的 `/etc/slurm/gres.conf`。
+   前者宣告這台節點可供排程一張 `nvidia_l4`，
+   後者的 `AutoDetect=nvidia` 讓 GPU VM 偵測本機 NVIDIA GPU。
+3. **在 GPU VM 執行 `slurmd -G`。**
+   `slurmd` 是運算節點接收工作的程式；`-G` 讓它讀取剛複製的
+   `slurm.conf` 與 `gres.conf`，印出兩份設定合併後的 GPU 資源結果就退出。
+   這是設定檢查，不會啟動常駐服務或執行 GPU 工作。
+   playbook 要求指令成功、輸出包含 `nvidia_l4` 且沒有 `error:`；
+   否則停止，不更新控制節點。
+4. GPU 檢查通過後，才把同一份 `two-node-slurm.conf` 複製到控制節點
+   原有的 `/etc/slurm/slurm.conf`，並以 `scontrol reconfigure`
+   請現有控制服務重新讀取設定。兩台各有自己的檔案；
+   「共用設定」只表示內容相同，沒有共享磁碟檔案。
+5. 最後啟動或重啟 GPU VM 的 `slurmd`，讓它依新設定向控制節點註冊。
+   是否真的能由 Slurm 執行 GPU 工作，仍須用實際工作驗證。
+
+下方已執行的 `--syntax-check` 只檢查 playbook 語法；
+預計執行的 `--check --diff` 只預演差異。
+兩者都不複製檔案，也不執行 GPU VM 上的 `slurmd -G`。
 若 VM 原本已有設定檔且內容被改動，`copy` 會在該 VM 留下舊版備份。
 這份 playbook 不建立新 VM、不安裝套件，也不管理 MUNGE 金鑰。
 

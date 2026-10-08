@@ -5,6 +5,10 @@
 ## 這個模組在做什麼
 
 目前兩台 VM 的 NFS 資料路徑已由人工建好。
+模組 04 也已由 `mpirun` 經 SSH 在 GPU VM 執行一個 MPI rank；
+GPU VM 早就是實際參與計算的節點。
+本模組接著要讓 Slurm 排程器管理它，
+由控制節點分配資源、追蹤工作狀態，並讓 GPU VM 接收工作。
 如果新建運算節點時還要逐台手動安裝套件、放設定檔、掛載目錄，
 就容易漏步驟，也難確認重跑會不會改壞現有服務。
 
@@ -319,16 +323,29 @@ compute-gpu01 : ok=3 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignore
 
 ## GPU VM 運算端套件
 
+模組 04 的執行路徑是控制節點的 `mpirun` 經 SSH 啟動 GPU VM 上的 MPI 程序；
+NFS 讓兩台 VM 讀寫同一份工作檔案。
+這已證明 GPU VM 能參與跨節點計算，
+但當時沒有由 Slurm 接收工作、選節點或分配 GPU 資源。
+
+要讓 Slurm 管理這台現有的運算節點，
+控制節點的 `slurmctld` 需要與 GPU VM 的 `slurmd` 通訊：
+前者排程與追蹤工作，後者在 GPU VM 回報狀態並啟動獲分配的工作。
+目前的 Slurm 設定使用 MUNGE 驗證兩端身分，
+因此 GPU VM 也需要 MUNGE 與控制節點共用的金鑰。
+先前由 SSH 啟動的 MPI 工作不需要 GPU VM 上的 `slurmd` 或 MUNGE。
+
 GPU VM 已安裝下列套件；版本由安裝交易與安裝後的 RPM 查詢確認。
 套件準備不是本模組的操作重點，安裝過程不逐項保留。
 
-| 套件 | 已安裝版本 |
-|---|---|
-| `munge`、`munge-libs` | `0.5.15-11.el10_1.x86_64` |
-| `slurm`、`slurm-slurmd` | `26.05.4-1.el10.x86_64` |
-| `bash-completion` | `1:2.11-16.el10.noarch` |
-| `mariadb-connector-c` | `3.4.4-2.el10_2.x86_64` |
-| `mariadb-connector-c-config` | `3.4.4-2.el10_2.noarch` |
+| 套件 | 用途 | 已安裝版本 |
+|---|---|---|
+| `munge`、`munge-libs` | 產生與驗證跨節點身分憑證 | `0.5.15-11.el10_1.x86_64` |
+| `slurm` | 提供 `slurmd` 所需的共用元件 | `26.05.4-1.el10.x86_64` |
+| `slurm-slurmd` | 在 GPU VM 接收並啟動 Slurm 分配的工作 | `26.05.4-1.el10.x86_64` |
+| `bash-completion` | 安裝交易帶入的相依套件 | `1:2.11-16.el10.noarch` |
+| `mariadb-connector-c` | 安裝交易帶入的相依套件 | `3.4.4-2.el10_2.x86_64` |
+| `mariadb-connector-c-config` | 安裝交易帶入的相依套件 | `3.4.4-2.el10_2.noarch` |
 
 控制節點的 Slurm 與 MUNGE 版本相同。
 GPU VM 的 MUNGE 金鑰與服務已在下節部署；

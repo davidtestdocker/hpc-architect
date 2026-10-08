@@ -1,5 +1,6 @@
 ---
 # 從控制節點的 project/ansible 目錄執行；ansible.cfg 讀取 inventory/hosts.yml。
+# GPU VM 先前已由 mpirun 透過 SSH 執行計算；本檔是為了讓它加入 Slurm 時驗證跨節點請求。
 # 只管理 gpu_compute：把控制節點現有的 MUNGE 金鑰經 SSH 送到 GPU VM，不把金鑰放進專案。
 # 第一次執行會建立／修正目錄、複製金鑰並啟動服務；重跑時狀態相同應不變更。
 - name: 設定 GPU VM 的 MUNGE 身分驗證

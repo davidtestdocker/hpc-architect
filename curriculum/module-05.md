@@ -645,7 +645,12 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
 記憶體宣告 14,000 MiB，低於偵測值 15,983 MiB，
 保留約 2 GiB 給作業系統與服務。
 它向 Slurm 宣告一張 L4；[gpu-gres.conf](../project/slurm/gpu-gres.conf)
-讓 GPU VM 用已實測的 `nvidia` 方式偵測實際裝置。
+指定 GPU VM 的 Slurm 使用 `nvidia` 方式讀取本機裝置資訊。
+這不是讓作業系統首次看見 GPU：部署此檔前，`slurmd -C`
+就已在 GPU VM 找到一張 L4。若不指定 `AutoDetect=nvidia`，
+也不能直接推論 Slurm 找不到 GPU；Slurm 可用其他偵測方式，
+或在 `gres.conf` 明列裝置。本設定明確選用已探測可用的方式，
+再由 `slurmd -G` 核對它和排程宣告是否一致。
 各設定項目的用途直接寫在檔案的中文註解中。
 
 [slurm-two-node.yml](../project/ansible/slurm-two-node.yml)
@@ -659,7 +664,8 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
    到 GPU VM 的 `/etc/slurm/slurm.conf`；
    再複製 `../slurm/gpu-gres.conf` 到 GPU VM 的 `/etc/slurm/gres.conf`。
    前者宣告這台節點可供排程一張 `nvidia_l4`，
-   後者的 `AutoDetect=nvidia` 讓 GPU VM 偵測本機 NVIDIA GPU。
+   後者的 `AutoDetect=nvidia` 指定 GPU VM 上的 Slurm
+   使用哪種方式讀取本機 NVIDIA GPU；它不是 GPU 驅動或硬體的開關。
 3. **在 GPU VM 執行 `slurmd -G`。**
    `slurmd` 是運算節點接收工作的程式；`-G` 讓它讀取剛複製的
    `slurm.conf` 與 `gres.conf`，印出兩份設定合併後的 GPU 資源結果就退出。

@@ -1,0 +1,2 @@
+# GitHub 將這些 Slurm 設定顯示為 INI 語法，區分 # 註解與 key=value 設定。
+project/slurm/*.conf linguist-language=INI

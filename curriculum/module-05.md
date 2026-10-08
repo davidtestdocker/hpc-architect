@@ -618,6 +618,74 @@ UpTime=0-04:16:42
 才能說 GPU 已由 Slurm 管理。
 [Slurm 的 `slurmd -C` 與 GRES 說明](https://slurm.schedmd.com/gres.html)
 
+## 控制節點排程狀態確認
+
+GPU VM 先前已透過 SSH 執行 MPI；下一步要讓控制節點的 Slurm
+把工作排到這台 VM。修改控制節點 Slurm 設定前，
+先確認目前沒有正在執行或等待的工作，避免變更影響現有任務。
+在台灣控制節點以 root 執行下列只讀查詢。
+`squeue` 向現有 `slurmctld` 讀取工作佇列；
+`-h` 不顯示標題，`-o` 依序列出工作 ID、狀態、使用者與名稱。
+若沒有工作，命令會成功且沒有輸出；若有工作，
+需先看狀態再決定能否改設定。
+這不提交、取消工作，也不修改服務或 VM。
+
+```bash
+squeue -h -o '%i %T %u %j'
+```
+
+**結果：** 命令沒有輸出，直接返回提示字元；目前佇列沒有工作。
+
+## 兩節點 Slurm 設定：已準備，尚未套用
+
+現有 Slurm 只管理控制節點；GPU VM 雖已執行過 SSH 啟動的 MPI 工作，
+還沒有接受 Slurm 排程。[two-node-slurm.conf](../project/slurm/two-node-slurm.conf)
+保留控制節點原本的 `debug` 分區，另設只包含 GPU VM 的 `gpu` 分區。
+GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
+記憶體宣告 14,000 MiB，低於偵測值 15,983 MiB，
+保留約 2 GiB 給作業系統與服務。
+它向 Slurm 宣告一張 L4；[gpu-gres.conf](../project/slurm/gpu-gres.conf)
+讓 GPU VM 用已實測的 `nvidia` 方式偵測實際裝置。
+各設定項目的用途直接寫在檔案的中文註解中。
+
+[slurm-two-node.yml](../project/ansible/slurm-two-node.yml)
+預計先將共用 `slurm.conf` 與 GPU 裝置設定部署到 GPU VM，
+執行 `slurmd -G` 核對 GPU 對應；通過後才更新控制節點的設定，
+由 `scontrol reconfigure` 請現有服務重新讀取設定，
+最後啟動 GPU VM 的 `slurmd`。
+若 VM 原本已有設定檔且內容被改動，`copy` 會在該 VM 留下舊版備份。
+這份 playbook 不建立新 VM、不安裝套件，也不管理 MUNGE 金鑰。
+
+在台灣控制節點的 `project/ansible` 目錄，以 root 檢查 playbook 語法；
+這只解析本機檔案，不連線或修改 VM。
+
+```bash
+ansible-playbook slurm-two-node.yml --syntax-check
+```
+
+```text
+playbook: slurm-two-node.yml
+```
+
+語法檢查通過；GPU 裝置對應與兩台服務的實際狀態仍須在套用時確認。
+
+**下一步預計執行，尚未實測：** 在台灣控制節點的 `project/ansible`
+目錄以 root 預演兩台 VM 的設定差異。
+`--check` 只預估支援預演的任務會如何變更，`--diff` 顯示設定檔差異；
+不會修改遠端設定或啟動服務。
+預演不會實際執行 `slurmd -G`，因此也不能把預演成功當成 GPU 對應完成。
+
+```bash
+ansible-playbook slurm-two-node.yml --check --diff
+```
+
+**尚未套用。** 正式執行會修改兩台 VM 的 `/etc/slurm/slurm.conf`、
+GPU VM 的 `/etc/slurm/gres.conf` 與 `slurmd` 服務狀態，
+並讓控制節點 Slurm 重新讀取設定；可能短暫影響排程。
+若套用失敗，先依實際任務輸出定位，
+必要時停止 GPU VM 的 `slurmd`、從備份還原兩台設定，
+再讓控制節點重新讀取原設定。
+
 ## 尚需交付的能力證據
 
 - 在乾淨節點核對 NFS 掛載 playbook 的首次變更與重跑結果，

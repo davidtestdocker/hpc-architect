@@ -1,0 +1,99 @@
+---
+# 從台灣控制節點的 project/ansible 目錄執行；ansible.cfg 讀取兩台已存在 VM 的 inventory。
+# 前置條件：GPU VM 已安裝同版 Slurm、MUNGE 已跨節點驗證；本檔不建立 VM、帳號或安裝套件。
+# 執行順序：先備妥 GPU 設定並檢查 GRES，再更新控制端設定，最後啟動 GPU VM 的 slurmd。
+- name: 備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應
+  hosts: gpu_compute
+  become: true
+  any_errors_fatal: true  # 這台 VM 設定失敗時，停止後續控制端變更。
+  tasks:
+    - name: 確保 GPU VM 的 Slurm 設定目錄存在
+      ansible.builtin.file:
+        path: /etc/slurm
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: 確保 GPU VM 的工作暫存目錄存在
+      ansible.builtin.file:
+        path: /var/spool/slurmd
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # 兩台 VM 要使用相同的 slurm.conf；backup 在檔案改動時留存遠端舊版。
+    # register 保存這項任務是否變更，供最後一個 play 決定是否重啟 slurmd。
+    - name: 部署 GPU VM 的共用 Slurm 設定
+      ansible.builtin.copy:
+        src: ../slurm/two-node-slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: gpu_slurm_config_result
+
+    # AutoDetect=nvidia 讓 slurmd 對應本機 L4；控制節點不需要這份裝置檔。
+    - name: 部署 GPU VM 的 GPU 資源設定
+      ansible.builtin.copy:
+        src: ../slurm/gpu-gres.conf
+        dest: /etc/slurm/gres.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: gpu_gres_config_result
+
+    # slurmd -G 只解析目前設定與 GPU 對應後退出；changed_when 避免把查詢當成變更。
+    # register 收集實際輸出；failed_when 遇到錯誤或找不到預期 L4 時停止後續控制端變更。
+    # 預演時 command 不會執行，因此正式套用仍須看此任務的實際輸出。
+    - name: 核對 GPU VM 的 GRES 設定
+      ansible.builtin.command: slurmd -G
+      register: gpu_gres_probe
+      changed_when: false
+      failed_when: >-
+        gpu_gres_probe.rc != 0 or
+        'nvidia_l4' not in (gpu_gres_probe.stdout ~ gpu_gres_probe.stderr) or
+        'error:' in ((gpu_gres_probe.stdout ~ gpu_gres_probe.stderr) | lower)
+
+- name: 讓控制節點認得 GPU VM
+  hosts: controller
+  become: true
+  any_errors_fatal: true  # 控制端無法讀取新設定時，不繼續啟動 GPU VM 的 slurmd。
+  tasks:
+    # copy 真有變更時才 notify；handler 在本 play 結尾執行。
+    - name: 部署控制節點的共用 Slurm 設定
+      ansible.builtin.copy:
+        src: ../slurm/two-node-slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: 重新讀取 Slurm 設定
+
+  handlers:
+    # scontrol reconfigure 請現有 Slurm 服務重新讀取設定；不執行 systemctl restart。
+    - name: 重新讀取 Slurm 設定
+      ansible.builtin.command: scontrol reconfigure
+
+- name: 啟動 GPU VM 的 Slurm 運算服務
+  hosts: gpu_compute
+  become: true
+  tasks:
+    # when 在上述任一 copy 真有變更時才觸發重啟，讓已運行的 slurmd 讀入新設定。
+    # 第一次套用時若服務尚未啟動，restarted 會啟動它；下一項任務確認開機自動啟動。
+    - name: 設定有變更時重啟 GPU VM 的 slurmd
+      ansible.builtin.service:
+        name: slurmd
+        state: restarted
+      when: gpu_slurm_config_result.changed or gpu_gres_config_result.changed
+
+    # 重跑且設定未變時，started 不會重啟服務；enabled 確保 VM 重開機後可運行。
+    - name: 確保 GPU VM 的 slurmd 已啟動
+      ansible.builtin.service:
+        name: slurmd
+        state: started
+        enabled: true

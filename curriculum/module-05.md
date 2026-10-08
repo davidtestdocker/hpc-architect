@@ -649,8 +649,13 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
 各設定項目的用途直接寫在檔案的中文註解中。
 
 [slurm-two-node.yml](../project/ansible/slurm-two-node.yml)
-從控制節點工作樹讀取 `project/slurm/two-node-slurm.conf`，
-分別複製到控制節點與 GPU VM 各自的 `/etc/slurm/slurm.conf`。
+**目前尚未複製到 VM。** 只有日後在控制節點的 `project/ansible`
+目錄正式執行 `ansible-playbook slurm-two-node.yml`，
+playbook 才會讀取本機的 `../slurm/two-node-slurm.conf`，
+先複製到 GPU VM 的 `/etc/slurm/slurm.conf`；
+GPU VM 的 `slurmd -G` 檢查通過後，才複製到控制節點的同名路徑。
+下方已執行的 `--syntax-check` 只檢查語法；預計執行的
+`--check --diff` 只預演差異，兩者都不會複製檔案。
 「共用」只表示兩台使用相同設定內容，並非讀取同一個共享檔案。
 控制節點原有單節點用的 `/etc/slurm/slurm.conf`；
 GPU VM 的 `/etc/slurm` 是否已由套件建立尚未核對，

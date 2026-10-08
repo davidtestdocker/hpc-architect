@@ -1,13 +1,18 @@
 ---
 # 從台灣控制節點的 project/ansible 目錄執行；ansible.cfg 讀取兩台已存在 VM 的 inventory。
 # 前置條件：GPU VM 已安裝同版 Slurm、MUNGE 已跨節點驗證；本檔不建立 VM、帳號或安裝套件。
+# 來源是控制節點工作樹中的 ../slurm/two-node-slurm.conf；copy 會把同一份內容
+# 分別寫到兩台 VM 各自的 /etc/slurm/slurm.conf，不是讓兩台共用一個磁碟檔案。
+# 控制節點原已有單節點設定；GPU VM 的 /etc/slurm 是否已由套件建立尚未核對。
 # 執行順序：先備妥 GPU 設定並檢查 GRES，再更新控制端設定，最後啟動 GPU VM 的 slurmd。
 - name: 備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應
   hosts: gpu_compute
   become: true
   any_errors_fatal: true  # 這台 VM 設定失敗時，停止後續控制端變更。
   tasks:
-    - name: 確保 GPU VM 的 Slurm 設定目錄存在
+    # 若 /etc/slurm 不存在就建立；若已存在則核對目錄屬性，不代表此前已存在。
+    # 下方 copy 需要此目錄，才能把設定寫成 /etc/slurm/slurm.conf 與 gres.conf。
+    - name: 建立或核對 GPU VM 的 /etc/slurm 目錄
       ansible.builtin.file:
         path: /etc/slurm
         state: directory

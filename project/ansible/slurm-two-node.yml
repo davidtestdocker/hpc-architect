@@ -6,7 +6,9 @@
 # 來源是控制節點工作樹中的 ../slurm/two-node-slurm.conf；正式執行時，先複製到
 # GPU VM 自己的 /etc/slurm/slurm.conf，通過 slurmd -G 後才複製到控制節點自己的同名路徑。
 # 兩台各有一份檔案，不是共用一個磁碟檔案；目前尚未正式執行此 playbook。
-# 控制節點原已有單節點設定；GPU VM 的 /etc/slurm 是否已由套件建立尚未核對。
+# 模組 01 已用 install -D 在控制節點建立 /etc/slurm/slurm.conf，內容來自
+# project/slurm/single-node-slurm.conf；本 playbook 正式執行時會以兩節點版取代它。
+# GPU VM 的 /etc/slurm 是否已由套件建立尚未核對，下方 file 任務會處理。
 # 執行順序：先備妥 GPU 設定並檢查 GRES，再更新控制端設定，最後啟動 GPU VM 的 slurmd。
 - name: 備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應
   hosts: gpu_compute

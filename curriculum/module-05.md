@@ -506,6 +506,67 @@ Cuda compilation tools, release 13.4, V13.4.59
 版本查詢成功；Ansible 的 `CHANGED` 是此一次性 `command` 任務的預設標記，
 不代表查詢改動了檔案。安裝後 GPU VM 的 `nvidia-smi -L` 仍辨認一張 L4。
 
+## 6. 用熱擴散工作核對 GPU 計算
+
+驅動可見與 GPU 分配已驗證，下一步要確認分配到的 L4 真的完成計算。
+[heat2d.cu](../project/workloads/heat2d.cu) 實作二維熱擴散：
+在 `1024 × 1024` 網格中心放一個熱源，每輪用上下左右格點更新溫度，
+共執行 200 輪。CPU 與 GPU 使用相同初始條件和更新式，
+最後逐格比較，最大絕對誤差不超過 `0.0001` 才輸出 `validation=PASS`。
+程式也列出執行主機、GPU 名稱和兩段計算時間；計時僅供觀察，
+本步不以單次時間宣稱效能提升。
+
+先從**控制節點**把工作樹中的原始碼複製到控制節點自己的
+`/srv/hpc-share/heat2d.cu`，設為 `a2264` 可讀寫。
+這個路徑已由模組 04 建立並由 `nfs-gpu-client.yml` 核對掛載；
+GPU VM 的同一路徑是 NFS 掛載，讀到的是控制節點提供的檔案。
+下面的 Ansible `copy` 只更新這份共享原始碼，沒有複製到 GPU VM 的 `/etc/`：
+
+```bash
+ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml controller -b -m ansible.builtin.copy -a 'src=/root/hpc-arch/project/workloads/heat2d.cu dest=/srv/hpc-share/heat2d.cu owner=a2264 group=a2264 mode=0644'
+```
+
+```text
+instance-20260923-104239 | CHANGED => {
+    "changed": true,
+    "dest": "/srv/hpc-share/heat2d.cu",
+    "owner": "a2264",
+    "group": "a2264",
+    "mode": "0644",
+    "size": 6778
+}
+```
+
+共享原始碼已在控制節點建立，屬於 `a2264`；GPU VM 由既有 NFS 掛載讀取它。
+
+複製完成後，從**控制節點**透過 Ansible 以 `a2264` 在 **GPU VM**
+執行下列 `nvcc` 命令，讀取 GPU VM 掛載的原始碼，
+編譯成同一共享目錄內的 `heat2d` 執行檔。
+`-O2` 啟用編譯最佳化，`-std=c++17` 指定 C++ 語言版本；
+`-arch=sm_89` 產生對應 L4 運算能力 8.9 的 GPU 程式碼。
+這一步會建立或覆寫 `/srv/hpc-share/heat2d`，不改 Slurm 設定或服務：
+
+```bash
+ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -b --become-user a2264 -m ansible.builtin.command -a '/usr/local/cuda-13.4/bin/nvcc -O2 -std=c++17 -arch=sm_89 -o /srv/hpc-share/heat2d /srv/hpc-share/heat2d.cu'
+```
+
+```text
+compute-gpu01 | CHANGED | rc=0 >>
+```
+
+GPU VM 編譯成功，終端沒有其他輸出；執行檔已寫入共享目錄。
+
+最後在**控制節點**以 `a2264` 提交同步 Slurm 工作，
+請求 `gpu` 分區的一個節點、一個 task、一張 GPU、512 MiB 記憶體，
+並限制最長五分鐘。`srun` 在分配的 GPU VM 執行共享目錄中的程式，
+輸出直接回到控制節點終端；程式不讀寫資料檔或改動服務。
+要同時核對 `host=compute-gpu01`、`device=NVIDIA L4`、
+`validation=PASS` 和工作正常返回，才能確認本次 GPU 計算通路：
+
+```bash
+sudo -iu a2264 srun --partition=gpu --nodes=1 --ntasks=1 --cpus-per-task=1 --gres=gpu:1 --mem=512M --time=00:05:00 /srv/hpc-share/heat2d 1024 200
+```
+
 ## 目前限制
 
 - 尚未執行可核對計算結果的 GPU 工作，或由 Slurm 跨節點執行的 CPU 工作。

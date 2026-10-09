@@ -348,8 +348,10 @@ ansible-playbook slurm-two-node.yml
 2. 從控制節點工作樹的
    [gpu-gres.conf](../project/slurm/gpu-gres.conf)
    複製到 GPU VM 自己的 `/etc/slurm/gres.conf`。
-   它指定 `AutoDetect=nvidia`。接著 playbook 在 GPU VM 執行
-   `slurmd -G`：它讀取這台 VM 剛收到的兩份設定，
+   它指定 `AutoDetect=nvidia`。
+   **執行 `slurmd -G` 的目的是確認 Slurm 設定宣告的 GPU 型號，
+   跟 GPU VM 實際偵測到的裝置對得上。**
+   接著 playbook 在 GPU VM 執行 `slurmd -G`，讀取剛收到的兩份設定，
    列出這台 VM 的 GPU 資源與本機裝置路徑如何對應。
    Ansible 收集指令輸出，要求指令成功、結果包含 `nvidia_l4`
    且沒有 `error:`；基本檢查失敗就停止，不更新控制節點。

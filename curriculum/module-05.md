@@ -471,6 +471,41 @@ Slurm 接受一張 GPU 的請求，並在 `gpu` 分區啟動了 `a2264` 的程�
 這是排程與裝置可見性的初步驗證，不是 GPU 計算正確性、
 節點主機名或 GPU 隔離的證據。
 
+## GPU 計算工具準備
+
+下一步要用有已知答案的 GPU 計算工作，核對 Slurm 分配的裝置能否真的執行計算。
+GPU VM 原有的 NVIDIA 驅動能執行 `nvidia-smi`，但尚缺編譯 CUDA 程式的工具。
+從 GPU VM 已啟用的 AlmaLinux NVIDIA 套件庫安裝 CUDA 13.4 編譯器與
+CUDA 執行階段開發檔；安裝交易新增下列套件，沒有升級 NVIDIA 驅動或 Slurm：
+
+| GPU VM 新增套件 | 版本 |
+|---|---|
+| `cuda-nvcc-13-4` | `13.4.59-1` |
+| `cuda-cudart-devel-13-4` | `13.4.49-1` |
+| `cuda-crt-13-4` | `13.4.59-1` |
+| `cuda-cudart-13-4`、`cuda-culibos-devel-13-4` | `13.4.49-1` |
+| `cuda-toolkit-13-4-config-common`、`cuda-toolkit-13-config-common`、`cuda-toolkit-config-common` | `13.4.49-1` |
+| `cccl-13-4` | `13.3.4.2.1-1` |
+| `libnvptxcompiler-13-4`、`libnvvm-13-4` | `13.4.59-1` |
+| `gcc-c++`、`libstdc++-devel` | `14.3.1-4.4.el10.alma.2` |
+
+從控制節點透過 Ansible 在 GPU VM 查詢編譯器版本；套件將它放在
+`/usr/local/cuda-13.4/bin/nvcc`，因此使用絕對路徑，不假定它在登入環境的 `PATH` 中。
+這條查詢不編譯程式，也不修改服務：
+
+```bash
+ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -m ansible.builtin.command -a '/usr/local/cuda-13.4/bin/nvcc --version'
+```
+
+```text
+compute-gpu01 | CHANGED | rc=0 >>
+nvcc: NVIDIA (R) Cuda compiler driver
+Cuda compilation tools, release 13.4, V13.4.59
+```
+
+版本查詢成功；Ansible 的 `CHANGED` 是此一次性 `command` 任務的預設標記，
+不代表查詢改動了檔案。安裝後 GPU VM 的 `nvidia-smi -L` 仍辨認一張 L4。
+
 ## 目前限制
 
 - 尚未執行可核對計算結果的 GPU 工作，或由 Slurm 跨節點執行的 CPU 工作。

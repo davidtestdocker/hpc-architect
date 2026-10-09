@@ -361,17 +361,27 @@ ansible-playbook slurm-two-node.yml
    重跑且設定未變時不會無故重啟服務。
 
 複製任務改動檔案時，會在各 VM 留下舊版備份。
-下列是這次指令的實際關鍵輸出：
+下列是這次指令的實際關鍵輸出；
+`顯示 GPU VM 的 GRES 檢查結果` 是 playbook 印出
+前一個 `slurmd -G` 檢查任務所收集的結果：
 
 ```text
 PLAY [備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應]
 TASK [部署 GPU VM 的共用 Slurm 設定] changed: [compute-gpu01]
 TASK [部署 GPU VM 的 GPU 資源設定] changed: [compute-gpu01]
 TASK [核對 GPU VM 的 GRES 設定] ok: [compute-gpu01]
-"rc": 0,
-"stderr_lines": [
-    "[2026-10-09T06:49:39.052] Gres Name=gpu Type=nvidia_l4 Count=1 Index=0 ID=7696487 File=/dev/nvidia0 Cores=0-1 CoreCnt=4 Links=(null) Flags=HAS_FILE,HAS_TYPE,ENV_NVML"
-]
+TASK [顯示 GPU VM 的 GRES 檢查結果] ok: [compute-gpu01] => {
+    "gpu_gres_probe": {
+        "changed": false,
+        "cmd": ["slurmd", "-G"],
+        "rc": 0,
+        "stderr_lines": [
+            "[2026-10-09T06:49:39.018] _read_slurm_cgroup_conf: No cgroup.conf file (/etc/slurm/cgroup.conf), using defaults",
+            "[2026-10-09T06:49:39.052] Gres Name=gpu Type=nvidia_l4 Count=1 Index=0 ID=7696487 File=/dev/nvidia0 Cores=0-1 CoreCnt=4 Links=(null) Flags=HAS_FILE,HAS_TYPE,ENV_NVML"
+        ],
+        "stdout": ""
+    }
+}
 PLAY [讓控制節點認得 GPU VM]
 TASK [部署控制節點的共用 Slurm 設定] changed: [instance-20260923-104239]
 RUNNING HANDLER [重新讀取 Slurm 設定] changed: [instance-20260923-104239]
@@ -384,7 +394,8 @@ instance-20260923-104239 : ok=3 changed=2 unreachable=0 failed=0 skipped=0 rescu
 ```
 
 `rc=0` 是 `slurmd -G` 的結束代碼，表示這條檢查指令正常結束。
-它的輸出另外顯示一張 `nvidia_l4` 對應 `/dev/nvidia0`。
+`stderr_lines` 的第二行顯示一張 `nvidia_l4` 對應 `/dev/nvidia0`；
+第一行表示沒有額外的 `cgroup.conf`，這次檢查使用預設值。
 控制節點設定已取代原單節點內容並由 `scontrol reconfigure` 重新讀取；
 GPU VM 的 `slurmd` 已啟動並設為開機啟動。
 這些結果尚未證明 GPU VM 已在控制端註冊、工作能使用 GPU，

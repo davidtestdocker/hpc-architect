@@ -407,10 +407,63 @@ GPU VM 的 `slurmd` 已啟動並設為開機啟動。
 這些結果尚未證明 GPU VM 已在控制端註冊、工作能使用 GPU，
 或 GPU 工作已受隔離。
 
+## 4. 從控制節點查 GPU 節點是否註冊
+
+上一步已啟動 GPU VM 的 `slurmd`，但 playbook 成功只證明服務任務完成。
+在**控制節點**以 root 執行下列只讀命令。
+`scontrol` 向正在運行的 `slurmctld` 查詢名為 `compute-gpu01` 的節點；
+這條指令不執行 playbook，不提交工作，也不改動檔案或服務。
+
+```bash
+scontrol show node compute-gpu01
+```
+
+結果要核對 `NodeName` 是 `compute-gpu01`、`NodeAddr` 是 GPU VM 的
+私有 IP `10.146.0.3`、`Gres` 宣告一張 `nvidia_l4`，
+並看 `State` 判斷控制端是否認為節點可接工作。
+這只驗證控制端看到的節點狀態；GPU 工作是否真的能使用裝置，
+仍須由實際 Slurm 工作驗證。
+
+```text
+NodeName=compute-gpu01 Arch=x86_64 CoresPerSocket=2
+   CPUAlloc=0 CPUEfctv=4 CPUTot=4 CPULoad=0.00
+   Gres=gpu:nvidia_l4:1(S:0)
+   NodeAddr=10.146.0.3 NodeHostName=compute-gpu01 Version=26.05.4
+   RealMemory=14000 AllocMem=0 FreeMem=14239 Sockets=1 Boards=1
+   State=IDLE ThreadsPerCore=2 TmpDisk=0 Weight=1 Owner=N/A MCS_label=N/A
+   Partitions=gpu
+   BootTime=2026-10-09T05:28:30 SlurmdStartTime=2026-10-09T06:49:45
+```
+
+控制服務已記錄 GPU VM 的私有 IP、4 個可用邏輯 CPU、
+14,000 MiB 可排程記憶體和一張 `nvidia_l4`。
+`State=IDLE`、`CPUAlloc=0`、`AllocMem=0` 表示查詢時節點可接新工作且未分配資源；
+`SlurmdStartTime` 顯示運算服務已啟動。
+這是節點註冊證據，還不是 GPU 工作或 GPU 隔離證據。
+
+## 5. 用 Slurm 請求一張 GPU 的通路驗證
+
+控制端已將 `compute-gpu01` 列為 `IDLE`，接著要確認一般帳號能透過
+Slurm 的 `gpu` 分區請求一張 GPU，並在該分區唯一的 GPU VM 啟動程序。
+此處先用驅動提供的 `nvidia-smi -L` 讀取裝置清單，
+核對排程請求和 GPU 裝置通路；它不是代表性計算工作，
+也不能證明 GPU 隔離或計算結果正確。
+
+在**控制節點**以 root 執行下列一條指令。
+`sudo -iu a2264` 改用一般工作帳號；`srun` 向 Slurm 提交同步工作；
+`--partition=gpu` 選 GPU 分區，`--nodes=1 --ntasks=1` 請求一個節點、
+一個行程，`--gres=gpu:1` 請求一張 GPU，`--time=00:02:00` 限制最多兩分鐘。
+Slurm 在分配的節點執行 `nvidia-smi -L` 並把輸出帶回控制節點。
+這條命令不執行 playbook，也不改服務設定或建立雲端資源；
+預期輸出列出一張 NVIDIA L4，若工作無法分配或啟動，依實際訊息排查。
+
+```bash
+sudo -iu a2264 srun --partition=gpu --nodes=1 --ntasks=1 --gres=gpu:1 --time=00:02:00 nvidia-smi -L
+```
+
 ## 目前限制
 
-- 尚未從控制端讀到 `compute-gpu01` 的 Slurm 節點狀態，
-  也尚未執行由 Slurm 分配的 CPU／GPU 工作。
+- 尚未執行由 Slurm 分配的 CPU／GPU 工作。
 - NFS、MUNGE 與 Slurm playbook 已在既有兩台 VM 執行；
   尚未驗證乾淨環境的首次部署與整套重跑。
 - 單張 L4 只能驗證單 GPU 管理，不能當成多卡隔離或大型生產叢集經驗。

@@ -24,6 +24,23 @@
 連到私有 IP `10.146.0.3` 的 `compute-gpu01`。
 Inventory 只列出已存在的 VM，不會建立雲端資源。
 
+### 為何要處理 Slurm 帳號
+
+Linux 帳號除了名稱，還有數字身分：**UID** 是使用者的編號，
+**GID** 是群組的編號。檔案擁有者、群組與服務執行身分都會用到這些編號。
+例如 `slurm` 是帳號名稱；`800:800` 表示 UID 800 的使用者，
+主要群組是 GID 800。兩台 VM 的帳號名稱相同時，仍須核對數字身分，
+避免同一個數字在另一台 VM 指向不同帳號。
+
+控制節點的 `slurm` 是在[模組 01 的單節點建置](module-01.md#驗證身分與服務)
+由 `useradd -r -M -U -s /sbin/nologin slurm` 建立。
+`-r` 建系統帳號，`-M` 不建立家目錄，`-U` 建同名群組，
+`-s` 指定不可互動登入的 shell。當時 `id slurm` 實測為
+`uid=994(slurm) gid=994(slurm) groups=994(slurm)`；
+這是當時系統分配的數字，不是兩節點叢集必須沿用的固定值。
+GPU VM 的 `994:994` 已由 `munge` 使用，因此本模組先確認
+`800:800` 在兩台 VM 都未占用，再統一 Slurm 服務帳號。
+
 | 步驟 | 在哪台 VM 建立或核對什麼 | 使用的 playbook |
 |---|---|---|
 | 1. 共享資料路徑 | 控制節點 NFS 分享、GPU VM NFS 掛載 | [nfs-controller.yml](../project/ansible/nfs-controller.yml)、[nfs-gpu-client.yml](../project/ansible/nfs-gpu-client.yml) |
@@ -33,9 +50,7 @@ Inventory 只列出已存在的 VM，不會建立雲端資源。
 | **5. 部署兩節點 Slurm** | 兩台 VM 各自的 `slurm.conf`、GPU VM 的 `gres.conf`，以及運算服務 | [slurm-two-node.yml](../project/ansible/slurm-two-node.yml) |
 
 **`slurm-identity.yml` 必須在 `slurm-two-node.yml` 之前正式執行。**
-因為兩節點設定的 `SlurmUser=slurm` 要在兩台 VM 上指向一致的身分；
-GPU VM 的 `994:994` 已由 `munge` 使用，不能直接沿用控制節點原來的
-`slurm` UID/GID `994:994`。本次選用經兩台 VM 查詢未占用的 `800:800`。
+兩節點設定的 `SlurmUser=slurm` 要在兩台 VM 上指向已備妥的服務帳號。
 帳號修正是正式部署流程的一步，不是事後另加的排障操作。
 
 工作樹中的 `project/` 檔案是**部署來源**；
@@ -201,21 +216,54 @@ GPU VM 有 4 個邏輯 CPU、15,983 MiB 記憶體和一張 NVIDIA L4。
 `slurmd -C` 是硬體探測，不能當成 GPU 已交由 Slurm 分配。
 
 控制節點原有 `slurm` 帳號是 `994:994`，
-GPU VM 的這組數字已屬於 `munge`。在控制節點的 Ansible 目錄
-以 root 查兩台 VM 的候選 UID/GID `800`；`fail_key=false` 讓
-「查無此身分」回傳空值，查詢不建立帳號：
+GPU VM 的這組數字已屬於 `munge`。改號前要找出兩台 VM 都沒有占用的
+使用者編號和群組編號。在控制節點的 Ansible 目錄以 root 執行下列
+**兩條只讀命令**。`ansible all` 選兩台 VM，`-m ansible.builtin.getent`
+使用 Ansible 的帳號資料庫查詢模組，`-a` 傳給模組查詢參數。
+第一條用 `database=passwd key=800` 查 UID 800 是否已有使用者，
+第二條用 `database=group key=800` 查 GID 800 是否已有群組。
+`fail_key=false` 讓查無資料時回傳空值，不把它當成命令失敗；
+兩條都不建立帳號或群組：
 
 ```bash
 ansible all -m ansible.builtin.getent -a 'database=passwd key=800 fail_key=false'
 ansible all -m ansible.builtin.getent -a 'database=group key=800 fail_key=false'
 ```
 
-**結果：** 兩台 VM 的 `getent_passwd["800"]` 與
-`getent_group["800"]` 都是 `null`；兩條命令均回傳
-`SUCCESS`、`changed=false`。因此選 `800:800` 作為兩端的 `slurm` 身分。
+第一條回傳的 `getent_passwd["800"]` 是 Ansible 結果中
+「UID 800 對應的使用者」欄位；第二條的 `getent_group["800"]`
+是「GID 800 對應的群組」欄位。**這兩個名稱是輸出欄位，不是另一條指令。**
+實際結果如下；`null` 表示該 VM 的帳號資料庫找不到這個編號：
 
-控制端的 `/var/spool/slurmctld` 及其狀態檔由原 `slurm` 帳號持有；
-改 UID/GID 後必須一起調整擁有權。
+| 查詢 | 控制節點 | GPU VM |
+|---|---|---|
+| `getent_passwd["800"]` | `null` | `null` |
+| `getent_group["800"]` | `null` | `null` |
+
+兩條命令對兩台 VM 均回傳 `SUCCESS`、`changed=false`。
+這四項空值支持選用 `800:800`；查詢當時尚未建立任何帳號。
+
+改控制節點的 UID/GID 前，在控制節點的 Ansible 目錄以 root
+查 `/etc`、`/var`、`/run` 中原 `slurm` 使用者及群組持有的路徑。
+`-b` 用管理員權限讀取，`-xdev` 不跨其他檔案系統，
+`-print` 只列路徑；查詢不改檔案。
+
+```bash
+ansible controller -b -m ansible.builtin.command -a 'find /etc /var /run -xdev -user slurm -print'
+ansible controller -b -m ansible.builtin.command -a 'find /etc /var /run -xdev -group slurm -print'
+```
+
+兩條均回傳 `rc=0`，使用者及群組清單相同；必要輸出包括：
+
+```text
+/var/spool/slurmctld
+/var/spool/slurmctld/node_state
+/var/spool/slurmctld/job_state
+/run/slurmctld
+```
+
+這指出 `/var/spool/slurmctld` 及其中狀態檔改號後也要更新擁有權。
+查詢範圍只涵蓋上述目錄，不能推論其他路徑沒有同一擁有者。
 已查到服務由 `slurm:slurm` 執行，`/run/slurmctld` 由 systemd 的
 `RuntimeDirectory` 管理，`StateDirectory` 為空：
 
@@ -271,8 +319,30 @@ instance-20260923-104239 : ok=14 changed=5 unreachable=0 failed=0 skipped=0 resc
 ```
 
 兩台 VM 都實際回報 `800:800`；控制服務在遷移後回應 `UP`。
-同一指令重跑時，GPU VM 為 `ok=5 changed=0`，
-控制節點為 `ok=4 changed=0 skipped=10`。
+在控制節點同一目錄以 root 重跑，核對帳號設定不再改動；
+如果實際狀態已偏移，playbook 仍可能修正帳號或服務：
+
+```bash
+ansible-playbook slurm-identity.yml
+```
+
+```text
+TASK [備妥 GPU VM 的 slurm 群組]   ok: [compute-gpu01]
+TASK [備妥 GPU VM 的 slurm 使用者] ok: [compute-gpu01]
+"gpu_slurm_id.stdout": "uid=800(slurm) gid=800(slurm) groups=800(slurm)"
+TASK [確認控制節點的原身分或目標身分完整] ok: [instance-20260923-104239]
+TASK [變更身分前確認 Slurm 沒有工作] skipping: [instance-20260923-104239]
+TASK [暫停控制節點的 slurmctld] skipping: [instance-20260923-104239]
+TASK [將控制節點的 slurm 群組改為 GID 800] skipping: [instance-20260923-104239]
+TASK [將控制節點的 slurm 使用者改為 UID 800] skipping: [instance-20260923-104239]
+TASK [讓遷移後的帳號持有控制節點排程狀態] skipping: [instance-20260923-104239]
+TASK [恢復控制節點的 slurmctld] skipping: [instance-20260923-104239]
+TASK [核對控制節點排程服務已回應] skipping: [instance-20260923-104239]
+PLAY RECAP
+compute-gpu01            : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+instance-20260923-104239 : ok=4 changed=0 unreachable=0 failed=0 skipped=10 rescued=0 ignored=0
+```
+
 跳過的 10 個任務是首次遷移用的工作檢查、停機、改號與服務核對；
 重跑沒有再次停止服務。重跑本身沒有重新 ping 控制服務，
 `UP` 是首次正式執行的驗證結果。

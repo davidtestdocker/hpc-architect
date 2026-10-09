@@ -109,7 +109,12 @@ Slurm 設定使用 2 CPU、3000 MiB，低於偵測到的 3906 MiB；
 ### 驗證身分與服務
 
 `slurmctld` 使用專用的 `slurm` 系統帳號，不用一般工作帳號。
-實際建立命令與驗證結果：
+`UID` 是使用者的數字編號，`GID` 是主要群組的數字編號；
+名稱 `slurm` 對應的數字由這台 VM 當時的帳號資料庫決定。
+下列 `useradd` 是控制節點最初建立此帳號的實際命令：
+`-r` 建系統帳號、`-M` 不建立家目錄、`-U` 建同名群組，
+`-s /sbin/nologin` 禁止互動登入。後面的 `id` 和 `getent`
+只讀取建立結果，不建立或修改帳號。
 
 ```bash
 useradd -r -M -U -s /sbin/nologin slurm
@@ -121,6 +126,9 @@ uid=994(slurm) gid=994(slurm) groups=994(slurm)
 $ getent passwd slurm
 slurm:x:994:994::/home/slurm:/sbin/nologin
 ```
+
+當時系統把 `slurm` 使用者及主要群組都分配為編號 `994`。
+這是單節點建置時的實測值，不是多節點必須沿用的固定編號。
 
 MUNGE 需由 `munge` 帳號保存共享金鑰；金鑰內容不進文件或版本庫。
 當時將套件目錄調整為 `munge:munge`、權限 `700`，

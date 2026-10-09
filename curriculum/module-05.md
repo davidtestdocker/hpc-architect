@@ -577,6 +577,23 @@ cpu_ms=504.605 gpu_kernel_ms=1.894 validation=PASS
 
 ## 7. VM 供給方式與 OpenStack 的對照
 
+### 為什麼在這裡談 OpenStack
+
+目標職缺把 OpenStack 列為加分項。現在的叢集已用 GCP 建出兩台 VM，
+所以這裡要理解的是：若換一種雲平台供給節點，哪些建機與網路決策要重新確認，
+哪些 VM 內的 NFS、MUNGE、Slurm 配置仍可由 Ansible 接手。
+目前沒有可操作的 OpenStack 平台；這一節交付流程對照，不是部署或操作證據。
+
+**OpenStack 是一套開源雲端基礎設施軟體**，讓組織透過 API 或管理介面
+供給 VM、網路和儲存資源。用已做過的事理解：在 GCP 執行
+`gcloud compute instances create` 申請 VM；在採用 OpenStack 的環境，
+會向該環境的 OpenStack 服務申請 VM 及其網路、映像和磁碟。
+VM 建好後，仍要另外配置登入、共享資料與 Slurm，工作才會進入 HPC 叢集。
+[OpenStack 官方概覽](https://docs.openstack.org/install-guide/get-started-with-openstack.html)
+將它定位為提供基礎設施即服務的多個協作元件。
+
+### 對照目前建立 GPU 節點的流程
+
 目前的 GPU VM 是由 GCP 建立：模組 04 的
 `gcloud compute instances create compute-gpu01` 指定機型、AlmaLinux 映像、
 開機磁碟、私有網路和無外部 IP；Cloud Router／NAT 另提供對外出口。

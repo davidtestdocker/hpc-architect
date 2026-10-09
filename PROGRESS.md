@@ -8,7 +8,7 @@
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、正常與兩種條件不符案例 |
 | [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 已完成：C++ 工具、C 序列版、本機 MPI 分工及單節點 Slurm 兩 rank 工作；工作 9 的答案 `55`、退出碼 `0:0` |
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 已完成：兩台 VM 私有 IP 可互通，控制節點能 SSH 遠端執行；GPU VM 透過 NAT 連 GitHub 回報 HTTP `200`，並辨認出一張 NVIDIA L4；NFS 已驗證雙向讀寫；兩台 VM 各執行一個 MPI rank，主機名不同，部分總和 `15+40=55` |
-| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 進行中：控制節點 NFS playbook 正式執行 `ok=5`、`changed=0`；GPU VM 掛載 playbook 正式執行與重跑皆 `ok=3`、`changed=0`；GPU VM 已安裝與控制節點同版的 MUNGE `0.5.15`、Slurm `26.05.4` 運算端套件；MUNGE 金鑰與服務由 Ansible 部署，跨節點憑證解碼 `Success (0)`，重跑 `ok=4`、`changed=0`；Slurm 服務帳號一致化 playbook 已正式執行，兩台 VM 的 `slurm` 均為 `800:800`，控制服務回應 `UP`，重跑兩台皆 `changed=0`；兩節點 Slurm playbook 已正式執行，`slurmd -G` 辨識到一張 `nvidia_l4` 與 `/dev/nvidia0`，控制節點已重新讀取設定，GPU VM 的 `slurmd` 已啟動；尚未核對節點註冊，亦無跨節點 Slurm 工作或乾淨節點部署證據 |
+| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 進行中：NFS 與 MUNGE 已由 Ansible 核對或部署，跨 VM 憑證解碼成功；`slurm-identity.yml` 已讓兩台 VM 的 `slurm` 帳號一致為 `800:800`，重跑均 `changed=0`；其後 `slurm-two-node.yml` 已更新控制端設定、啟動 GPU VM 的 `slurmd`，`slurmd -G` 辨識一張 L4。尚未核對 GPU 節點註冊、執行跨節點 Slurm／GPU 工作或驗證乾淨節點部署。 |
 | [6 叢集維運、Zabbix 監控與故障復原](curriculum/module-06.md) | 未開始 |
 | [7 效能證據、K8s／GKE 與架構取捨](curriculum/module-07.md) | 未開始 |
 | [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 |

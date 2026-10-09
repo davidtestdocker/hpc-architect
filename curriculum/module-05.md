@@ -217,67 +217,31 @@ GPU VM 有 4 個邏輯 CPU、15,983 MiB 記憶體和一張 NVIDIA L4。
 
 控制節點原有 `slurm` 帳號是 `994:994`，
 GPU VM 的這組數字已屬於 `munge`。改號前要找出兩台 VM 都沒有占用的
-使用者編號和群組編號。在控制節點的 Ansible 目錄以 root 執行下列
-**兩條只讀命令**。`ansible all` 選兩台 VM，`-m ansible.builtin.getent`
-使用 Ansible 的帳號資料庫查詢模組，`-a` 傳給模組查詢參數。
-第一條用 `database=passwd key=800` 查 UID 800 是否已有使用者，
-第二條用 `database=group key=800` 查 GID 800 是否已有群組。
-`fail_key=false` 讓查無資料時回傳空值，不把它當成命令失敗；
-兩條都不建立帳號或群組：
+使用者編號和群組編號。在控制節點的 Ansible 目錄以 root 執行
+兩條只讀查詢：第一條查兩台 VM 的 UID 800，第二條查 GID 800。
+`ansible all` 選兩台 VM；`getent` 讀帳號資料庫；
+`fail_key=false` 讓查無資料回傳空值。查詢不建立帳號或群組。
 
 ```bash
 ansible all -m ansible.builtin.getent -a 'database=passwd key=800 fail_key=false'
 ansible all -m ansible.builtin.getent -a 'database=group key=800 fail_key=false'
 ```
 
-第一條回傳的 `getent_passwd["800"]` 是 Ansible 結果中
-「UID 800 對應的使用者」欄位；第二條的 `getent_group["800"]`
-是「GID 800 對應的群組」欄位。**這兩個名稱是輸出欄位，不是另一條指令。**
-實際結果如下；`null` 表示該 VM 的帳號資料庫找不到這個編號：
+`getent_passwd["800"]`、`getent_group["800"]` 是輸出中的
+使用者與群組查詢欄位，**不是指令**。實際結果如下；
+`null` 表示該 VM 找不到這個編號：
 
 | 查詢 | 控制節點 | GPU VM |
 |---|---|---|
 | `getent_passwd["800"]` | `null` | `null` |
 | `getent_group["800"]` | `null` | `null` |
 
-兩條命令對兩台 VM 均回傳 `SUCCESS`、`changed=false`。
-這四項空值支持選用 `800:800`；查詢當時尚未建立任何帳號。
+兩台 VM 的 UID 與 GID 800 都未占用，因此選 `800:800`。
 
-改控制節點的 UID/GID 前，在控制節點的 Ansible 目錄以 root
-查 `/etc`、`/var`、`/run` 中原 `slurm` 使用者及群組持有的路徑。
-`-b` 用管理員權限讀取，`-xdev` 不跨其他檔案系統，
-`-print` 只列路徑；查詢不改檔案。
-
-```bash
-ansible controller -b -m ansible.builtin.command -a 'find /etc /var /run -xdev -user slurm -print'
-ansible controller -b -m ansible.builtin.command -a 'find /etc /var /run -xdev -group slurm -print'
-```
-
-兩條均回傳 `rc=0`，使用者及群組清單相同；必要輸出包括：
-
-```text
-/var/spool/slurmctld
-/var/spool/slurmctld/node_state
-/var/spool/slurmctld/job_state
-/run/slurmctld
-```
-
-這指出 `/var/spool/slurmctld` 及其中狀態檔改號後也要更新擁有權。
-查詢範圍只涵蓋上述目錄，不能推論其他路徑沒有同一擁有者。
-已查到服務由 `slurm:slurm` 執行，`/run/slurmctld` 由 systemd 的
-`RuntimeDirectory` 管理，`StateDirectory` 為空：
-
-```bash
-ansible controller -b -m ansible.builtin.command -a 'systemctl show slurmctld -p ActiveState -p User -p Group -p RuntimeDirectory -p StateDirectory'
-```
-
-```text
-User=slurm
-Group=slurm
-RuntimeDirectory=slurmctld
-StateDirectory=
-ActiveState=active
-```
+控制節點的 `/var/spool/slurmctld` 保存排程狀態，
+原本由 UID/GID `994:994` 的 `slurm` 帳號持有。
+只改帳號編號，舊狀態檔不會自動變成新帳號的檔案；
+因此下方 playbook 也把這個目錄及其內容交給新的 `800:800` 帳號。
 
 ## 4. 先執行 slurm-identity.yml：統一服務帳號
 
@@ -287,7 +251,6 @@ UID/GID 固定為 `800:800`。只有 GPU VM 完成，才處理控制節點。
 控制端先確認沒有工作，短暫停止 `slurmctld`，
 把原 `slurm` 帳號改為 `800:800`，並將 `/var/spool/slurmctld`
 整個目錄樹交給新身分，再啟動服務並用 `scontrol ping` 核對。
-`/run/slurmctld` 在服務啟動時由 systemd 管理。
 若控制端遷移途中失敗，playbook 會嘗試恢復原本的 `994:994`
 與服務；若連線中斷，仍需依實際狀態人工核對。
 這一步會變更兩台 VM 的系統帳號，並短暫中斷控制端排程服務；

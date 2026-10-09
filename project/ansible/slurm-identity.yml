@@ -1,0 +1,179 @@
+---
+# 從控制節點的 project/ansible 執行；inventory 指向既有控制節點與 GPU VM。
+# 兩台 VM 的 UID/GID 800 已經唯讀查詢確認未占用；不建立 VM 或安裝套件。
+# SlurmUser=slurm 必須在兩台 VM 有相同身分數字，否則節點無法正確驗證彼此。
+# 先備妥 GPU VM 帳號，再短暫停止控制服務遷移原有 994:994 帳號。
+- name: 建立 GPU VM 的 Slurm 服務帳號
+  hosts: gpu_compute
+  become: true
+  any_errors_fatal: true  # GPU 端帳號未備妥，就不變更控制節點。
+  tasks:
+    # group 管理 /etc/group；system 表示新建時使用系統群組身分，gid 固定為 800。
+    - name: 備妥 GPU VM 的 slurm 群組
+      ansible.builtin.group:
+        name: slurm
+        gid: 800
+        system: true
+        state: present
+
+    # user 管理 /etc/passwd；不建立家目錄，且禁止互動登入。
+    # uid 與主要群組對齊控制節點即將使用的 800:800。
+    - name: 備妥 GPU VM 的 slurm 使用者
+      ansible.builtin.user:
+        name: slurm
+        uid: 800
+        group: slurm
+        system: true
+        create_home: false
+        shell: /sbin/nologin
+        state: present
+
+    # id 只讀取帳號；changed_when 避免把查詢顯示成變更。
+    - name: 核對 GPU VM 的 slurm 身分數字
+      ansible.builtin.command: id slurm
+      register: gpu_slurm_id
+      changed_when: false
+      failed_when: >-
+        gpu_slurm_id.rc != 0 or
+        'uid=800(slurm)' not in gpu_slurm_id.stdout or
+        'gid=800(slurm)' not in gpu_slurm_id.stdout
+
+    # 把已核對的實際身分列在 playbook 輸出中；debug 只顯示結果。
+    - name: 顯示 GPU VM 的 slurm 身分
+      ansible.builtin.debug:
+        var: gpu_slurm_id.stdout
+
+- name: 將控制節點的 Slurm 服務帳號遷移到相同身分數字
+  hosts: controller
+  become: true
+  tasks:
+    # 先查現有數字；只有 994:994 或已完成的 800:800 可由本檔安全處理。
+    - name: 讀取控制節點的 slurm UID
+      ansible.builtin.command: id -u slurm
+      register: controller_slurm_uid
+      changed_when: false
+
+    - name: 讀取控制節點的 slurm GID
+      ansible.builtin.command: id -g slurm
+      register: controller_slurm_gid
+      changed_when: false
+
+    - name: 確認控制節點的原身分或目標身分完整
+      ansible.builtin.assert:
+        that:
+          - >-
+            (controller_slurm_uid.stdout == '994' and controller_slurm_gid.stdout == '994') or
+            (controller_slurm_uid.stdout == '800' and controller_slurm_gid.stdout == '800')
+        fail_msg: 控制節點的 slurm UID/GID 不在預期狀態，先人工核對再變更。
+
+    # 有工作時不停止控制服務；重跑且已是 800:800 時不需要停機。
+    - name: 變更身分前確認 Slurm 沒有工作
+      ansible.builtin.command: squeue -h -o '%i %T %u %j'
+      register: queued_jobs
+      changed_when: false
+      failed_when: queued_jobs.rc != 0 or queued_jobs.stdout != ''
+      when: controller_slurm_uid.stdout != '800'
+
+    # block 只在首次遷移時執行；重跑若已是 800:800，不中斷控制服務。
+    # 若中途失敗，rescue 嘗試恢復原本 994:994 與服務，再回報失敗。
+    - name: 遷移控制節點的 slurm 身分與狀態目錄
+      when: controller_slurm_uid.stdout != '800'
+      block:
+        # 服務目前以 slurm 帳號執行；先停止，避免在使用中的帳號上改 UID/GID。
+        - name: 暫停控制節點的 slurmctld
+          ansible.builtin.service:
+            name: slurmctld
+            state: stopped
+
+        - name: 將控制節點的 slurm 群組改為 GID 800
+          ansible.builtin.group:
+            name: slurm
+            gid: 800
+            state: present
+
+        - name: 將控制節點的 slurm 使用者改為 UID 800
+          ansible.builtin.user:
+            name: slurm
+            uid: 800
+            group: slurm
+            state: present
+
+        # systemd 管理 /run/slurmctld；StateDirectory 為空，排程狀態需自行更新擁有權。
+        # recurse 對既有目錄及其狀態檔設定擁有者，不改內容或權限模式。
+        - name: 讓遷移後的帳號持有控制節點排程狀態
+          ansible.builtin.file:
+            path: /var/spool/slurmctld
+            state: directory
+            owner: slurm
+            group: slurm
+            recurse: true
+
+        # systemd 按 User/Group 重新建立或核對 /run/slurmctld。
+        - name: 恢復控制節點的 slurmctld
+          ansible.builtin.service:
+            name: slurmctld
+            state: started
+
+        - name: 核對控制節點遷移後的 slurm 身分數字
+          ansible.builtin.command: id slurm
+          register: controller_slurm_id
+          changed_when: false
+          failed_when: >-
+            controller_slurm_id.rc != 0 or
+            'uid=800(slurm)' not in controller_slurm_id.stdout or
+            'gid=800(slurm)' not in controller_slurm_id.stdout
+
+        - name: 顯示控制節點的 slurm 身分
+          ansible.builtin.debug:
+            var: controller_slurm_id.stdout
+
+        # ping 向控制服務確認實際可回應；光看 systemd 啟動不足以證明可用。
+        - name: 核對控制節點排程服務已回應
+          ansible.builtin.command: scontrol ping
+          register: controller_slurm_ping
+          changed_when: false
+          # until 在服務啟動後最多再查五次，每次相隔兩秒；仍無 UP 才進 rescue。
+          until: controller_slurm_ping.rc == 0 and 'UP' in controller_slurm_ping.stdout
+          retries: 5
+          delay: 2
+
+        - name: 顯示控制節點排程服務的回應
+          ansible.builtin.debug:
+            var: controller_slurm_ping.stdout
+
+      rescue:
+        # 失敗時回到原單節點服務身分；若救援本身失敗，Ansible 會直接顯示失敗。
+        - name: 停止可能部分啟動的 slurmctld
+          ansible.builtin.service:
+            name: slurmctld
+            state: stopped
+
+        - name: 還原控制節點 slurm 群組的原 GID
+          ansible.builtin.group:
+            name: slurm
+            gid: 994
+            state: present
+
+        - name: 還原控制節點 slurm 使用者的原 UID
+          ansible.builtin.user:
+            name: slurm
+            uid: 994
+            group: slurm
+            state: present
+
+        - name: 還原控制節點排程狀態的擁有權
+          ansible.builtin.file:
+            path: /var/spool/slurmctld
+            state: directory
+            owner: slurm
+            group: slurm
+            recurse: true
+
+        - name: 重新啟動原身分的 slurmctld
+          ansible.builtin.service:
+            name: slurmctld
+            state: started
+
+        - name: 提醒遷移未完成並停止後續操作
+          ansible.builtin.fail:
+            msg: 帳號遷移未完成；已嘗試還原控制節點 994:994 與 slurmctld，請核對任務輸出。

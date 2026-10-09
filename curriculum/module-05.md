@@ -25,9 +25,10 @@ GPU VM 早就是實際參與計算的節點。
 | 節點清單與連線 | inventory 列出控制節點與 GPU VM；對 GPU VM 執行模組回傳 `pong` | 只證明 Ansible 可連線與遠端執行 |
 | 控制節點 NFS | playbook 通過語法檢查、預演及正式執行；正式執行 `ok=5`、`changed=0` | 現有設定已符合要求，這次沒有重建乾淨節點 |
 | GPU VM 掛載 | 已安裝 `ansible.posix:2.2.2`；掛載 playbook 經預演、正式執行與重跑，兩次正式執行皆 `ok=3`、`changed=0` | 現有 fstab 與掛載已符合要求；尚無乾淨節點部署證據，雙向讀寫是在模組 04 手動驗證 |
-| GPU VM 運算端套件 | 已安裝與控制節點同版的 MUNGE `0.5.15`、Slurm `26.05.4` 及運算端套件 | `slurmd` 尚未啟動，跨節點 Slurm 設定尚未部署 |
-| GPU VM MUNGE | 已分發控制節點現有金鑰、啟動服務；控制端憑證在 GPU VM 解碼為 `Success (0)`；重跑 `changed=0` | 尚未部署 GPU VM 的 Slurm 設定或提交 Slurm 工作 |
-| GPU VM 資源探測 | `slurmd -C` 回報 4 邏輯 CPU、15,983 MiB 記憶體，偵測到一張 NVIDIA L4 | 只讀硬體探測；尚未註冊進 Slurm 或驗證 GPU 工作 |
+| GPU VM 運算端套件 | 已安裝與控制節點同版的 MUNGE `0.5.15`、Slurm `26.05.4` 及運算端套件；`slurmd` 已由 playbook 啟動 | 尚未核對節點註冊或執行工作 |
+| Slurm 服務帳號 | 兩台 VM 的 `slurm` 均為 UID/GID `800:800`；控制服務遷移後回應 `UP`；playbook 重跑兩端均 `changed=0` | 重跑跳過首次遷移步驟，沒有再次查詢控制服務 |
+| GPU VM MUNGE | 已分發控制節點現有金鑰、啟動服務；控制端憑證在 GPU VM 解碼為 `Success (0)`；重跑 `changed=0` | 尚未提交跨節點 Slurm 工作 |
+| GPU VM 資源探測 | `slurmd -C` 回報 4 邏輯 CPU、15,983 MiB 記憶體；`slurmd -G` 依部署設定回報一張 `nvidia_l4`，對應 `/dev/nvidia0` | 尚未核對節點註冊或驗證 GPU 工作 |
 | 預設 inventory | 不帶 `-i` 執行 `ansible-inventory --graph`，列出兩組預期主機 | 只證明清單被讀到，不代表部署成功 |
 
 ## Ansible 在這個叢集的角色
@@ -644,7 +645,7 @@ squeue -h -o '%i %T %u %j'
 **結果：** 再次沒有輸出，直接返回提示字元；查詢當下沒有執行中或等待中的工作。
 這是執行前的狀態，不保證之後不會有新工作提交。
 
-## 兩節點 Slurm 設定：已準備，尚未套用
+## 兩節點 Slurm 設定與部署
 
 現有 Slurm 只管理控制節點；GPU VM 雖已執行過 SSH 啟動的 MPI 工作，
 還沒有接受 Slurm 排程。[two-node-slurm.conf](../project/slurm/two-node-slurm.conf)
@@ -669,17 +670,17 @@ GPU VM 的 CPU 拓撲依 `slurmd -C` 實測；
 
 | 機器 | 目前已知的檔案與來源 |
 |---|---|
-| 控制節點 | [模組 01 的實際命令](module-01.md#slurm-設定與啟動) 已用 `install -D` 把工作樹中的 `project/slurm/single-node-slurm.conf` 複製到**控制節點自己的** `/etc/slurm/slurm.conf`；`-D` 也會建立缺少的父目錄。當時 `stat` 與 `cmp` 已驗證檔案存在且內容一致。 |
-| GPU VM | 預演查到 `/etc/slurm` 尚不存在；兩節點 `slurm.conf` 與 `gres.conf` 尚未部署。正式執行時，playbook 會先建立目錄，再複製設定。 |
+| 控制節點 | [模組 01 的實際命令](module-01.md#slurm-設定與啟動) 曾以 `install -D` 建立自己的 `/etc/slurm/slurm.conf`，當時內容來自 `project/slurm/single-node-slurm.conf`；本模組已將該檔更新為 `project/slurm/two-node-slurm.conf`，並要求控制服務重新讀取。 |
+| GPU VM | 已建立 `/etc/slurm`，並將控制節點工作樹中的兩節點 `slurm.conf` 與 `gpu-gres.conf` 複製至該 VM 自己的 `/etc/slurm/slurm.conf` 和 `/etc/slurm/gres.conf`；`slurmd` 已啟動。 |
 
-`project/slurm/two-node-slurm.conf` 是接下來要部署的**新版來源檔**，
-不是控制節點正在使用的 `/etc/slurm/slurm.conf`。
-**目前兩台 VM 都尚未收到這份兩節點設定。**
+`project/slurm/two-node-slurm.conf` 是兩節點設定的**來源檔**；
+控制節點的服務讀取的是已複製到 `/etc/slurm/slurm.conf` 的另一份檔案。
+**兩台 VM 現已收到各自的兩節點設定。**
 在控制節點的 `project/ansible` 目錄正式執行
 `ansible-playbook slurm-two-node.yml` 時，playbook 才會按下列順序操作：
 
 1. 在 GPU VM 建立或核對 `/etc/slurm` 目錄。
-   預演查到目前不存在；正式執行時才會建立。
+   首次執行已建立；重跑時只核對目錄屬性。
 2. 從控制節點工作樹複製 `../slurm/two-node-slurm.conf`
    到 GPU VM 的 `/etc/slurm/slurm.conf`；
    再複製 `../slurm/gpu-gres.conf` 到 GPU VM 的 `/etc/slurm/gres.conf`。
@@ -786,26 +787,263 @@ instance-20260923-104239   : ok=2 changed=1 unreachable=0 failed=0 skipped=1
 `changed`，也只是預演預測，**沒有真的啟動或重啟服務**。
 本次 `failed=0` 只表示預演沒有失敗，不能當作 GPU 設定或排程已通過驗證。
 
-**尚未套用。** 正式執行會修改兩台 VM 的 `/etc/slurm/slurm.conf`、
-GPU VM 的 `/etc/slurm/gres.conf`，並建立 GPU VM 當時缺少的
-`/etc/slurm`、`/var/spool/slurmd` 目錄。
-`slurmd -G` 核對通過後，會讓控制節點重新讀取 Slurm 設定，
-再啟動 GPU VM 的 `slurmd`；可能短暫影響排程。
-不建立新 VM 或雲端資源；既有 GPU VM 若維持開機仍按原有方式計費。
-若套用失敗，先依實際任務輸出定位，
-必要時停止 GPU VM 的 `slurmd`；控制節點設定若已被取代，
-從 `copy` 留下的備份還原並重新讀取原設定。
-GPU VM 原本沒有的設定檔不會有舊版備份，
-若需完整復原，再依實際變更處理新增檔案。
+## Slurm 服務帳號的一致性
 
-**已取得同意，待執行，尚無實際輸出：**
-在台灣控制節點的 `project/ansible` 目錄以 root 執行下列指令。
-`ansible-playbook` 會按檔案中的三個 play 順序連到兩台 VM，
-執行上述部署、GPU 核對、控制端設定重讀及 GPU VM 服務啟動。
-這條命令沒有 `--check`，因此會真的修改 VM。
+控制節點在模組 01 建立的 `slurm` 帳號使用 UID/GID `994:994`。
+GPU VM 的 `994:994` 已屬於 `munge`，因此不能直接沿用控制節點的
+帳號數字建立 `slurm`。Slurm 要求 `SlurmUser` 在每台節點都存在；
+跨節點的使用者與群組 UID/GID 也應一致。
+[Slurm 管理員快速入門](https://slurm.schedmd.com/quickstart_admin.html)
+
+在變更帳號與服務前，先挑選兩台 VM 都未占用的 UID/GID。
+`800` 是待檢查的候選數字，不代表已確認可用。
+在控制節點的 `project/ansible` 目錄以 root 執行下列兩條只讀查詢：
+第一條查兩台 VM 的 UID `800` 是否已被使用者占用；
+第二條查 GID `800` 是否已被群組占用。
+Ansible 的 `getent` 模組讀取各 VM 的帳號資料庫，
+`fail_key=false` 表示查不到時回報空結果，避免把「未占用」當成任務錯誤；
+兩條都不建立或修改帳號。
+
+```bash
+ansible all -m ansible.builtin.getent -a 'database=passwd key=800 fail_key=false'
+ansible all -m ansible.builtin.getent -a 'database=group key=800 fail_key=false'
+```
+
+**結果：** 兩台 VM 的 `getent_passwd["800"]`、`getent_group["800"]`
+都回傳 `null`，四項查詢均為 `SUCCESS`、`changed=false`。
+因此 UID/GID `800` 在兩台 VM 的帳號資料庫中都未被占用；
+這只是選號依據，尚未建立或修改帳號。
+
+把控制節點現有 `slurm` 帳號改為相同的 UID/GID 之前，
+須先找出它持有的檔案，避免改號後排程服務失去寫入權限。
+在控制節點的 `project/ansible` 目錄以 root 執行以下兩條只讀查詢：
+`ansible controller` 只選控制節點，`-b` 以 root 權限讀取系統目錄；
+第一條 `find` 列出 `/etc`、`/var`、`/run` 中由 `slurm` 使用者擁有的路徑，
+第二條列出由 `slurm` 群組擁有的路徑。
+`-xdev` 不跨入這些目錄下的其他檔案系統，`-print` 只印路徑；
+兩條都不更動檔案、帳號或服務。
+
+```bash
+ansible controller -b -m ansible.builtin.command -a 'find /etc /var /run -xdev -user slurm -print'
+ansible controller -b -m ansible.builtin.command -a 'find /etc /var /run -xdev -group slurm -print'
+```
+
+兩條查詢均回傳 `rc=0`，使用者與群組清單相同。
+必要輸出包括：
+
+```text
+/var/spool/slurmctld
+/var/spool/slurmctld/node_state
+/var/spool/slurmctld/job_state
+/run/slurmctld
+```
+
+`/var/spool/slurmctld` 內還有其他由 `slurm` 持有的排程狀態檔；
+更改控制節點帳號數字後，須讓整個目錄樹與執行時目錄仍由新帳號持有。
+這次掃描僅涵蓋 `/etc`、`/var`、`/run` 且不跨檔案系統，
+不能據此宣稱其他路徑沒有同一擁有者。
+Ansible 的 `CHANGED` 是 `command` 模組對查詢的預設回報；
+`find` 沒有修改檔案。
+
+在調整服務帳號前，先讀取控制節點的 systemd 服務屬性，
+確認服務目前是否運行、以哪個帳號啟動，以及 `/run` 下的目錄是否由
+systemd 管理。在控制節點的 `project/ansible` 目錄以 root 執行下列
+只讀命令；`-p` 僅列指定欄位，不改服務。
+
+```bash
+ansible controller -b -m ansible.builtin.command -a 'systemctl show slurmctld -p ActiveState -p User -p Group -p RuntimeDirectory -p StateDirectory'
+```
+
+```text
+User=slurm
+Group=slurm
+RuntimeDirectory=slurmctld
+StateDirectory=
+ActiveState=active
+```
+
+`slurmctld` 正在運行，systemd 以 `slurm:slurm` 啟動它，
+並管理 `/run/slurmctld`；停用和重新啟動服務時，
+systemd 會按服務設定處理這個執行時目錄。
+`StateDirectory` 為空，因此 `/var/spool/slurmctld` 及其中狀態檔
+的擁有權仍須由部署步驟明確調整。
+Ansible 顯示 `CHANGED` 只是 `command` 模組的預設回報，
+`systemctl show` 沒有變更服務。
+
+### 統一兩台 VM 的 Slurm 服務帳號
+
+現有控制節點已能排程自己的 `debug` 分區；要讓 GPU VM 接受排程，
+兩台 VM 還需要相同的 `SlurmUser=slurm` 身分。
+控制節點的 `slurm` 是 `994:994`，而 GPU VM 的這組數字已由 `munge` 使用。
+兩台 VM 的 UID/GID `800` 都經查詢未占用，所以選 `800:800`
+作為兩節點一致的 `slurm` 身分。
+
+[slurm-identity.yml](../project/ansible/slurm-identity.yml)
+由控制節點在 `project/ansible` 目錄以 root 執行，依序：
+
+1. 在 GPU VM 建立不能登入、沒有家目錄的 `slurm` 群組和使用者，
+   UID/GID 都固定為 `800`，並核對結果。
+2. 在控制節點確認沒有工作，並確認目前身分是原本的 `994:994`
+   或已完成的 `800:800`。若已是目標身分，重跑時不停止服務。
+3. 首次遷移時短暫停止 `slurmctld`，將控制節點的 `slurm`
+   群組和使用者改為 `800:800`，再更新 `/var/spool/slurmctld`
+   整個目錄樹的擁有權。`/run/slurmctld` 由 systemd 的
+   `RuntimeDirectory` 在服務啟動時管理，不另外改檔。
+4. 啟動 `slurmctld`，核對帳號數字與 `scontrol ping` 回應。
+   若中途失敗，playbook 會嘗試把控制節點還原至 `994:994`、
+   恢復狀態目錄擁有權並啟動原服務，最後仍回報失敗以便檢查。
+
+這份 playbook 會變更兩台 VM 的系統帳號資料，
+並短暫中斷控制節點排程服務；沒有工作時才會停止服務。
+不建立新 VM、不安裝套件，也不增加雲端資源。
+若連線中斷等問題使自動救援無法執行，須依兩台 VM 的實際帳號、
+狀態目錄擁有權及服務狀態決定人工復原步驟。
+
+在控制節點 `project/ansible` 目錄已對本機 playbook 執行語法檢查；
+它只解析檔案，不連線或修改 VM。
+
+```bash
+ansible-playbook slurm-identity.yml --syntax-check
+```
+
+```text
+playbook: slurm-identity.yml
+```
+
+語法檢查通過；這一步沒有變更帳號或服務。
+確認影響與復原方式後，在控制節點同一目錄以 root 正式執行：
+
+```bash
+ansible-playbook slurm-identity.yml
+```
+
+```text
+PLAY [建立 GPU VM 的 Slurm 服務帳號]
+TASK [備妥 GPU VM 的 slurm 群組]             changed: [compute-gpu01]
+TASK [備妥 GPU VM 的 slurm 使用者]           changed: [compute-gpu01]
+TASK [核對 GPU VM 的 slurm 身分數字]         ok: [compute-gpu01]
+gpu_slurm_id.stdout: uid=800(slurm) gid=800(slurm) groups=800(slurm)
+PLAY [將控制節點的 Slurm 服務帳號遷移到相同身分數字]
+TASK [變更身分前確認 Slurm 沒有工作]         ok: [instance-20260923-104239]
+TASK [暫停控制節點的 slurmctld]             changed: [instance-20260923-104239]
+TASK [將控制節點的 slurm 群組改為 GID 800]  changed: [instance-20260923-104239]
+TASK [將控制節點的 slurm 使用者改為 UID 800] changed: [instance-20260923-104239]
+TASK [讓遷移後的帳號持有控制節點排程狀態]   changed: [instance-20260923-104239]
+TASK [恢復控制節點的 slurmctld]             changed: [instance-20260923-104239]
+TASK [核對控制節點遷移後的 slurm 身分數字]   ok: [instance-20260923-104239]
+controller_slurm_id.stdout: uid=800(slurm) gid=800(slurm) groups=800(slurm)
+TASK [核對控制節點排程服務已回應]           ok: [instance-20260923-104239]
+controller_slurm_ping.stdout: Slurmctld(primary) at instance-20260923-104239 is UP
+PLAY RECAP
+compute-gpu01            : ok=5  changed=2 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+instance-20260923-104239 : ok=14 changed=5 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+GPU VM 首次建立 `slurm` 群組與使用者；控制節點確認沒有工作後，
+短暫停止控制服務、改號、調整排程狀態目錄擁有權，再啟動服務。
+兩台 VM 都實際回報 `800:800`，控制服務回應 `UP`，沒有觸發救援。
+這證明帳號遷移成功；尚未重跑驗證冪等性，也尚未套用兩節點排程設定。
+
+### 重跑核對帳號設定
+
+在控制節點的 `project/ansible` 目錄以 root 重跑同一份 playbook，
+核對兩台 VM 的 `slurm` 身分仍為 `800:800`，且不再變更帳號、
+狀態目錄或停止控制服務。playbook 仍會連線兩台 VM 讀取狀態；
+若狀態期間發生偏移，正式執行可能修正帳號或服務，須依輸出判讀。
+此步不建立 VM、不安裝套件或更新兩節點 Slurm 設定。
+
+```bash
+ansible-playbook slurm-identity.yml
+```
+
+```text
+PLAY [建立 GPU VM 的 Slurm 服務帳號]
+TASK [備妥 GPU VM 的 slurm 群組]       ok: [compute-gpu01]
+TASK [備妥 GPU VM 的 slurm 使用者]     ok: [compute-gpu01]
+gpu_slurm_id.stdout: uid=800(slurm) gid=800(slurm) groups=800(slurm)
+PLAY [將控制節點的 Slurm 服務帳號遷移到相同身分數字]
+TASK [確認控制節點的原身分或目標身分完整] ok: [instance-20260923-104239]
+TASK [變更身分前確認 Slurm 沒有工作]   skipping: [instance-20260923-104239]
+TASK [暫停控制節點的 slurmctld]       skipping: [instance-20260923-104239]
+TASK [將控制節點的 slurm 群組改為 GID 800] skipping: [instance-20260923-104239]
+TASK [將控制節點的 slurm 使用者改為 UID 800] skipping: [instance-20260923-104239]
+TASK [讓遷移後的帳號持有控制節點排程狀態] skipping: [instance-20260923-104239]
+TASK [恢復控制節點的 slurmctld]       skipping: [instance-20260923-104239]
+TASK [核對控制節點排程服務已回應]     skipping: [instance-20260923-104239]
+PLAY RECAP
+compute-gpu01            : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+instance-20260923-104239 : ok=4 changed=0 unreachable=0 failed=0 skipped=10 rescued=0 ignored=0
+```
+
+兩台 VM 的帳號任務都未再修改狀態；控制節點已是 `800:800`，
+所以首次遷移的工作檢查、停機、改號、啟動與服務 ping 均跳過。
+這次 `changed=0` 證明帳號設定可重跑，不能單靠重跑輸出推論
+`slurmctld` 當下仍回應；首次遷移時已有 `UP` 的實測回應。
+
+## 套用兩節點設定前確認工作佇列
+
+兩台 VM 的 `slurm` 帳號已一致，正式更新控制節點設定前，
+在控制節點的 `project/ansible` 目錄以 root 再查一次工作佇列。
+`squeue` 只讀取當下工作；`-h` 省略標題，`-o` 依序顯示
+工作 ID、狀態、使用者和名稱。若有工作，先評估影響，不套用設定。
+
+```bash
+squeue -h -o '%i %T %u %j'
+```
+
+**結果：** 命令正常返回且沒有輸出，查詢當下沒有執行中或等待中的工作。
+這不保證稍後不會有新工作進入佇列。
+
+## 正式套用兩節點 Slurm 設定
+
+在控制節點的 `project/ansible` 目錄以 root 執行下列 playbook。
+它會先核對 GPU VM 上的 `/etc/slurm`、`/var/spool/slurmd`，
+從控制節點工作樹部署兩份設定，再在 GPU VM 執行 `slurmd -G`。
+只有 GPU 檢查通過，才會更新控制節點自己的
+`/etc/slurm/slurm.conf` 並用 `scontrol reconfigure` 重新讀取設定，
+最後啟動 GPU VM 的 `slurmd`。設定檔若有變更會保留舊版備份。
+這不建立新 VM 或安裝套件；若控制節點更新後發生問題，
+須依 playbook 輸出核對服務狀態，必要時以備份還原其設定並重新讀取。
 
 ```bash
 ansible-playbook slurm-two-node.yml
+```
+
+```text
+PLAY [備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應]
+TASK [部署 GPU VM 的共用 Slurm 設定] changed: [compute-gpu01]
+TASK [部署 GPU VM 的 GPU 資源設定] changed: [compute-gpu01]
+TASK [核對 GPU VM 的 GRES 設定] ok: [compute-gpu01]
+"rc": 0,
+"stderr": "[2026-10-09T06:49:39.018] _read_slurm_cgroup_conf: No cgroup.conf file (/etc/slurm/cgroup.conf), using defaults\n[2026-10-09T06:49:39.052] Gres Name=gpu Type=nvidia_l4 Count=1 Index=0 ID=7696487 File=/dev/nvidia0 Cores=0-1 CoreCnt=4 Links=(null) Flags=HAS_FILE,HAS_TYPE,ENV_NVML",
+PLAY [讓控制節點認得 GPU VM]
+TASK [部署控制節點的共用 Slurm 設定] changed: [instance-20260923-104239]
+RUNNING HANDLER [重新讀取 Slurm 設定] changed: [instance-20260923-104239]
+PLAY [啟動 GPU VM 的 Slurm 運算服務]
+TASK [設定有變更時重啟 GPU VM 的 slurmd] changed: [compute-gpu01]
+TASK [確保 GPU VM 的 slurmd 已啟動] changed: [compute-gpu01]
+PLAY RECAP
+compute-gpu01            : ok=10 changed=4 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+instance-20260923-104239 : ok=3 changed=2 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+GPU VM 的兩份設定確實改動，`slurmd -G` 成功讀到一張
+`nvidia_l4`，對應 `/dev/nvidia0`。缺少 `cgroup.conf` 時使用預設值的訊息
+並未讓檢查失敗；它不代表已驗證工作隔離。
+控制節點的設定已改動並執行 `scontrol reconfigure`；
+GPU VM 的 `slurmd` 已啟動並設為開機啟動。
+playbook 成功不等於節點已在控制端註冊，也不等於 GPU 工作已執行。
+
+### 從控制節點核對 GPU 節點註冊
+
+在控制節點以 root 執行 `scontrol show node compute-gpu01`。
+`scontrol` 向運行中的 `slurmctld` 查詢指定節點；
+要看節點是否出現、`NodeAddr` 是否為 GPU VM 私有 IP、
+`State` 是否可接工作，以及 `Gres` 是否列出一張 L4。
+這只讀取控制端狀態，不提交工作或改動 VM。
+
+```bash
+scontrol show node compute-gpu01
 ```
 
 ## 尚需交付的能力證據

@@ -243,8 +243,15 @@ ansible all -m ansible.builtin.getent -a 'database=group key=800 fail_key=false'
 
 ## 2. 執行 slurm-identity.yml：統一服務帳號
 
-下列指令執行 [slurm-identity.yml](../project/ansible/slurm-identity.yml)。
-該檔案內的任務依序是：
+在控制節點的 Ansible 目錄以 root **正式執行**：
+
+```bash
+ansible-playbook slurm-identity.yml
+```
+
+這條指令執行的是
+[slurm-identity.yml](../project/ansible/slurm-identity.yml)。
+檔案中的任務依序處理：
 
 1. 在 **GPU VM** 建立不能互動登入、沒有家目錄的 `slurm` 群組與使用者，
    UID/GID 固定為 `800:800`，再用 `id slurm` 核對。
@@ -260,11 +267,7 @@ ansible all -m ansible.builtin.getent -a 'database=group key=800 fail_key=false'
 這一步會變更兩台 VM 的系統帳號，並短暫中斷控制端排程服務；
 不建立 VM、不安裝套件。
 
-在控制節點的 Ansible 目錄以 root 正式執行：
-
-```bash
-ansible-playbook slurm-identity.yml
-```
+下列是這次指令的實際關鍵輸出：
 
 ```text
 PLAY [建立 GPU VM 的 Slurm 服務帳號]
@@ -316,25 +319,6 @@ instance-20260923-104239 : ok=4 changed=0 unreachable=0 failed=0 skipped=10 resc
 
 ## 3. 執行 slurm-two-node.yml：部署排程設定
 
-控制節點工作樹的
-[two-node-slurm.conf](../project/slurm/two-node-slurm.conf)
-是兩台 VM 的設定**來源**：保留控制節點原有的 `debug` 分區，
-新增只包含 GPU VM 的 `gpu` 分區，宣告該節點 4 個邏輯 CPU、
-14,000 MiB 可排程記憶體及一張 `nvidia_l4`。
-[gpu-gres.conf](../project/slurm/gpu-gres.conf) 是 GPU VM 的 GRES 設定來源，
-選用 `AutoDetect=nvidia` 核對本機 NVIDIA 裝置。
-各設定項目的用途寫在來源檔的中文註解中。
-
-| 來源：控制節點工作樹 | 目標：服務實際讀取位置 | 執行時機 |
-|---|---|---|
-| `project/slurm/two-node-slurm.conf` | GPU VM 自己的 `/etc/slurm/slurm.conf` | playbook 先複製；GPU VM 的 `slurmd -G` 接著讀取 |
-| `project/slurm/gpu-gres.conf` | GPU VM 自己的 `/etc/slurm/gres.conf` | 與上一份一同交給 `slurmd -G` 檢查 |
-| `project/slurm/two-node-slurm.conf` | 控制節點自己的 `/etc/slurm/slurm.conf` | GPU 檢查通過後才取代原單節點設定；`scontrol reconfigure` 請現有 `slurmctld` 重新讀取 |
-
-控制節點的 `/etc/slurm/slurm.conf` 已由模組 01 的 `install -D`
-從單節點來源建立。GPU VM 的 `/etc/slurm` 和 `/var/spool/slurmd`
-也已建立；這次 playbook 會核對它們。
-
 修改控制端排程設定前，在控制節點以 root 查工作佇列；
 `-h` 不顯示標題，`-o` 列出 ID、狀態、使用者和名稱。
 這只讀取當下狀態，不提交或取消工作：
@@ -345,28 +329,39 @@ squeue -h -o '%i %T %u %j'
 
 **結果：** 命令正常返回、沒有輸出；查詢當下沒有執行中或等待中的工作。
 
-在控制節點的 Ansible 目錄以 root 執行下列指令，
-執行的是 [slurm-two-node.yml](../project/ansible/slurm-two-node.yml)。
-該檔案內的任務依序是：
-
-1. 在 **GPU VM** 核對 `/etc/slurm` 和 `/var/spool/slurmd`，
-   從控制節點工作樹複製上表的兩份設定到 GPU VM。
-2. 在 GPU VM 執行 `slurmd -G`，讀取剛複製的設定，
-   確認一張 L4 對應本機 GPU 裝置。這個檢查會退出，不啟動服務；
-   檢查不通過就停止，不更新控制節點。
-3. 在**控制節點**複製兩節點設定，取代自己的單節點設定；
-   設定真的改動時，handler 執行 `scontrol reconfigure`，
-   讓現有 `slurmctld` 重新讀取，不重啟控制服務。
-4. 在 GPU VM 啟動 `slurmd` 並設為開機啟動；
-   重跑而設定未變時不會無故重啟服務。
-
-設定檔改動時會在各 VM 留下舊版備份。
-若控制端更新後出現問題，需依輸出查服務狀態，
-必要時還原控制端的設定備份並重新讀取。
+在控制節點的 Ansible 目錄以 root **正式執行**：
 
 ```bash
 ansible-playbook slurm-two-node.yml
 ```
+
+這條指令執行的是
+[slurm-two-node.yml](../project/ansible/slurm-two-node.yml)。
+檔案中的任務依序處理：
+
+1. 在 **GPU VM** 建立或核對 `/etc/slurm` 和 `/var/spool/slurmd`。
+   從**控制節點工作樹**的
+   [two-node-slurm.conf](../project/slurm/two-node-slurm.conf)
+   複製到 GPU VM 自己的 `/etc/slurm/slurm.conf`。
+   這份設定保留控制節點的 `debug` 分區，新增只含 GPU VM 的 `gpu` 分區，
+   向 Slurm 宣告 GPU VM 可排程 4 個邏輯 CPU、14,000 MiB 記憶體和一張 L4。
+2. 從控制節點工作樹的
+   [gpu-gres.conf](../project/slurm/gpu-gres.conf)
+   複製到 GPU VM 自己的 `/etc/slurm/gres.conf`。
+   它指定 `AutoDetect=nvidia`；接著在 GPU VM 執行 `slurmd -G`，
+   讀取剛複製的兩份設定，檢查是否對應本機 GPU。
+   `slurmd -G` 只檢查後退出；若檢查失敗，playbook 停止，
+   不更新控制節點。
+3. GPU 檢查通過後，才把控制節點工作樹中同一份
+   `two-node-slurm.conf` 複製到**控制節點自己**的
+   `/etc/slurm/slurm.conf`，取代模組 01 建立的單節點內容。
+   檔案真的改動時，handler 執行 `scontrol reconfigure`，
+   讓現有 `slurmctld` 重新讀取，不重啟控制服務。
+4. 最後啟動 GPU VM 的 `slurmd` 並設為開機啟動；
+   重跑且設定未變時不會無故重啟服務。
+
+複製任務改動檔案時，會在各 VM 留下舊版備份。
+下列是這次指令的實際關鍵輸出：
 
 ```text
 PLAY [備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應]

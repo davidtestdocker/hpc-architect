@@ -622,6 +622,61 @@ Nova 的 **flavor** 類似目前選用的 VM 機型，描述一種可申請的�
 目前沒有 OpenStack 平台操作輸出，因此這是供給流程與責任邊界的對照，
 不能列為 OpenStack 實作經驗。
 
+## 8. 單 GPU 配額下的乾淨節點替換方案（尚未執行）
+
+**最終交付維持兩台 VM：一台 CPU 控制／運算節點，加一台 GPU 運算節點。**
+現有 GPU VM `compute-gpu01` 已能完成 Slurm GPU 工作；
+要驗證乾淨節點首次部署，須換一台從 AlmaLinux 映像啟動的 GPU VM。
+配額只允許同時運行一張 GPU，因此先準備重建材料，再停止舊 GPU VM，
+保留其開機磁碟與設定供回復，建立新節點 `compute-gpu02`。
+停止舊 VM 後，GPU 工作會暫時不可用；控制節點及其 NFS 分享仍運行。
+Google Cloud 說明[停止 VM 後 GPU 不再保留](https://docs.cloud.google.com/compute/docs/instances/suspend-stop-reset-instances-overview)，
+但新建或重啟 VM 仍取決於該 zone 的即時 GPU 容量。
+
+| 角色 | 最終規格與位置 | 已確認／待執行 |
+|---|---|---|
+| CPU 控制／提交／運算／NFS | `instance-20260923-104239`；台灣 `asia-east1-b`；`e2-custom-2-4096`，2 vCPU、4 GiB；10 GiB 開機磁碟、100 GiB 附加磁碟；私有 IP `10.140.0.2`；Slurm `debug` 分區宣告 2 CPU、3000 MiB | 已運行；本次不重建 |
+| GPU 運算 | 規劃 `compute-gpu02`；東京 `asia-northeast1-c`；`g2-standard-4`，4 vCPU、16 GiB、一張具 24 GiB 顯示記憶體的 NVIDIA L4；40 GiB `pd-balanced` 開機磁碟；AlmaLinux 10、既有 `default` VPC／東京 subnet、無 VM 外部 IP 或服務帳戶；新私有 IP 待建機後確認；Slurm `gpu` 分區預計宣告 4 CPU、14000 MiB、一張 L4 | 規劃，尚未建立；驗收後取代 `compute-gpu01` |
+
+既有 Cloud NAT 提供東京私有 VM 對外出口；新 VM 要實際驗證網路，
+不能只憑同一 subnet 推定可用。原建機映像
+`almalinux-10-v20260811` 目前標為 `DEPRECATED`；
+在停舊 VM 前選定可用的 AlmaLinux 10 映像及相容的驅動、CUDA 與 Slurm 套件版本。
+現有 Slurm RPM 位於控制節點的 `/tmp/hpc-slurm-build.vPPo3w/`，
+因此也須先準備可持續取得的套件來源，不把 `/tmp` 當成重建保證。
+
+替換按以下順序進行；**以下是計畫，不是已執行的命令或成果**：
+
+1. 在控制節點完成新 GPU VM 的套件取得與 Ansible 前置配置，
+   包括 SSH 入口、`a2264` 的 UID/GID、MUNGE、Slurm、NFS、GPU 驅動及 CUDA。
+   先檢查新映像、GPU／CPU 配額、費用與預計運行時間，並備妥設定回復方式。
+2. 確認 Slurm 佇列沒有待跑或執行中的工作後，停止 `compute-gpu01`，
+   核對它已停止、開機磁碟仍在，再建立 `compute-gpu02`。
+   舊 VM 保留自己的私有 IP；新 VM 使用另一個位址，實測後才寫入設定。
+3. 先確認新 VM 的 SSH、私有網路與套件來源，再依序部署 MUNGE、NFS 掛載與 Slurm。
+   在控制節點工作樹更新 `project/ansible/inventory/hosts.yml` 的 GPU 目標與位址，
+   並將 `project/nfs/hpc-share.exports` 的允許來源改為新 VM 的私有 IP，
+   再由 NFS playbook 更新控制節點自己的 `/etc/exports.d/hpc-share.exports`。
+   更新工作樹的 `project/slurm/two-node-slurm.conf` 節點名稱與 IP 後，
+   由 Slurm playbook 分別複製到控制節點與新 GPU VM 各自的
+   `/etc/slurm/slurm.conf`；同一 playbook 把 `project/slurm/gpu-gres.conf`
+   複製到新 GPU VM 的 `/etc/slurm/gres.conf`，核對它偵測到一張 L4。
+4. 由 Slurm 查新節點註冊狀態，以一般帳號在新 VM 執行可核對結果的 GPU 工作；
+   同時核對共享資料讀取、MUNGE 驗證、主機名、L4 與 `validation=PASS`。
+   這只能證明**乾淨 GPU 節點加入既有控制節點**，不是整個叢集從零重建。
+5. 若新節點未通過，先停止新 VM，再把 inventory、NFS 匯出與 Slurm 設定
+   恢復到舊節點的名稱和 IP，重新啟動 `compute-gpu01` 並用工作驗證回復。
+   停止後釋出的 L4 不保證立即能重新取得，這是本方案的容量風險。
+   若新節點通過並決定留下，才移除舊 VM；最終仍只有一台 CPU VM 和一台 GPU VM。
+
+舊 GPU VM 的 40 GiB 開機磁碟目前設為 `autoDelete=true`。
+若日後刪除 VM，預設會刪掉磁碟；
+[Google Cloud 的 `--keep-disks=boot` 說明](https://docs.cloud.google.com/compute/docs/instances/deleting-instance)
+提供保留開機磁碟的方式。停止期間及保留後的磁碟仍會計費；
+新 VM 啟動後另有 VM、GPU 與新磁碟費用。
+實際要用的新 VM 指令、版本與路徑，待映像及套件來源確認後，
+在執行前依序補入本模組；此處不預寫未確認可用的命令。
+
 ## 目前限制
 
 - 尚未由 Slurm 跨節點執行 CPU 工作。

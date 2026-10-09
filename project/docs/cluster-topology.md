@@ -1,84 +1,55 @@
-# 教學叢集拓撲與資源假設
+# 教學叢集拓撲與最終規格
 
-這是跨模組維護的架構成果檔：記錄叢集當前的實際拓撲、資源假設與目標角色。
-[模組 01](../../curriculum/module-01.md) 建立單節點初版；
-後續模組若實際新增節點或共享資料，才在此更新現況與架構決策。
-各次教學的 VM 指令、輸出與故障判讀仍記在當時的模組文件，
-不回填模組 01。
-排程設定與工作腳本分別見
-[single-node-slurm.conf](../slurm/single-node-slurm.conf) 和
-[node-smoke.sbatch](../workloads/node-smoke.sbatch)。
+這份文件記錄已部署的 VM 與約定的最終規模；實際指令和輸出見
+[模組 04](../../curriculum/module-04.md)與[模組 05](../../curriculum/module-05.md)。
+**最終維持一台 CPU VM 加一台 GPU VM。**
+新 GPU 節點的替換步驟與回復方式見
+[模組 05 的替換方案](../../curriculum/module-05.md#8-單-gpu-配額下的乾淨節點替換方案尚未執行)。
 
-## 目前已部署：一台 VM 兼任多個角色
+## 目前已部署
 
 ```text
-a2264 登入並提交工作
-          │
-          ▼
-instance-20260923-104239（單台 AlmaLinux 10.2 VM）
-  ├─ munged：驗證本機 Slurm 請求
-  ├─ slurmctld：控制與排程
-  ├─ slurmd：執行工作，屬於 debug 分區
-  └─ /home/a2264：工作腳本副本與批次輸出檔
+a2264 提交工作
+       │
+       ▼
+CPU VM：instance-20260923-104239（台灣）
+  ├─ slurmctld：排程；slurmd：debug 分區的 CPU 工作
+  ├─ Ansible：管理兩台 VM 的設定
+  └─ NFS：分享 /srv/hpc-share
+       │  私有網路、MUNGE 驗證、NFS
+       ▼
+GPU VM：compute-gpu01（東京）
+  └─ slurmd：gpu 分區的一張 NVIDIA L4
 ```
 
-這台 VM 同時是使用者提交入口、控制節點與 CPU 運算節點；
-目前沒有獨立登入節點、運算節點或共享儲存節點。
-`slurm.conf` 使用這台 VM 當時的私有位址 `10.140.0.2`；
-未來若位址或主機角色改變，須重新核對設定，不能直接複製到新 VM。
-
-| 資源或設定 | 已觀察／設定的值 | 設計上的意義 |
+| 角色 | 已確認的 VM 與硬體 | 排程與資料路徑 |
 |---|---|---|
-| VM 可見 CPU | 2 個邏輯 CPU；1 個虛擬核心、每核心 2 執行緒；1 個 NUMA 節點 | 只是 VM 呈現的拓撲，不代表實體伺服器核心配置 |
-| `slurmd -C` 偵測記憶體 | `RealMemory=3906` MiB | 觀察值，不等於全部可分配給工作 |
-| Slurm 節點配置 | `CPUs=2`、`RealMemory=3000` MiB | 排程先使用這個配置；保留部分記憶體給作業系統與服務 |
-| 分區 | `debug`，目前只有這台節點，預設分區 | 單節點工作不能作跨節點能力證據 |
-| 驗證 | 本機 MUNGE 服務與金鑰 | 已驗證本機 `a2264` 身分；尚未分發金鑰至其他主機 |
+| CPU 控制／提交／運算／NFS | `instance-20260923-104239`；`asia-east1-b`；`e2-custom-2-4096`，2 vCPU、4 GiB；10 GiB 開機磁碟、100 GiB 附加磁碟；私有 IP `10.140.0.2` | `debug` 分區宣告 2 CPU、3000 MiB；提供 `/srv/hpc-share`；執行 Ansible |
+| GPU 運算 | `compute-gpu01`；`asia-northeast1-c`；`g2-standard-4`，4 vCPU、16 GiB、一張 NVIDIA L4；40 GiB `pd-balanced` 開機磁碟；私有 IP `10.146.0.3`，沒有 VM 外部 IP | `gpu` 分區宣告 4 CPU、14000 MiB、一張 L4；從控制節點掛載 `/srv/hpc-share` |
 
-一般帳號 `a2264` 的 `srun hostname` 已在這台 VM 執行；
-批次工作 4 以一個節點、一個 CPU、256 MiB 請求正常退出，
-輸出檔顯示其執行節點就是本機。
-工作 5 把每行程 CPU 請求改為 3，超出目前唯一節點的 2 CPU 配置，
-在 `debug` 分區等待並顯示 `PartitionConfig`；已取消並確認不在佇列。
-這些是排程請求與執行位置的證據，沒有驗證 CPU 綁定或記憶體隔離。
+兩台 VM 的 `/etc/slurm/slurm.conf` 各存在自己的本機磁碟；
+內容由[同一份工作樹來源](../slurm/two-node-slurm.conf)部署。
+控制節點的 `/srv/hpc-share` 是 NFS 分享來源，GPU VM 上的同名路徑是掛載點。
+模組 05 已透過 Slurm 在 `compute-gpu01` 的 L4 執行二維熱擴散工作，
+CPU 與 GPU 結果比較為 `validation=PASS`。
+模組 04 的跨 VM MPI 工作由 SSH 啟動，未驗證跨節點 Slurm 排程。
 
-## 目標角色：尚未部署的部分清楚標示
+## 約定的最終規格與替換範圍
 
-| 角色 | 目標用途 | 目前狀態或待決事項 |
-|---|---|---|
-| 控制／提交入口 | 接受工作、維護排程狀態 | 現由同一台 VM 承擔；是否分離待拓撲與費用決策 |
-| CPU 運算 | 執行一般 CPU 與後續 MPI 工作 | 現只有控制 VM 兼任；獨立 CPU 節點尚未建立 |
-| GPU 運算 | 執行單 GPU 工作並驗證 Slurm GPU 資源分配 | 獨立 `compute-gpu01` 尚未建立；一張卡的 G2／L4 只是候選，須先核對工作需求、配額、價格與容量 |
-| 共享資料 | 讓獨立節點讀寫同一工作資料路徑 | 尚無 NFS 或其他共享資料服務；伺服器位置、容量及權限待設計 |
+CPU VM 保持上述規格與角色，不在 GPU 節點替換時重建。
+最終 GPU VM 規劃為 `compute-gpu02`：同在東京 `asia-northeast1-c`，
+使用 `g2-standard-4`、4 vCPU、16 GiB、一張具 24 GiB 顯示記憶體的 L4、40 GiB `pd-balanced`
+開機磁碟、AlmaLinux 10、既有 VPC／subnet，沒有 VM 外部 IP 或服務帳戶。
+它的私有 IP 由建機結果決定，確認後才寫入 inventory、NFS 匯出與 Slurm 設定。
+原映像 `almalinux-10-v20260811` 已標為 `DEPRECATED`，
+實際使用的可用映像與套件版本須在建機前確認。
 
-### 單 GPU 候選比較
+單 GPU 配額下，先停止舊 GPU VM，保留其開機磁碟與設定；
+建好新 VM 並通過工作驗證後，才決定移除舊 VM。
+替換期間舊 VM 與新 VM 可能同時存在，但只有一台 GPU VM 運行。
+舊 VM 停止後仍有磁碟費用，重新啟動或建立新 VM 也受即時 GPU 容量限制。
+驗收的範圍是乾淨 GPU 節點加入**既有** CPU 控制節點，
+不能寫成整個叢集從零重建。
 
-以下是依 [Google Cloud GPU 機型文件](https://docs.cloud.google.com/compute/docs/gpus)
-於 2026-09-25 查到的機型規格，用來做**用途選擇**，不是已取得配額或已建立的 VM。
-GPU 記憶體是卡上的記憶體，與 VM 主記憶體分開計算。
-
-| 單 GPU 機型 | GPU 記憶體 | VM vCPU／主記憶體 | 對本課程的取捨 |
-|---|---|---|---|
-| `g2-standard-4`／L4 | 24 GB GDDR6 | 4 vCPU／16 GB | 暫作驅動辨認、Slurm GPU 分配、單卡正確性與監控的候選；不能用它證明多卡或跨節點 GPU 能力 |
-| `a2-highgpu-1g`／A100 | 40 GB HBM2 | 12 vCPU／85 GB | 若工作確實需要超過 24 GB GPU 記憶體，或以 FP64 科學計算為主要目標，優先重新比較 |
-| `a2-ultragpu-1g`／A100 | 80 GB HBM2e | 12 vCPU／170 GB | 若 40 GB 仍容不下實際工作資料，再評估；不因容量較大就當成教學預設 |
-
-FP64 是雙精度浮點運算，常見於對數值精度要求較高的科學計算。
-Google Cloud 的比較表列出 A100 的 FP64 吞吐規格，L4 該欄為 `N/A`；
-`N/A` 不能解讀為 L4 完全不能執行 FP64，
-但不能用 L4 的單卡教學結果替代 A100 的 FP64 工作驗證。
-本課程目前要先驗證 GPU 是否能被驅動辨認、由 Slurm 分配，
-以及小型計算工作是否正確，因此保留 L4 作初步候選。
-
-建立 VM 前還須確定實際工作所需的精度與 GPU 記憶體、區域／zone、
-GPU 與 vCPU 配額、即時容量、映像與驅動相容性，以及 VM、GPU、磁碟的完整費用；
-未有上述資料時不寫出固定價格或把候選當成已核准部署。
-
-未來增加節點時，先確認主機名稱、私有網路可達性、時間同步、
-一致的使用者 UID／GID，以及各參與 Slurm 驗證主機上的 MUNGE 金鑰安全分發。
-共享資料路徑還要驗證匯出、掛載與一般帳號的實際讀寫權限。
-跨節點工作須從不同 VM 的主機名和工作輸出證明；
-GPU 工作須從裝置、Slurm 分配及計算結果證明。
-
-目前沒有第二台 VM、GPU、共享資料或跨節點工作；
-單機結果不能推論這些目標角色已部署或驗證。
+這是教學規模叢集：控制、CPU 工作與 NFS 共用一台 VM，沒有高可用控制端；
+一張 L4 不能證明多卡隔離、跨 GPU RDMA 或大型生產叢集經驗。

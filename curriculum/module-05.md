@@ -11,8 +11,9 @@
 讓控制端能管理 GPU VM 的身分驗證、Slurm 設定和運算服務。
 
 目前已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
-**下一項必要驗證是控制端是否看到 GPU 節點，以及 Slurm 工作能否取得 CPU／GPU 資源。**
-現有結果不代表已從乾淨節點重建，也不代表 GPU 工作已成功。
+控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
+並在該分區執行 `nvidia-smi -L` 看到 L4。
+現有結果尚未證明 GPU 計算結果正確，也未驗證乾淨節點重建。
 
 ## 管理位置與本次部署範圍
 
@@ -461,9 +462,18 @@ Slurm 在分配的節點執行 `nvidia-smi -L` 並把輸出帶回控制節點。
 sudo -iu a2264 srun --partition=gpu --nodes=1 --ntasks=1 --gres=gpu:1 --time=00:02:00 nvidia-smi -L
 ```
 
+```text
+GPU 0: NVIDIA L4 (UUID: GPU-60db0aa8-3f64-a75a-bd6f-cf44fe764b36)
+```
+
+Slurm 接受一張 GPU 的請求，並在 `gpu` 分區啟動了 `a2264` 的程序；
+程序能透過 NVIDIA 驅動讀到一張 L4。
+這是排程與裝置可見性的初步驗證，不是 GPU 計算正確性、
+節點主機名或 GPU 隔離的證據。
+
 ## 目前限制
 
-- 尚未執行由 Slurm 分配的 CPU／GPU 工作。
+- 尚未執行可核對計算結果的 GPU 工作，或由 Slurm 跨節點執行的 CPU 工作。
 - NFS、MUNGE 與 Slurm playbook 已在既有兩台 VM 執行；
   尚未驗證乾淨環境的首次部署與整套重跑。
 - 單張 L4 只能驗證單 GPU 管理，不能當成多卡隔離或大型生產叢集經驗。

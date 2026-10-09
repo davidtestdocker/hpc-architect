@@ -567,11 +567,22 @@ GPU VM 編譯成功，終端沒有其他輸出；執行檔已寫入共享目錄�
 sudo -iu a2264 srun --partition=gpu --nodes=1 --ntasks=1 --cpus-per-task=1 --gres=gpu:1 --mem=512M --time=00:05:00 /srv/hpc-share/heat2d 1024 200
 ```
 
+```text
+host=compute-gpu01 device_index=0 device=NVIDIA L4 grid=1024x1024 steps=200
+cpu_sum=65535.998004 gpu_sum=65535.998004 max_abs_error=0.00000000
+cpu_ms=504.605 gpu_kernel_ms=1.894 validation=PASS
+```
+
+工作在 `compute-gpu01` 使用 NVIDIA L4 完成 200 輪計算；CPU 與 GPU
+結果逐格比對通過，輸出後返回控制節點提示字元。
+`cpu_ms` 與 `gpu_kernel_ms` 的計時範圍不同，且只有一次量測，
+不能據此宣稱 GPU 相對 CPU 的效能提升。
+
 ## 目前限制
 
-- 尚未執行可核對計算結果的 GPU 工作，或由 Slurm 跨節點執行的 CPU 工作。
+- 尚未由 Slurm 跨節點執行 CPU 工作。
 - NFS、MUNGE 與 Slurm playbook 已在既有兩台 VM 執行；
   尚未驗證乾淨環境的首次部署與整套重跑。
 - 單張 L4 只能驗證單 GPU 管理，不能當成多卡隔離或大型生產叢集經驗。
-- 本模組後續仍須交付可核對的 CPU／GPU 工作、可恢復的故障處理、
+- 本模組後續仍須交付可核對的跨節點 CPU 工作、可恢復的故障處理、
   乾淨節點重建證據，以及現有 GCP VM 供給與 OpenStack 的具體對照。

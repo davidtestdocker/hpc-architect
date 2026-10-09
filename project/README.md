@@ -1,7 +1,7 @@
 # 面試專案：可重建的迷你 HPC 叢集
 
-狀態：已部署一台 CPU 控制／運算 VM 與一台 L4 GPU 運算 VM；
-跨 VM MPI、共享資料與 Slurm GPU 工作已有實際結果，
+狀態：CPU 控制／運算 VM 正在運行，原 L4 GPU VM 已停止並保留磁碟；
+跨 VM MPI、共享資料與 Slurm GPU 工作已有先前的實際結果，
 乾淨 GPU 節點首次部署及整合展示仍待交付。
 依[能力路線](../curriculum/ROADMAP.md)逐步完成作品。
 
@@ -15,9 +15,11 @@ flowchart LR
   Z --> G
 ```
 
-圖中的 CPU 與 GPU VM 已部署；Zabbix 仍是規劃中的監控元件。
+圖中的 CPU VM 正在運行，原 GPU VM 目前已停止；Zabbix 仍是規劃中的監控元件。
 最終規模維持[一台 CPU VM 加一台 GPU VM](docs/cluster-topology.md)；
 GPU VM 將在乾淨節點驗證後替換，測試期間舊 VM 先停止保留。
+運算節點所需的[Slurm 套件與原始碼](packages/slurm/README.md)已保存在專案中，
+尚未於新 VM 安裝。
 CPU VM 兼任多項角色是降低實驗成本的取捨，沒有生產高可用性。
 兩台 GCP VM 的實體主機配置不確定，效能報告只針對本次環境。
 

@@ -622,10 +622,10 @@ Nova 的 **flavor** 類似目前選用的 VM 機型，描述一種可申請的�
 目前沒有 OpenStack 平台操作輸出，因此這是供給流程與責任邊界的對照，
 不能列為 OpenStack 實作經驗。
 
-## 8. 單 GPU 配額下的乾淨節點替換方案（尚未執行）
+## 8. 單 GPU 配額下替換乾淨節點
 
 **最終交付維持兩台 VM：一台 CPU 控制／運算節點，加一台 GPU 運算節點。**
-現有 GPU VM `compute-gpu01` 已能完成 Slurm GPU 工作；
+原 GPU VM `compute-gpu01` 已能完成 Slurm GPU 工作；
 要驗證乾淨節點首次部署，須換一台從 AlmaLinux 映像啟動的 GPU VM。
 配額只允許同時運行一張 GPU，因此先準備重建材料，再停止舊 GPU VM，
 保留其開機磁碟與設定供回復，建立新節點 `compute-gpu02`。
@@ -636,24 +636,224 @@ Google Cloud 說明[停止 VM 後 GPU 不再保留](https://docs.cloud.google.co
 | 角色 | 最終規格與位置 | 已確認／待執行 |
 |---|---|---|
 | CPU 控制／提交／運算／NFS | `instance-20260923-104239`；台灣 `asia-east1-b`；`e2-custom-2-4096`，2 vCPU、4 GiB；10 GiB 開機磁碟、100 GiB 附加磁碟；私有 IP `10.140.0.2`；Slurm `debug` 分區宣告 2 CPU、3000 MiB | 已運行；本次不重建 |
-| GPU 運算 | 規劃 `compute-gpu02`；東京 `asia-northeast1-c`；`g2-standard-4`，4 vCPU、16 GiB、一張具 24 GiB 顯示記憶體的 NVIDIA L4；40 GiB `pd-balanced` 開機磁碟；AlmaLinux 10、既有 `default` VPC／東京 subnet、無 VM 外部 IP 或服務帳戶；新私有 IP 待建機後確認；Slurm `gpu` 分區預計宣告 4 CPU、14000 MiB、一張 L4 | 規劃，尚未建立；驗收後取代 `compute-gpu01` |
+| GPU 運算 | 規劃 `compute-gpu02`；東京 `asia-northeast1-c`；`g2-standard-4`，4 vCPU、16 GiB、一張具 24 GiB 顯示記憶體的 NVIDIA L4；40 GiB `pd-balanced` 開機磁碟；AlmaLinux 10、既有 `default` VPC／東京 subnet、無 VM 外部 IP 或服務帳戶；新私有 IP 待建機後確認；Slurm `gpu` 分區預計宣告 4 CPU、14000 MiB、一張 L4 | 舊 GPU VM 已停止；新 VM 尚未建立 |
 
 既有 Cloud NAT 提供東京私有 VM 對外出口；新 VM 要實際驗證網路，
 不能只憑同一 subnet 推定可用。原建機映像
 `almalinux-10-v20260811` 目前標為 `DEPRECATED`；
-在停舊 VM 前選定可用的 AlmaLinux 10 映像及相容的驅動、CUDA 與 Slurm 套件版本。
-現有 Slurm RPM 位於控制節點的 `/tmp/hpc-slurm-build.vPPo3w/`，
-因此也須先準備可持續取得的套件來源，不把 `/tmp` 當成重建保證。
+已查到 `almalinux-10-v20261005` 為 `READY`、`X86_64`，
+作為新 VM 的候選映像，建機前仍須核對其狀態。
+既有控制節點建出的 Slurm 26.05.4 原始碼與兩個運算端 RPM，
+已保存於[專案套件目錄](../project/packages/slurm/README.md)，
+附 SHA-256 值；新 VM 的安裝、套件相依性與相容性尚未驗證。
+舊 GPU VM 的驅動與 CUDA 已確認來自 AlmaLinux 套件庫；
+新映像的核心與實際可安裝版本仍須在新 VM 上核對，不能把舊 VM 的成功當成新 VM 的成功。
 
-替換按以下順序進行；**以下是計畫，不是已執行的命令或成果**：
+在**控制節點**透過 Ansible 對舊 GPU VM 執行唯讀 `rpm -q`，
+核對已安裝的套件名稱與版本。
+`-b` 用管理員身分遠端查詢，Ansible 的 `CHANGED` 是 `command` 模組預設標記，
+不代表此查詢更新了套件：
 
-1. 在控制節點完成新 GPU VM 的套件取得與 Ansible 前置配置，
-   包括 SSH 入口、`a2264` 的 UID/GID、MUNGE、Slurm、NFS、GPU 驅動及 CUDA。
-   先檢查新映像、GPU／CPU 配額、費用與預計運行時間，並備妥設定回復方式。
-2. 確認 Slurm 佇列沒有待跑或執行中的工作後，停止 `compute-gpu01`，
-   核對它已停止、開機磁碟仍在，再建立 `compute-gpu02`。
-   舊 VM 保留自己的私有 IP；新 VM 使用另一個位址，實測後才寫入設定。
-3. 先確認新 VM 的 SSH、私有網路與套件來源，再依序部署 MUNGE、NFS 掛載與 Slurm。
+```bash
+ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -b -m ansible.builtin.command -a 'rpm -q almalinux-release-nvidia-driver nvidia-driver nvidia-open-kmod cuda-nvcc-13-4 cuda-cudart-devel-13-4'
+```
+
+```text
+compute-gpu01 | CHANGED | rc=0 >>
+almalinux-release-nvidia-driver-10-5.el10_1.x86_64
+nvidia-driver-615.71.09-1.el10.x86_64
+nvidia-open-kmod-615.71.09-1.el10_2.x86_64
+cuda-nvcc-13-4-13.4.59-1.x86_64
+cuda-cudart-devel-13-4-13.4.49-1.x86_64
+```
+
+舊 VM 上套件確實已安裝。再查其已啟用套件庫中可供下載的版本，
+`--available` 查套件庫提供的版本，`--qf` 顯示套件名、版本及來源庫；
+它不安裝套件，也不保證新映像會有相同核心或相同可用版本：
+
+```bash
+ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -b -m ansible.builtin.command -a 'dnf repoquery --available almalinux-release-nvidia-driver nvidia-driver nvidia-open-kmod cuda-nvcc-13-4 cuda-cudart-devel-13-4 --qf=%{name}-%{version}-%{release}@%{repoid}'
+```
+
+```text
+compute-gpu01 | CHANGED | rc=0 >>
+almalinux-release-nvidia-driver-10-5.el10_1@extras
+cuda-cudart-devel-13-4-13.4.49-1@almalinux-nvidia
+cuda-nvcc-13-4-13.4.59-1@almalinux-nvidia
+nvidia-driver-615.71.09-1.el10@almalinux-nvidia
+nvidia-open-kmod-615.71.09-1.el10_2@almalinux-nvidia
+```
+
+上面只保留本次重建要用的版本；查詢也列出其他較舊版本。
+`extras` 提供 NVIDIA 套件庫設定包，`almalinux-nvidia` 提供驅動與 CUDA。
+新 VM 建好後仍要先確認其套件庫與核心，再安裝並實測 L4。
+
+### 停機前的資源核對
+
+在**控制節點**以 root 查東京區域目前的 GPU 配額。
+這條 `gcloud compute regions describe` 只讀 GCP 配額，
+`--format` 讓回傳資料保留 `metric`、`limit` 與 `usage`；
+取出 `NVIDIA_L4_GPUS` 後核對可同時運行的卡數。
+它不停止 VM，也不預留新 GPU：
+
+```bash
+gcloud compute regions describe asia-northeast1 --project=project-78b8a95c-a2c0-461f-a08 '--format=json(quotas)'
+```
+
+```text
+NVIDIA_L4_GPUS: limit=1, usage=1
+```
+
+原始回應還有其他配額；上面只保留這次決策需要的欄位。
+目前唯一可用的 L4 配額已由舊 VM 使用，符合先停舊 VM 再建新 VM 的順序。
+
+同在控制節點查兩個 GPU VM 名稱的存在與狀態，
+`--filter` 限定名稱，`--format` 只列名稱、zone、機型、狀態與私有 IP。
+這條命令不變更 VM：
+
+```bash
+gcloud compute instances list --project=project-78b8a95c-a2c0-461f-a08 --filter='name=(compute-gpu01 OR compute-gpu02)' --format='table(name,zone.basename(),machineType.basename(),status,networkInterfaces[0].networkIP)'
+```
+
+```text
+NAME           ZONE               MACHINE_TYPE   STATUS   NETWORK_IP
+compute-gpu01  asia-northeast1-c  g2-standard-4  RUNNING  10.146.0.3
+```
+
+查詢當下 `compute-gpu01` 正在運行，`compute-gpu02` 尚不存在。
+這是停機與建機前的資源狀態，不代表替換已執行。
+
+### 停機前的工作佇列
+
+在**控制節點**以 root 讀取 Slurm 目前的工作清單。
+`-h` 省略欄名，`-o` 保留工作 ID、狀態、使用者與名稱；
+若有執行中或等待中的工作，先處理後再停止 GPU VM。
+這條命令只查佇列，不取消工作或改動 VM：
+
+```bash
+squeue -h -o '%i %T %u %j'
+```
+
+**結果：** 指令正常返回、沒有工作列。查詢當下沒有執行中或等待中的工作；
+這是停機前的即時佇列核對，仍須以停機指令的實際結果確認 VM 狀態。
+
+### 停止舊 GPU VM
+
+這條命令從**控制節點**以 root 送出，停止東京的
+`compute-gpu01`，釋出目前占用的 L4 配額。它不刪除 VM 或開機磁碟，
+但會中斷 GPU 分區的可用性；磁碟仍計費。`--quiet` 不再要求互動確認。
+停機後須核對狀態為 `TERMINATED`，再建立新 VM。
+
+```bash
+gcloud compute instances stop compute-gpu01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c --quiet
+```
+
+```text
+Stopping instance(s) compute-gpu01...done.
+Updated [https://compute.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
+```
+
+GCP 已接受並完成停止操作。接下來讀取 VM 狀態、開機磁碟與配額，
+確認舊機與磁碟仍在，且有額度建立新機。
+
+在**控制節點**讀取舊 VM 的狀態、開機磁碟參照與私有 IP；
+`gcloud compute instances describe` 不變更 VM，
+人工核對 `status`、`disks` 中 `boot` 磁碟的 `source`，以及原位址：
+
+```bash
+gcloud compute instances describe compute-gpu01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c '--format=json(status,disks,networkInterfaces)'
+```
+
+```text
+status: TERMINATED
+boot disk source: .../zones/asia-northeast1-c/disks/compute-gpu01
+boot disk autoDelete: true
+internal IP: 10.146.0.3
+```
+
+上面摘錄決策所需欄位；`autoDelete=true` 是**刪除 VM 時**的磁碟處理設定，
+不代表停止 VM 就會刪磁碟。接著直接讀取該磁碟，核對它仍存在：
+
+```bash
+gcloud compute disks describe compute-gpu01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c '--format=json(name,sizeGb,type,status,users)'
+```
+
+```text
+name: compute-gpu01
+sizeGb: 40
+status: READY
+type: .../diskTypes/pd-balanced
+users: [.../instances/compute-gpu01]
+```
+
+磁碟仍附屬舊 VM，可供需要時嘗試重啟回復。
+
+再讀取東京區域配額，沿用前述只讀命令；這次只摘錄 L4 欄位：
+
+```bash
+gcloud compute regions describe asia-northeast1 --project=project-78b8a95c-a2c0-461f-a08 '--format=json(quotas)'
+```
+
+```text
+NVIDIA_L4_GPUS: limit=1, usage=0
+```
+
+停舊 VM 後 L4 配額使用量已降為 0。配額允許申請一張，
+但是否有實際容量，仍由建機操作的結果決定。
+
+最後核對新映像仍可使用，`status` 要是 `READY`，`architecture` 要是 `X86_64`：
+
+```bash
+gcloud compute images describe almalinux-10-v20261005 --project=almalinux-cloud '--format=json(name,status,architecture,deprecated,diskSizeGb)'
+```
+
+```text
+name: almalinux-10-v20261005
+status: READY
+architecture: X86_64
+diskSizeGb: 10
+```
+
+這是可用的 AlmaLinux 10 映像；建機命令會建立 40 GB 開機磁碟。
+
+### 建立新 GPU VM（待執行）
+
+從**控制節點**以 root 向 GCP 建立 `compute-gpu02`。這一步只供給 VM，
+尚未把它加入 Slurm、NFS 或安裝驅動。`--metadata-from-file` 讀取控制節點
+`/tmp/compute-gpu01-a2264-ssh-keys-20261003` 內既有的 `a2264` SSH **公鑰**，
+讓同一管理金鑰可登入新 VM；私鑰不送到 GCP。該檔案存在，大小為 118 bytes。
+`--no-address` 不給 VM 外部 IP，`--no-service-account --no-scopes` 不授予 VM
+雲端 API 身分；`--max-run-duration=2h` 到時由 `--instance-termination-action=STOP`
+停止 VM，避免無人看管時持續運行。`--quiet` 省略互動確認。
+
+```bash
+gcloud compute instances create compute-gpu02 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c \
+  --machine-type=g2-standard-4 \
+  --image-project=almalinux-cloud \
+  --image=almalinux-10-v20261005 \
+  --boot-disk-type=pd-balanced \
+  --boot-disk-size=40GB \
+  --network=default \
+  --subnet=default \
+  --no-address \
+  --no-service-account \
+  --no-scopes \
+  --metadata-from-file=ssh-keys=/tmp/compute-gpu01-a2264-ssh-keys-20261003 \
+  --maintenance-policy=TERMINATE \
+  --max-run-duration=2h \
+  --instance-termination-action=STOP \
+  --quiet
+```
+
+本命令尚未執行。成功時要從輸出取得新 VM 私有 IP；
+若雲端回報容量不足，停止後續部署並保留舊 VM。
+
+建機後的**待執行**步驟如下，不是已完成的部署成果：
+
+1. 取得新 VM 的私有 IP，確認 SSH、私有網路與套件來源，
+   再依序部署 MUNGE、NFS 掛載與 Slurm。
    在控制節點工作樹更新 `project/ansible/inventory/hosts.yml` 的 GPU 目標與位址，
    並將 `project/nfs/hpc-share.exports` 的允許來源改為新 VM 的私有 IP，
    再由 NFS playbook 更新控制節點自己的 `/etc/exports.d/hpc-share.exports`。
@@ -661,10 +861,10 @@ Google Cloud 說明[停止 VM 後 GPU 不再保留](https://docs.cloud.google.co
    由 Slurm playbook 分別複製到控制節點與新 GPU VM 各自的
    `/etc/slurm/slurm.conf`；同一 playbook 把 `project/slurm/gpu-gres.conf`
    複製到新 GPU VM 的 `/etc/slurm/gres.conf`，核對它偵測到一張 L4。
-4. 由 Slurm 查新節點註冊狀態，以一般帳號在新 VM 執行可核對結果的 GPU 工作；
+2. 由 Slurm 查新節點註冊狀態，以一般帳號在新 VM 執行可核對結果的 GPU 工作；
    同時核對共享資料讀取、MUNGE 驗證、主機名、L4 與 `validation=PASS`。
    這只能證明**乾淨 GPU 節點加入既有控制節點**，不是整個叢集從零重建。
-5. 若新節點未通過，先停止新 VM，再把 inventory、NFS 匯出與 Slurm 設定
+3. 若新節點未通過，先停止新 VM，再把 inventory、NFS 匯出與 Slurm 設定
    恢復到舊節點的名稱和 IP，重新啟動 `compute-gpu01` 並用工作驗證回復。
    停止後釋出的 L4 不保證立即能重新取得，這是本方案的容量風險。
    若新節點通過並決定留下，才移除舊 VM；最終仍只有一台 CPU VM 和一台 GPU VM。

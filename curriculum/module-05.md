@@ -631,6 +631,36 @@ instance-20260923-104239   : ok=2 changed=0 unreachable=0 failed=0 skipped=0 res
 這證明**既有節點**的兩節點 Slurm playbook 可無變更重跑，
 不等於已驗證乾淨 VM 的首次部署。
 
+## 8. VM 供給方式與 OpenStack 的對照
+
+目前的 GPU VM 是由 GCP 建立：模組 04 的
+`gcloud compute instances create compute-gpu01` 指定機型、AlmaLinux 映像、
+開機磁碟、私有網路和無外部 IP；Cloud Router／NAT 另提供對外出口。
+VM 已啟動後，Ansible 才透過 SSH 配置 NFS、MUNGE 與 Slurm。
+若公司使用 OpenStack，先要分清**供給 VM**與**配置 VM 內的叢集服務**：
+前者由雲平台負責，後者仍可由 Ansible 管理。
+OpenStack 將供給能力分在不同服務：**Nova** 管 VM，**Glance** 管映像，
+**Cinder** 管區塊儲存，**Neutron** 管網路，**Keystone** 管 API 身分與權限。
+Nova 的 **flavor** 類似目前選用的 VM 機型，描述一種可申請的資源規格。
+
+| 目前 GCP 的實際選擇 | OpenStack 中要確認的元件與能力 |
+|---|---|
+| `g2-standard-4`、一張 L4 | Nova 建立 VM；flavor 描述 CPU、記憶體等規格。GPU 供給需確認該雲的 Nova PCI 裝置配置、可用實體 GPU 與排程規則，不能只把機型名稱換掉。 |
+| AlmaLinux 映像、40 GiB 開機磁碟 | Glance 提供映像；開機磁碟可依平台選用映像啟動或 Cinder volume，須核對映像、磁碟容量與啟動方式。 |
+| 私有 IP、無 VM 外部 IP、Cloud NAT 對外出口 | Neutron 管理網路、子網、port、安全群組及路由；若工作節點需要對外下載套件，須核對該環境的外部 gateway／SNAT。Neutron router 不是 GCP Cloud NAT 的逐項同名替代。 |
+| GCP 專案權限與執行個體 SSH 中繼資料 | Keystone 管理 OpenStack API 的身分與專案權限；VM 內的 SSH 登入、Linux UID/GID 和 MUNGE 金鑰仍須另外配置與驗證。 |
+| 建好 VM 後由 Ansible 設定 Slurm | 取得 VM 的可達位址與登入方式後，更新 inventory，再部署各 VM 的 `/etc/slurm/slurm.conf`、MUNGE 與共享資料掛載；Slurm 排工作，Nova 負責供給 VM，兩者分屬不同層。 |
+
+這份對照依據[模組 04 的實際 GCP 建機紀錄](module-04.md#東京-gpu-節點的配置)
+與 OpenStack 官方的
+[Nova VM 建立說明](https://docs.openstack.org/nova/latest/user/launch-instances.html)、
+[PCI 裝置配置](https://docs.openstack.org/nova/latest/admin/pci-passthrough.html)、
+[Neutron 網路說明](https://docs.openstack.org/neutron/latest/admin/intro-os-networking.html)、
+[Cinder 磁碟說明](https://docs.openstack.org/cinder/latest/admin/volume-backed-image.html)
+及 [Keystone 身分說明](https://docs.openstack.org/keystone/latest/contributor/services.html)。
+目前沒有 OpenStack 平台操作輸出，因此這是供給流程與責任邊界的對照，
+不能列為 OpenStack 實作經驗。
+
 ## 目前限制
 
 - 尚未由 Slurm 跨節點執行 CPU 工作。
@@ -638,4 +668,4 @@ instance-20260923-104239   : ok=2 changed=0 unreachable=0 failed=0 skipped=0 res
   尚未驗證乾淨環境的首次部署與整套重跑。
 - 單張 L4 只能驗證單 GPU 管理，不能當成多卡隔離或大型生產叢集經驗。
 - 本模組後續仍須交付可核對的跨節點 CPU 工作、可恢復的故障處理、
-  乾淨節點重建證據，以及現有 GCP VM 供給與 OpenStack 的具體對照。
+  乾淨節點重建證據。OpenStack 目前只有供給流程對照，沒有平台操作證據。

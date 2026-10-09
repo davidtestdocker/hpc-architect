@@ -12,8 +12,8 @@
 
 目前已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
 控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
-並在該分區執行 `nvidia-smi -L` 看到 L4。
-現有結果尚未證明 GPU 計算結果正確，也未驗證乾淨節點重建。
+並在該分區執行二維熱擴散工作，使用 L4 算出與 CPU 一致的結果。
+現有結果仍未驗證乾淨節點重建。
 
 ## 管理位置與本次部署範圍
 
@@ -513,8 +513,7 @@ Cuda compilation tools, release 13.4, V13.4.59
 在 `1024 × 1024` 網格中心放一個熱源，每輪用上下左右格點更新溫度，
 共執行 200 輪。CPU 與 GPU 使用相同初始條件和更新式，
 最後逐格比較，最大絕對誤差不超過 `0.0001` 才輸出 `validation=PASS`。
-程式也列出執行主機、GPU 名稱和兩段計算時間；計時僅供觀察，
-本步不以單次時間宣稱效能提升。
+程式也列出執行主機與 GPU 名稱，供核對工作實際執行的位置和裝置。
 
 先從**控制節點**把工作樹中的原始碼複製到控制節點自己的
 `/srv/hpc-share/heat2d.cu`，設為 `a2264` 可讀寫。
@@ -575,8 +574,57 @@ cpu_ms=504.605 gpu_kernel_ms=1.894 validation=PASS
 
 工作在 `compute-gpu01` 使用 NVIDIA L4 完成 200 輪計算；CPU 與 GPU
 結果逐格比對通過，輸出後返回控制節點提示字元。
-`cpu_ms` 與 `gpu_kernel_ms` 的計時範圍不同，且只有一次量測，
-不能據此宣稱 GPU 相對 CPU 的效能提升。
+
+## 7. 重跑部署前確認沒有工作
+
+下一步要重跑既有兩節點部署，核對設定沒有漂移時是否保持不變。
+playbook 若發現設定變更，可能讓控制端重讀設定並重啟 GPU VM 的 `slurmd`；
+先在**控制節點**以 root 查詢所有使用者的 Slurm 工作。
+`squeue` 讀取控制端目前的佇列，不修改檔案、VM 或服務；
+`-h` 略去表頭，`-o` 指定輸出工作 ID、狀態、使用者與名稱。
+若正常返回且沒有資料列，代表查詢當下沒有等待或執行中的工作；
+若有資料列，須先判斷工作是否仍在使用資源，不直接重跑部署。
+
+```bash
+squeue -h -o '%i %T %u %j'
+```
+
+**結果：** 命令正常返回，沒有資料列；查詢當下沒有等待或執行中的工作。
+
+在**控制節點**以 root 重跑
+[slurm-two-node.yml](../project/ansible/slurm-two-node.yml)。
+`-i` 明確指定既有兩台 VM 的 inventory；playbook 路徑使用絕對路徑，
+因此可從目前的 `hpc-arch` 目錄執行。
+它先核對 GPU VM 的目錄與兩份 `/etc/slurm/` 設定，執行 `slurmd -G`；
+通過後才核對控制節點自己的 `/etc/slurm/slurm.conf`，
+最後確認 GPU VM 的 `slurmd` 服務。
+檔案若真的變更，playbook 會備份遠端舊版、讓控制端重讀設定，
+並重啟 GPU VM 的 `slurmd`；沒有變更時不應觸發這兩項服務操作。
+核對兩台 VM 的 `PLAY RECAP`：`failed=0` 且 `changed=0`
+才代表這次重跑沒有修正漂移；若出現變更或失敗，依任務結果判讀後再處理。
+
+```bash
+ansible-playbook -i /root/hpc-arch/project/ansible/inventory/hosts.yml /root/hpc-arch/project/ansible/slurm-two-node.yml
+```
+
+```text
+TASK [部署 GPU VM 的共用 Slurm 設定] ok: [compute-gpu01]
+TASK [部署 GPU VM 的 GPU 資源設定] ok: [compute-gpu01]
+TASK [核對 GPU VM 的 GRES 設定] ok: [compute-gpu01]
+"rc": 0
+"[2026-10-09T14:37:41.314] Gres Name=gpu Type=nvidia_l4 Count=1 Index=0 ID=7696487 File=/dev/nvidia0 Cores=0-1 CoreCnt=4 Links=(null) Flags=HAS_FILE,HAS_TYPE,ENV_NVML"
+TASK [部署控制節點的共用 Slurm 設定] ok: [instance-20260923-104239]
+TASK [設定有變更時重啟 GPU VM 的 slurmd] skipping: [compute-gpu01]
+TASK [確保 GPU VM 的 slurmd 已啟動] ok: [compute-gpu01]
+PLAY RECAP
+compute-gpu01              : ok=9 changed=0 unreachable=0 failed=0 skipped=1 rescued=0 ignored=0
+instance-20260923-104239   : ok=2 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+兩台 VM 的設定任務均為 `ok`，重跑沒有改動檔案或重啟 `slurmd`；
+`slurmd -G` 仍辨認一張 L4 與 `/dev/nvidia0`。
+這證明**既有節點**的兩節點 Slurm playbook 可無變更重跑，
+不等於已驗證乾淨 VM 的首次部署。
 
 ## 目前限制
 

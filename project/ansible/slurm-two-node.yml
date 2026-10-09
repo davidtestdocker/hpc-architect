@@ -74,7 +74,9 @@
         'nvidia_l4' not in (gpu_gres_probe.stdout ~ gpu_gres_probe.stderr) or
         'error:' in ((gpu_gres_probe.stdout ~ gpu_gres_probe.stderr) | lower)
 
-    # 顯示檢查指令的實際退出碼與輸出，方便判讀及記錄；不改動 GPU VM。
+    # 自動條件只檢查指令成功、出現 nvidia_l4 且沒有 error:；
+    # 顯示收集的輸出，讓人在控制節點核對 GPU 數量與 File 裝置路徑，並記錄實際對應。
+    # debug 只顯示資料，不改動 GPU VM。
     - name: 顯示 GPU VM 的 GRES 檢查結果
       ansible.builtin.debug:
         var: gpu_gres_probe

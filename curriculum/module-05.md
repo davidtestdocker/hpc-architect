@@ -337,6 +337,9 @@ ansible-playbook slurm-two-node.yml
 
 這條指令執行的是
 [slurm-two-node.yml](../project/ansible/slurm-two-node.yml)。
+你在控制節點只輸入上面這條 `ansible-playbook`；
+下述 `slurmd -G` 是 playbook 的任務透過 Ansible 到 GPU VM 自動執行，
+不需要在 GPU VM 另外手動輸入。
 檔案中的任務依序處理：
 
 1. 在 **GPU VM** 建立或核對 `/etc/slurm` 和 `/var/spool/slurmd`。
@@ -348,10 +351,16 @@ ansible-playbook slurm-two-node.yml
 2. 從控制節點工作樹的
    [gpu-gres.conf](../project/slurm/gpu-gres.conf)
    複製到 GPU VM 自己的 `/etc/slurm/gres.conf`。
-   它指定 `AutoDetect=nvidia`；接著在 GPU VM 執行 `slurmd -G`，
-   讀取剛複製的兩份設定，檢查是否對應本機 GPU。
-   `slurmd -G` 只檢查後退出；若檢查失敗，playbook 停止，
-   不更新控制節點。
+   它指定 `AutoDetect=nvidia`。接著 playbook **只執行一次**
+   GPU VM 上的 `slurmd -G`：它讀取這台 VM 剛收到的兩份設定，
+   列出這台 VM 的 GPU 資源與本機裝置路徑如何對應。
+   這裡沒有比較兩台 VM，也沒有執行 GPU 工作。
+   Ansible 收集指令輸出，要求指令成功、結果包含 `nvidia_l4`
+   且沒有 `error:`；基本檢查失敗就停止，不更新控制節點。
+   緊接的「顯示 GPU VM 的 GRES 檢查結果」任務**只把同一份結果**
+   印回控制節點終端，讓人核對這次的 `Count=1` 與
+   `File=/dev/nvidia0` 並記錄裝置；它不再執行一次 `slurmd -G`，
+   也不做另一項裝置檢查。自動條件沒有逐項驗證數量與路徑。
 3. GPU 檢查通過後，才把控制節點工作樹中同一份
    `two-node-slurm.conf` 複製到**控制節點自己**的
    `/etc/slurm/slurm.conf`，取代模組 01 建立的單節點內容。
@@ -362,8 +371,8 @@ ansible-playbook slurm-two-node.yml
 
 複製任務改動檔案時，會在各 VM 留下舊版備份。
 下列是這次指令的實際關鍵輸出；
-`顯示 GPU VM 的 GRES 檢查結果` 是 playbook 印出
-前一個 `slurmd -G` 檢查任務所收集的結果：
+`顯示 GPU VM 的 GRES 檢查結果` 把前一任務收集的資料印回控制節點，
+供核對 GPU 數量與裝置路徑：
 
 ```text
 PLAY [備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應]

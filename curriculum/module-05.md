@@ -631,6 +631,41 @@ Nova 的 **flavor** 類似目前選用的 VM 機型，描述一種可申請的�
 DevStack 供開發和練習，不能代表生產叢集維運。
 環境確認後，才記錄實際可用的安裝與操作指令，不預寫尚未驗證的命令。
 
+目前 GCP 專案禁止巢狀虛擬化；練習主機將用 DevStack 支援的 QEMU
+執行內層 VM，效能較慢。選用東京 `asia-northeast1-c` 的
+`e2-standard-2`（2 vCPU、8 GiB）與 40 GiB `pd-standard` 開機磁碟，
+使用 Ubuntu 24.04、既有私有子網與 Cloud NAT；不配置外部 IP、
+GPU 或服務帳戶。這是先驗證 OpenStack 供給功能的最低成本規格；
+若無法承載兩台 Linux 工作節點，再依實際資源使用量調整，不預稱跨節點完成。
+
+下列指令**尚未執行**，須先確認預算。它由控制節點向 GCP 建立專用
+`openstack-lab01`，將控制節點 `/tmp/compute-gpu01-a2264-ssh-keys-20261003`
+中的 `a2264` 公鑰送入新 VM 的 SSH 中繼資料；該檔案不是私鑰。
+VM 不設定自動停止時間，之後由使用者決定何時停止；開機磁碟仍會持續計費。
+
+```bash
+gcloud compute instances create openstack-lab01 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-northeast1-c \
+  --machine-type=e2-standard-2 \
+  --image-project=ubuntu-os-cloud \
+  --image=ubuntu-2404-noble-amd64-v20260918 \
+  --boot-disk-type=pd-standard \
+  --boot-disk-size=40GB \
+  --network=default \
+  --subnet=default \
+  --no-address \
+  --no-service-account \
+  --no-scopes \
+  --metadata-from-file=ssh-keys=/tmp/compute-gpu01-a2264-ssh-keys-20261003 \
+  --quiet
+```
+
+東京既有 Cloud NAT 涵蓋這台 VM 使用的 `default` 子網；
+先前同子網、無外部 IP 的 `compute-gpu01` 曾連到 GitHub 回報 HTTP `200`。
+新 VM 建好後，先實測 DNS、HTTPS 與 Ubuntu 套件來源；
+通過後才安裝 DevStack 所需套件，未通時先處理網路。
+
 驗收需有實際證據：OpenStack API 可用；建立映像、私有網路與子網、
 安全規則及儲存卷；用 OpenStack 建立 CPU VM，確認開機、連線與磁碟讀寫；
 再驗證 VM 的停止、啟動與資源清理。保留可重跑設定、必要輸出、

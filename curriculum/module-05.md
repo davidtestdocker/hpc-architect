@@ -638,7 +638,7 @@ DevStack 供開發和練習，不能代表生產叢集維運。
 GPU 或服務帳戶。這是先驗證 OpenStack 供給功能的最低成本規格；
 若無法承載兩台 Linux 工作節點，再依實際資源使用量調整，不預稱跨節點完成。
 
-下列指令**尚未執行**，須先確認預算。它由控制節點向 GCP 建立專用
+下列指令由控制節點向 GCP 建立專用
 `openstack-lab01`，將控制節點 `/tmp/compute-gpu01-a2264-ssh-keys-20261003`
 中的 `a2264` 公鑰送入新 VM 的 SSH 中繼資料；該檔案不是私鑰。
 VM 不設定自動停止時間，之後由使用者決定何時停止；開機磁碟仍會持續計費。
@@ -661,10 +661,61 @@ gcloud compute instances create openstack-lab01 \
   --quiet
 ```
 
-東京既有 Cloud NAT 涵蓋這台 VM 使用的 `default` 子網；
-先前同子網、無外部 IP 的 `compute-gpu01` 曾連到 GitHub 回報 HTTP `200`。
-新 VM 建好後，先實測 DNS、HTTPS 與 Ubuntu 套件來源；
-通過後才安裝 DevStack 所需套件，未通時先處理網路。
+執行結果：`openstack-lab01` 建立成功，位於 `asia-northeast1-c`，
+機型 `e2-standard-2`，內網 IP `10.146.0.4`，無外部 IP，狀態 `RUNNING`。
+沒有設定自動停止；40 GiB 磁碟低於 GCP 提醒的 200 GiB 效能門檻。
+
+東京既有 Cloud NAT 涵蓋這台 VM 使用的 `default` 子網。
+新 VM 已實測能連線並解析 DNS，HTTPS 取得 Ubuntu 索引回傳 `200`；
+`apt-get update` 從東京 Ubuntu 鏡像站與安全更新站成功下載 `37.8 MB`
+套件索引，退出碼 0。套件來源可用。
+
+目前 GCP 只提供練習用主機，尚無 OpenStack API。
+DevStack 會在這台專用 VM 安裝並啟動 Keystone、Nova、Neutron 等服務，
+讓後續能用 OpenStack 建立與管理 VM；首次下載先用 VM 已有的 Git
+從 OpenStack 官方程式庫取得安裝腳本。下列指令由控制節點連到新 VM，
+只新增 `/home/a2264/devstack`，尚不安裝或啟動服務：
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 a2264@10.146.0.4 'git clone https://opendev.org/openstack/devstack /home/a2264/devstack'
+```
+
+結果：退出碼 0，官方 DevStack 程式庫已下載到新 VM；
+修訂版 `64d59574473c148c3d855124ae5f79681854cd0a`。
+
+DevStack 的 `stack.sh` 需要 `local.conf` 才能以固定設定安裝。
+控制節點的[設定產生程式](../project/openstack/write_local_conf.py)
+會透過 SSH 在新 VM 執行，於新 VM 的
+`/home/a2264/devstack/local.conf` 建立設定：使用 `10.146.0.4` 作服務 IP、
+以 QEMU 執行內層 VM，並在 VM 上隨機產生服務密碼。
+設定檔權限為 `600`，不把密碼寫入工作樹或終端輸出；既有檔案不會覆寫。
+執行指令：
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 a2264@10.146.0.4 'python3 - /home/a2264/devstack 10.146.0.4' < project/openstack/write_local_conf.py
+```
+
+結果：`created /home/a2264/devstack/local.conf (mode 600)`，退出碼 0。
+
+接著由新 VM 的一般使用者執行 `/home/a2264/devstack/stack.sh`。
+它會從官方來源下載並安裝 OpenStack 與相依套件，修改這台專用 VM 的
+`/opt/stack`、`/etc` 服務設定並啟動服務；安裝輸出保存在 VM 上權限受限的
+`stack-install.log`。執行指令：
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 a2264@10.146.0.4 'umask 077; cd /home/a2264/devstack && ./stack.sh > stack-install.log 2>&1'
+```
+
+結果：終端沒有輸出，安裝日誌留在新 VM 的
+`/home/a2264/devstack/stack-install.log`；`stack.sh` 退出碼 0。
+這表示安裝程序完成，OpenStack API 與 VM 供給仍待實際驗證。
+
+下一步由控制 VM 的 `a2264` 登入 `openstack-lab01`，只建立 SSH 連線，
+不修改 VM；登入後應看到新 VM 的 shell 提示字元。下列指令待執行：
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes a2264@10.146.0.4
+```
 
 驗收需有實際證據：OpenStack API 可用；建立映像、私有網路與子網、
 安全規則及儲存卷；用 OpenStack 建立 CPU VM，確認開機、連線與磁碟讀寫；

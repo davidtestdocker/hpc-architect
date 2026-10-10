@@ -688,133 +688,16 @@ nvidia-open-kmod-615.71.09-1.el10_2@almalinux-nvidia
 `extras` 提供 NVIDIA 套件庫設定包，`almalinux-nvidia` 提供驅動與 CUDA。
 新 VM 建好後仍要先確認其套件庫與核心，再安裝並實測 L4。
 
-### 停機前的資源核對
+### 舊 GPU VM 已停止
 
-在**控制節點**以 root 查東京區域目前的 GPU 配額。
-這條 `gcloud compute regions describe` 只讀 GCP 配額，
-`--format` 讓回傳資料保留 `metric`、`limit` 與 `usage`；
-取出 `NVIDIA_L4_GPUS` 後核對可同時運行的卡數。
-它不停止 VM，也不預留新 GPU：
+停機前，東京區域的 L4 配額為 1 張、已使用 1 張；
+`compute-gpu01` 正在運行，`compute-gpu02` 尚未建立，Slurm 佇列沒有工作。
 
-```bash
-gcloud compute regions describe asia-northeast1 --project=project-78b8a95c-a2c0-461f-a08 '--format=json(quotas)'
-```
-
-```text
-NVIDIA_L4_GPUS: limit=1, usage=1
-```
-
-原始回應還有其他配額；上面只保留這次決策需要的欄位。
-目前唯一可用的 L4 配額已由舊 VM 使用，符合先停舊 VM 再建新 VM 的順序。
-
-同在控制節點查兩個 GPU VM 名稱的存在與狀態，
-`--filter` 限定名稱，`--format` 只列名稱、zone、機型、狀態與私有 IP。
-這條命令不變更 VM：
-
-```bash
-gcloud compute instances list --project=project-78b8a95c-a2c0-461f-a08 --filter='name=(compute-gpu01 OR compute-gpu02)' --format='table(name,zone.basename(),machineType.basename(),status,networkInterfaces[0].networkIP)'
-```
-
-```text
-NAME           ZONE               MACHINE_TYPE   STATUS   NETWORK_IP
-compute-gpu01  asia-northeast1-c  g2-standard-4  RUNNING  10.146.0.3
-```
-
-查詢當下 `compute-gpu01` 正在運行，`compute-gpu02` 尚不存在。
-這是停機與建機前的資源狀態，不代表替換已執行。
-
-### 停機前的工作佇列
-
-在**控制節點**以 root 讀取 Slurm 目前的工作清單。
-`-h` 省略欄名，`-o` 保留工作 ID、狀態、使用者與名稱；
-若有執行中或等待中的工作，先處理後再停止 GPU VM。
-這條命令只查佇列，不取消工作或改動 VM：
-
-```bash
-squeue -h -o '%i %T %u %j'
-```
-
-**結果：** 指令正常返回、沒有工作列。查詢當下沒有執行中或等待中的工作；
-這是停機前的即時佇列核對，仍須以停機指令的實際結果確認 VM 狀態。
-
-### 停止舊 GPU VM
-
-這條命令從**控制節點**以 root 送出，停止東京的
-`compute-gpu01`，釋出目前占用的 L4 配額。它不刪除 VM 或開機磁碟，
-但會中斷 GPU 分區的可用性；磁碟仍計費。`--quiet` 不再要求互動確認。
-停機後須核對狀態為 `TERMINATED`，再建立新 VM。
-
-```bash
-gcloud compute instances stop compute-gpu01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c --quiet
-```
-
-```text
-Stopping instance(s) compute-gpu01...done.
-Updated [https://compute.googleapis.com/compute/v1/projects/project-78b8a95c-a2c0-461f-a08/zones/asia-northeast1-c/instances/compute-gpu01].
-```
-
-GCP 已接受並完成停止操作。接下來讀取 VM 狀態、開機磁碟與配額，
-確認舊機與磁碟仍在，且有額度建立新機。
-
-在**控制節點**讀取舊 VM 的狀態、開機磁碟參照與私有 IP；
-`gcloud compute instances describe` 不變更 VM，
-人工核對 `status`、`disks` 中 `boot` 磁碟的 `source`，以及原位址：
-
-```bash
-gcloud compute instances describe compute-gpu01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c '--format=json(status,disks,networkInterfaces)'
-```
-
-```text
-status: TERMINATED
-boot disk source: .../zones/asia-northeast1-c/disks/compute-gpu01
-boot disk autoDelete: true
-internal IP: 10.146.0.3
-```
-
-上面摘錄決策所需欄位；`autoDelete=true` 是**刪除 VM 時**的磁碟處理設定，
-不代表停止 VM 就會刪磁碟。接著直接讀取該磁碟，核對它仍存在：
-
-```bash
-gcloud compute disks describe compute-gpu01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c '--format=json(name,sizeGb,type,status,users)'
-```
-
-```text
-name: compute-gpu01
-sizeGb: 40
-status: READY
-type: .../diskTypes/pd-balanced
-users: [.../instances/compute-gpu01]
-```
-
-磁碟仍附屬舊 VM，可供需要時嘗試重啟回復。
-
-再讀取東京區域配額，沿用前述只讀命令；這次只摘錄 L4 欄位：
-
-```bash
-gcloud compute regions describe asia-northeast1 --project=project-78b8a95c-a2c0-461f-a08 '--format=json(quotas)'
-```
-
-```text
-NVIDIA_L4_GPUS: limit=1, usage=0
-```
-
-停舊 VM 後 L4 配額使用量已降為 0。配額允許申請一張，
-但是否有實際容量，仍由建機操作的結果決定。
-
-最後核對新映像仍可使用，`status` 要是 `READY`，`architecture` 要是 `X86_64`：
-
-```bash
-gcloud compute images describe almalinux-10-v20261005 --project=almalinux-cloud '--format=json(name,status,architecture,deprecated,diskSizeGb)'
-```
-
-```text
-name: almalinux-10-v20261005
-status: READY
-architecture: X86_64
-diskSizeGb: 10
-```
-
-這是可用的 AlmaLinux 10 映像；建機命令會建立 40 GB 開機磁碟。
+`compute-gpu01` 已停止，狀態為 `TERMINATED`。
+原有 40 GiB `pd-balanced` 開機磁碟仍在，私有 IP 為 `10.146.0.3`；
+L4 配額使用量已降為 0。
+候選映像 `almalinux-10-v20261005` 為 `READY`、`X86_64`。
+新 VM 尚未建立，目前無法執行 GPU 工作。
 
 ### 建立新 GPU VM（待執行）
 

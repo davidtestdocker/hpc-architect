@@ -636,8 +636,8 @@ OpenStack 是安裝在這台主機上的資源管理服務。
 
 | 檔案 | 來源與位置 | 何時做什麼 |
 |---|---|---|
-| `local.conf` | 新 VM 的 `/home/a2264/devstack/local.conf` | DevStack 安裝前建立；指定主機 IP、內層 VM 使用 QEMU，以及服務驗證密碼。 |
-| `stack.sh` | 從 OpenStack 官方程式庫下載到新 VM 的 `/home/a2264/devstack/stack.sh` | 在新 VM 讀取 `local.conf`，安裝相依套件、寫入設定並啟動 OpenStack 服務。 |
+| [local.conf（密碼遮蔽副本）](../project/openstack/local.conf.redacted) | 實際檔案在新 VM 的 `/home/a2264/devstack/local.conf`；連結供安全閱讀 | DevStack 安裝前建立；指定主機 IP、內層 VM 使用 QEMU，以及服務驗證密碼。 |
+| [stack.sh（本次下載的官方版本）](https://opendev.org/openstack/devstack/src/commit/64d59574473c148c3d855124ae5f79681854cd0a/stack.sh) | 從 OpenStack 官方程式庫下載到新 VM 的 `/home/a2264/devstack/stack.sh` | 在新 VM 讀取 `local.conf`，安裝相依套件、寫入設定並啟動 OpenStack 服務。 |
 | [`write_local_conf.py`](../project/openstack/write_local_conf.py) | 本工作樹自行寫的輔助程式，不屬於 DevStack | 由控制 VM 透過 SSH 送到新 VM 執行，只在新 VM 產生 `local.conf`；不安裝或啟動服務。 |
 
 `local.conf` 中的 `ADMIN_PASSWORD` 用於 OpenStack 管理登入；

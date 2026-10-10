@@ -8,7 +8,7 @@
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、正常與兩種條件不符案例 |
 | [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 已完成：C++ 工具、C 序列版、本機 MPI 分工及單節點 Slurm 兩 rank 工作；工作 9 的答案 `55`、退出碼 `0:0` |
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 已完成：兩台 VM 私有 IP 可互通，控制節點能 SSH 遠端執行；GPU VM 透過 NAT 連 GitHub 回報 HTTP `200`，並辨認出一張 NVIDIA L4；NFS 已驗證雙向讀寫；兩台 VM 各執行一個 MPI rank，主機名不同，部分總和 `15+40=55` |
-| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 進行中：既有 GCP 叢集的 Ansible、Slurm 與 L4 工作已有實測結果。`openstack-lab01` 沒有 GPU；既有 G2 VM 也沒有 IOMMU／DMAR，**目前這套 OpenStack 不能建立 GPU VM**。改由 DevStack 建立乾淨 CPU VM，再以 Ansible 配置 CPU 服務。尚未建 VM；下一步先確認 `private` 的子網與出口。 |
+| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 進行中：既有 GCP 叢集的 Ansible、Slurm 與 L4 工作已有實測結果。`openstack-lab01` 沒有 GPU；既有 G2 VM 也沒有 IOMMU／DMAR，**目前這套 OpenStack 不能建立 GPU VM**。改由 DevStack 建立乾淨 CPU VM，再以 Ansible 配置 CPU 服務。`private` 的 IPv4 子網為 `10.0.0.0/26`，DHCP 已啟用；`router1` 連接該子網與外部網路，SNAT 已啟用。尚未建 VM；下一步準備可安裝套件的 Linux 映像，建後實測套件下載。 |
 | [6 叢集維運、Zabbix 監控與故障復原](curriculum/module-06.md) | 未開始 |
 | [7 效能證據、K8s／GKE 與架構取捨](curriculum/module-07.md) | 未開始 |
 | [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 |

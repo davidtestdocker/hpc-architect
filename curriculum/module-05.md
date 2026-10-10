@@ -912,20 +912,52 @@ subnets:
 `mtu: 1442` 是其封包大小限制，兩者都不證明 VM 已能連線。
 `subnets` 列出兩個關聯子網 ID，尚未提供各自的 IP 範圍、閘道與 IP 版本。
 
-**目前結論：** `private` 的網路物件與兩個子網 ID 已查到；
-子網內容與網路出口尚未驗證。建立需安裝套件的 CPU VM 前，
-先列出兩個子網的名稱、IP 範圍與版本，避免只憑第一個 ID 猜測 VM 位址。
-這是 `openstack-lab01` 上的 OpenStack API 唯讀查詢，不建立或修改網路：
+**目的：** 列出 `private` 的子網，辨認 CPU VM 可使用的 IPv4 範圍。
+這是 `openstack-lab01` 上的唯讀查詢，不建立或修改網路。
 
-**待執行指令：**
+**已執行指令：**
 
 ```bash
 openstack subnet list --network private -f table
 ```
 
-**判讀方式：** 以輸出的兩筆子網確認 IPv4／IPv6 範圍；
-再依實際結果查 IPv4 子網的閘道、DNS 與路由，
-最後才決定 CPU VM 接哪個網路。VM 是否可上網仍須建成後實測。
+**實際輸出重點：**
+
+| 子網名稱 | IP 範圍 |
+|---|---|
+| `ipv6-private-subnet` | `fdfa:e16c:8d73::/64` |
+| `private-subnet` | `10.0.0.0/26` |
+
+**判讀：** `private-subnet` 是這個網路的 IPv4 子網；
+列表尚未顯示它的閘道、DHCP 或 DNS，也不能證明 VM 可以上網。
+下一條在 `openstack-lab01` 讀取該子網設定，不修改資源：
+
+**已執行指令：**
+
+```bash
+openstack subnet show private-subnet -f yaml
+```
+
+**實際輸出重點：** `cidr: 10.0.0.0/26`、
+`allocation_pools: 10.0.0.2–10.0.0.62`、
+`gateway_ip: 10.0.0.1`、`enable_dhcp: true`、`dns_nameservers: []`。
+
+**判讀：** DHCP 可從位址池分配 IPv4；`10.0.0.1` 是設定的閘道。
+接著讀取既有路由器，確認這個閘道連到外部網路；查詢不修改資源：
+
+**已執行指令：**
+
+```bash
+openstack router show router1 -f yaml
+```
+
+**實際輸出重點：** `status: ACTIVE`；`interfaces_info` 將
+`private-subnet`（`c5eaf368-96f1-4c2c-aa82-1de2dd011270`）
+接到 `10.0.0.1`；`external_gateway_info` 有外部 IPv4 `172.24.4.9`，
+`enable_snat: true`。
+
+**判讀：** 內部子網已接到設有 SNAT 的路由器。
+VM 實際能否下載套件，建好後直接從 VM 測試；不再逐項查網路欄位。
 
 ## 目前限制
 

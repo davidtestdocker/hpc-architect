@@ -11,7 +11,7 @@
 | 1. 叢集與系統 | [01 架構與單節點排程](module-01.md) | CPU／GPU 節點分工、資源規劃、排程與 Linux 服務 | 資源及拓撲決策、單節點工作與故障判讀 |
 | 2. 程式開發 | [02 Python／Linux 健檢](module-02.md)、[03 C/C++ 與單節點 MPI 工作](module-03.md) | 寫能處理錯誤、答案可核對的軟體 | 健檢工具、C/C++ 程式與單節點 Slurm 工作 |
 | 3. 網路與儲存 | [04 多節點網路與資料路徑](module-04.md) | 設定獨立 VM 互通、共享資料，驗證跨節點工作與 GPU 裝置 | 兩台 VM 的連線、共享資料、跨節點工作與 GPU 節點證據 |
-| 4. 自動化 | [05 可重建叢集](module-05.md) | 將叢集設定轉成可重跑的部署；實作 OpenStack VM 供給與管理 | 既有 GCP 節點的 GPU 工作、OpenStack CPU VM 的實際供給與管理、乾淨節點部署及跨節點 CPU 工作證據 |
+| 4. 自動化 | [05 可重建叢集](module-05.md) | 在現有 DevStack 上由 OpenStack 供給乾淨 CPU VM，再由 Ansible 配置叢集服務 | OpenStack CPU VM 的供給、網路與套件來源證據，以及 Ansible 首次部署和 CPU 工作結果；既有 GCP GPU 工作另列 |
 | 5. 維運與決策 | [06 故障、Zabbix 與監控](module-06.md)、[07 效能、K8s／GKE 與架構取捨](module-07.md)、[08 作品與面試](module-08.md) | 復原服務、建立可驗證告警、比較 Slurm 與 GKE 工作負載、評估規模 | 事件與告警恢復紀錄、原始量測、GKE 工作證據、架構決策與作品 |
 
 這是一條作品主線，不是八個互不相干的小練習：設計一個教學規模叢集，編寫工作與健檢工具，完成網路和部署，再以故障、量測和重建驗證它。每個模組都先解釋首次使用的名詞和命令用途，再做實作、保存真實結果。一次只給一條 VM 指令是互動節奏，不是一天的內容上限。
@@ -20,7 +20,7 @@
 
 職缺沒有指定排程器、MPI、NFS 或 Ansible。本課程選 [Slurm](https://slurm.schedmd.com/quickstart_admin.html) 作排程範例、[Ansible](https://docs.ansible.com/projects/ansible/latest/getting_started/index.html) 作設定自動化、NFS 作第一個共享資料案例、[MPICH](https://www.mpich.org/documentation/) 作 MPI 工作驗證。學的是節點、工作、網路、身分、部署與故障處理的可遷移能力，不把這些品牌說成職缺原文。
 
-Python 是自動化與健檢主語言；C 和 C++ 用於交付可編譯、可核對結果的系統觀察與計算工作。Go 不再另外開一條完整主線，除非面試或實際工作要求。加分項整合進既有模組：05 在隔離環境架設 OpenStack 練習平台，實際供給與管理 VM，並與目前 GCP 流程對照；06 用 Zabbix 驗證監控、告警與恢復；07 在確認預算後用 K8s／GKE 執行可核對結果的工作，和 Slurm 的工作模型比較。OpenStack 練習環境與資源成本須先確認；尚未實作時，對照分析不能寫成操作經驗，也不能把無實體 GPU 的練習寫成 OpenStack GPU 供給證據。
+Python 是自動化與健檢主語言；C 和 C++ 用於交付可編譯、可核對結果的系統觀察與計算工作。Go 不再另外開一條完整主線，除非面試或實際工作要求。加分項整合進既有模組：05 用現有 DevStack 供給乾淨 CPU VM，並由 Ansible 配置 CPU 叢集服務；06 用 Zabbix 驗證監控、告警與恢復；07 在確認預算後用 K8s／GKE 執行可核對結果的工作，和 Slurm 的工作模型比較。模組 05 的 OpenStack CPU 成果與既有 GCP GPU 成果分開標示，不稱為 OpenStack GPU 重建。
 
 **GPU 是核心架構與實作項目。** 獨立 GPU VM `compute-gpu01` 已建立；模組 04 已驗證兩台 VM 私有網路互通、控制節點 SSH 遠端執行、共享目錄雙向讀寫、跨節點 MPI 工作，以及驅動辨認一張 NVIDIA L4。這次 MPI 工作只用 CPU；GPU 資源設定、工作與監控會在相應模組處理。課程會說明 GPU 記憶體、CPU／GPU 資料傳輸、PCIe／NUMA、單卡與多卡拓撲，以及驅動／CUDA 相容性；[Slurm GRES](https://slurm.schedmd.com/gres.html) 是排程 GPU 的具體機制。單卡 VM 能驗證單 GPU 管理，不能宣稱驗證了 NVLink、多 GPU、跨 GPU RDMA 或大規模 GPU 訓練。RDMA、平行檔案系統與機櫃供電等沒有設備時只做架構判斷。
 

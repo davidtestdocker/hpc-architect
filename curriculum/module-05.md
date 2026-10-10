@@ -9,13 +9,14 @@
 但當時 GPU VM 並未接受 Slurm 排程。
 本模組把節點設定寫成可重跑的 Ansible playbook，
 讓控制端能管理 GPU VM 的身分驗證、Slurm 設定和運算服務。
-此外，目標職缺列出的 OpenStack 能力須以實際供給與管理 VM 的結果證明，
-不能只靠 GCP 流程對照。
+本模組接著由現有 DevStack 的 OpenStack 服務供給乾淨 CPU VM，
+再用 Ansible 從新系統配置可驗證的 CPU 叢集服務。
+既有 GCP VM 的 GPU 工作結果另列，不當作 OpenStack GPU 重建。
 
 **目前成果：** 已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
 控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
 並在該分區執行二維熱擴散工作，使用 L4 算出與 CPU 一致的結果。
-現有結果仍未驗證乾淨節點重建。
+現有結果仍未驗證 OpenStack 供給的乾淨 CPU VM 與 Ansible 首次部署。
 
 ## 管理位置與本次部署範圍
 
@@ -647,10 +648,10 @@ cpu_ms=504.605 gpu_kernel_ms=1.894 validation=PASS
 
 ### 為什麼在這裡談 OpenStack
 
-**目標與目前狀態：** 目標職缺把 OpenStack 列為加分項。現在的叢集已用 GCP 建出兩台 VM；
-下方對照先說明兩種平台的供給責任，後續仍須在真正運作的 OpenStack
-練習環境建立並管理 VM，才能取得操作證據。
-DevStack 已部署；目前已查到服務、映像及網路，尚未用 OpenStack 建立 VM。
+**目標與目前狀態：** 現在改以現有 DevStack 建立一台乾淨 CPU VM，
+先驗證 VM 供給、IP 與套件來源，再用 Ansible 部署 CPU 節點設定及工作。
+DevStack 已部署並查到服務、映像及網路，但尚未用 OpenStack 建立 VM。
+現有 GCP 叢集提供既有 GPU 工作證據，不屬於這次 OpenStack 供給的 VM。
 
 **OpenStack 是什麼：** 它是一套開源雲端基礎設施軟體，讓組織透過 API 或管理介面
 供給 VM、網路和儲存資源。用已做過的事理解：在 GCP 執行
@@ -691,9 +692,28 @@ Nova 的 **flavor** 類似目前選用的 VM 機型，描述一種可申請的�
 
 ### DevStack 練習環境與已完成的 API 查詢
 
-**這一層在做什麼：**GCP 建立的 `openstack-lab01` 是練習主機；
-OpenStack 是安裝在這台主機上的資源管理服務。
-後續會用 OpenStack 的指令建立映像、網路與內層 VM。
+**主機與 VM 的資源關係：** GCP 建立的 `openstack-lab01` 是一台
+`e2-standard-2` CPU VM。DevStack 在它裡面安裝 OpenStack 的管理和運算服務；
+這套單機環境由同一台 `openstack-lab01` 承載之後建立的內層 VM。
+內層 VM 的 CPU 時間、記憶體和磁碟空間都從 `openstack-lab01` 的配額中使用，
+OpenStack 服務本身也要占用其中一部分。
+OpenStack 指令建立的是這台練習主機內的 VM，不會向 GCP 另建一台主機。
+`compute-gpu01` 是另一台由 GCP 建立的 GPU VM，不是 DevStack 的運算主機。
+
+**本次 CPU 架構：** `openstack-lab01` 是 GCP 的 2 vCPU、8 GiB 宿主 VM；
+它承載 DevStack 的 API 與虛擬化服務，並從這台主機管理 Ansible。
+OpenStack 將從可安裝套件的 Linux 映像建立一台內層 CPU VM，
+接到 Neutron 網路。內層 VM 使用宿主的 CPU、記憶體和磁碟，
+不是 GCP 另建的 VM。先驗證內層 VM 能取得 IP、連到套件來源，
+再部署 Ansible 管理的 CPU 服務；服務角色與可行規格以實測確定。
+`compute-gpu01` 是另一台 GCP GPU VM，不在這個 OpenStack CPU 架構內。
+
+**為何沒有 OpenStack GPU VM：** `openstack-lab01` 本身沒有 GPU，
+而現有 GCP G2 GPU VM 的 IOMMU 群組與 DMAR 表皆為空，
+目前無法將 L4 當作 OpenStack 可分配的 PCI 裝置。
+因此本次選擇由 OpenStack 建 CPU VM；GPU 驅動、CUDA 與 Slurm GPU 工作
+只有既有 GCP 叢集的證據，不宣稱由 OpenStack 重建。
+
 **DevStack** 是 OpenStack 官方提供的安裝腳本集合，用來快速建立
 單機開發／練習環境；它不是 OpenStack 的另一個服務，也不代表生產部署。
 做法依[官方單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)。
@@ -716,12 +736,65 @@ OpenStack 是安裝在這台主機上的資源管理服務。
 **安裝順序：** Git 下載官方 DevStack → 建立 `local.conf` →
 `stack.sh` 安裝並啟動服務 → 再由使用者驗證 OpenStack API 與供給操作。
 
-**主機規格與限制：** 目前 GCP 專案禁止巢狀虛擬化；練習主機使用 DevStack 支援的 QEMU
-執行內層 VM，效能較慢。選用東京 `asia-northeast1-c` 的
+**主機規格與限制：** 建立練習主機時，這個 GCP 專案繼承的組織政策
+`compute.disableNestedVirtualization` 為 `enforced: true`；
+加上 E2 機型本身不支援巢狀虛擬化，因此使用 DevStack 支援的 QEMU 設定。
+現已在專案層級關閉政策限制；唯讀查詢的生效結果為 `booleanPolicy: {}`。
+政策現在允許巢狀虛擬化，但既有 E2 練習主機不因此具備硬體輔助巢狀虛擬化。
+練習主機選用東京 `asia-northeast1-c` 的
 `e2-standard-2`（2 vCPU、8 GiB）與 40 GiB `pd-standard` 開機磁碟，
 使用 Ubuntu 24.04、既有私有子網與 Cloud NAT；不配置外部 IP、
-GPU 或服務帳戶。這是先驗證 OpenStack 供給功能的最低成本規格；
-若無法承載兩台 Linux 工作節點，再依實際資源使用量調整，不預稱跨節點完成。
+GPU 或服務帳戶。這個規格只承載已完成的 DevStack 探索，
+無法滿足由 OpenStack 供給 GPU 節點的重建目標。
+政策限制現已解除，但它不會替練習主機增加 GPU。
+附有 L4 的 GCP `g2-standard-4` 能否把 GPU 交給內層 VM，
+須看下方運算主機的實測結果。
+
+**GPU 運算主機可行性核對：**
+現有 `compute-gpu01` 由 GCP 配有一張 L4，但 OpenStack 若要把這張卡
+交給自己建立的 VM，運算主機還須有 IOMMU 裝置群組與可分配的 PCI 裝置。
+已啟動原先停止的 `compute-gpu01`，在該 VM 唯讀列出
+`/sys/kernel/iommu_groups` 下的群組；這不安裝套件或修改 GPU 設定，
+啟動 G2 VM 會產生運行費用。
+
+**已在 `compute-gpu01` 執行的指令：**
+
+```bash
+find /sys/kernel/iommu_groups -mindepth 1 -maxdepth 1 -type d
+```
+
+**實際輸出：** 無輸出，退出碼為 `0`。
+
+**判讀：** 這台主機目前沒有 IOMMU 群組，尚不具備 OpenStack GPU PCI 透傳
+所需的 IOMMU 條件。下一步讀取核心啟動參數，區分是否只是作業系統尚未啟用
+IOMMU；這仍是唯讀檢查，不修改 VM：
+
+**已在 `compute-gpu01` 執行的指令：**
+
+```bash
+cat /proc/cmdline
+```
+
+**實際輸出重點：** 核心版本為 `6.12.0-211.61.1.el10_2.x86_64`；
+啟動參數沒有 `intel_iommu=on` 或其他啟用 IOMMU 的選項。
+
+**判讀：** 沒有 IOMMU 群組可能與核心設定有關，尚不能單憑此結果
+斷定 GCP 沒有提供虛擬 IOMMU。下一條只讀檢查尋找韌體提供的
+Intel DMAR 表；它是 Linux 辨認 Intel IOMMU 硬體的依據之一：
+
+**已在 `compute-gpu01` 執行的指令：**
+
+```bash
+find /sys/firmware/acpi/tables -maxdepth 1 -name DMAR
+```
+
+**實際輸出：** 無輸出，退出碼為 `0`。
+
+**判讀：** 這台 G2 VM 沒有提供 Intel IOMMU 的 DMAR 表，
+也沒有 IOMMU 群組；目前不能把 L4 作為 OpenStack 可分配的 PCI 裝置。
+專案政策關閉的是禁止巢狀 VM 的限制，不會替這台 VM 加上 IOMMU。
+因此這台 G2 VM 不能作為本模組的 OpenStack GPU 運算主機。
+`compute-gpu01` 已啟動作可行性核對；未建立 OpenStack GPU VM。
 
 #### 1. 建立練習主機
 
@@ -866,10 +939,10 @@ openstack image list -f table -c Name -c Status
 
 ### Neutron 網路：先分清網路、子網與路由
 
-**要解決的問題：** 接下來要用 OpenStack 建 CPU VM，並在 VM 內安裝套件。
-因此建機前要找出可接的網路、VM 能從哪個子網取得 IP，
-以及之後是否有通往套件來源的出口。
-這裡先查現有設定，再用實際 VM 驗證；看到設定值本身不代表已能上網。
+**這次探索要核對的問題：** 建立 VM 前須知道它能接哪個網路、
+從哪個子網取得 IP，以及有沒有通往套件來源的出口。
+以下查詢只確認現有 DevStack 網路設定；沒有建立 VM，
+也不能證明這套無 GPU 的環境適合重建目標。
 
 **概念：** 在 GCP 建 VM 時會選 VPC 與子網；在 OpenStack，Nova 建 VM 時把
 虛擬網卡接到 Neutron 的 **port**，port 屬於某個 **network**。
@@ -880,7 +953,7 @@ openstack image list -f table -c Name -c Status
 [Neutron 官方網路概念](https://docs.openstack.org/neutron/latest/admin/intro-os-networking.html)
 說明了這些資源的關係。
 
-**目的：** 先找出有哪些網路可作為 CPU VM 的候選連接目標。
+**目的：** 先找出目前有哪些網路物件。
 `-f table` 使用表格；
 `-c Name -c Status` 原本想只看名稱與狀態，但這個清單輸出
 沒有提供 `Status` 欄。指令是唯讀查詢，不建立網路或 VM。
@@ -908,7 +981,7 @@ openstack network list -f table -c Name -c Status
 三者目前也只是名稱：不能因為叫 `public` 就認定它接到外網，
 或因為叫 `shared` 就認定它真的開放其他專案使用。
 
-**目的：** `private` 是候選網路。查它的屬性，是要知道這個網路是否啟用、
+**目的：** 查 `private` 的屬性，是要知道這個網路是否啟用、
 是否只供目前專案使用，以及它連著哪些子網；建立 VM 時會指定網路，
 而子網決定 VM 可能拿到哪段 IP。
 `network show` 只向 Neutron 讀取設定；`-f yaml` 讓欄位逐行顯示。
@@ -947,42 +1020,32 @@ subnets:
 `mtu: 1442` 是其封包大小限制，兩者都不證明 VM 已能連線。
 `subnets` 列出兩個關聯子網 ID，尚未提供各自的 IP 範圍、閘道與 IP 版本。
 
-**下一步目的：** `private` 關聯兩個子網。先查清單中的第一個，
-辨認它是 IPv4 還是 IPv6、VM 可分配的位址範圍、是否設定閘道與 DHCP；
-這些資訊用來判斷它是否適合稍後的 CPU VM，還要依結果處理另一個子網。
-即使子網設有閘道，仍須再核對路由與外部出口，並用 VM 實測套件下載。
-`subnet show` 只讀取 Neutron 設定，不建立或修改網路。
+**目前結論：** `private` 的網路物件與兩個子網 ID 已查到；
+子網內容與網路出口尚未驗證。建立需安裝套件的 CPU VM 前，
+先列出兩個子網的名稱、IP 範圍與版本，避免只憑第一個 ID 猜測 VM 位址。
+這是 `openstack-lab01` 上的 OpenStack API 唯讀查詢，不建立或修改網路：
 
 **待執行指令：**
 
 ```bash
-openstack subnet show 3c7f8b05-10e3-4434-a346-98d7c868fd1d -f yaml
+openstack subnet list --network private -f table
 ```
 
-**後續驗收：** 需有實際證據：OpenStack API 可用；建立映像、私有網路與子網、
-安全規則及儲存卷；用 OpenStack 建立 CPU VM，確認開機、連線與磁碟讀寫；
-再驗證 VM 的停止、啟動與資源清理。保留可重跑設定、必要輸出、
-故障判斷及與現有 GCP 供給流程的差異。
-若練習環境可承載兩台 CPU VM，再用新節點驗證 Ansible 的乾淨部署
-與跨節點 Slurm 工作；資源不足時如實保留這兩項未完成狀態。
-沒有可分配的實體 GPU 時，這只證明 OpenStack 的基本供給與管理，
-不列為 OpenStack GPU VM 實作。
+**判讀方式：** 以輸出的兩筆子網確認 IPv4／IPv6 範圍；
+再依實際結果查 IPv4 子網的閘道、DNS 與路由，
+最後才決定 CPU VM 接哪個網路。VM 是否可上網仍須建成後實測。
 
 ## 8. 現有 GPU 節點狀態與後續部署
 
 `compute-gpu01` 曾由 Slurm 執行 L4 二維熱擴散工作，
 CPU 與 GPU 逐格比較為 `validation=PASS`。
-為原先的 GCP 乾淨 GPU 節點重建計畫，舊 VM 已停止；
-其狀態為 `TERMINATED`，40 GiB 開機磁碟仍在，
-東京區域 L4 配額使用量為 0。新 VM `compute-gpu02` 未建立。
-目前 GPU 工作不可用，控制節點及 NFS 分享仍運行。
+`compute-gpu01` 現已啟動作 OpenStack GPU 透傳可行性核對；
+它仍是 GCP 建立的 GPU VM。新 VM `compute-gpu02` 未建立。
 
-不再為取得相同的 GPU 工作結果另建一台 GCP GPU VM。
-接下來先完成第 7 節的 OpenStack 實作，
-並以新建的 CPU VM 驗證乾淨節點的自動化部署；
-實際節點數和連線方式須依練習環境資源確認後再定。
-若後續工作需要再次使用 L4，可評估重新啟動保留的 `compute-gpu01`，
-但須先確認 GPU 容量、費用及現有設定，不能把重啟寫成乾淨部署。
+**本次方向：** 在現有 DevStack 建一台乾淨 CPU VM，
+驗證 OpenStack 的映像、規格、網路與 VM 供給流程，
+再以 Ansible 配置 CPU 服務並留下首次部署證據。
+現有 GCP GPU 工作是另一條已完成的證據，不列入 OpenStack CPU VM 的結果。
 
 ## 目前限制
 
@@ -990,6 +1053,5 @@ CPU 與 GPU 逐格比較為 `validation=PASS`。
 - NFS、MUNGE 與 Slurm playbook 已在既有兩台 VM 執行；
   尚未驗證乾淨環境的首次部署。
 - 單張 L4 只能驗證單 GPU 管理，不能當成多卡隔離或大型生產叢集經驗。
-- 本模組後續仍須交付可核對的跨節點 CPU 工作、可恢復的故障處理、
-  乾淨節點部署，以及 OpenStack VM 供給與管理的實作證據。
-  OpenStack 已完成部署及部分唯讀 API 查詢，尚無 VM 供給與管理證據。
+- OpenStack CPU VM、套件來源、Ansible 首次部署及 CPU 工作尚未驗證。
+  現有 DevStack 沒有可分配的 GPU，不交付 OpenStack GPU 重建。

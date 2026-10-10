@@ -646,47 +646,12 @@ Google Cloud 說明[停止 VM 後 GPU 不再保留](https://docs.cloud.google.co
 既有控制節點建出的 Slurm 26.05.4 原始碼與兩個運算端 RPM，
 已保存於[專案套件目錄](../project/packages/slurm/README.md)，
 附 SHA-256 值；新 VM 的安裝、套件相依性與相容性尚未驗證。
-舊 GPU VM 的驅動與 CUDA 已確認來自 AlmaLinux 套件庫；
-新映像的核心與實際可安裝版本仍須在新 VM 上核對，不能把舊 VM 的成功當成新 VM 的成功。
-
-在**控制節點**透過 Ansible 對舊 GPU VM 執行唯讀 `rpm -q`，
-核對已安裝的套件名稱與版本。
-`-b` 用管理員身分遠端查詢，Ansible 的 `CHANGED` 是 `command` 模組預設標記，
-不代表此查詢更新了套件：
-
-```bash
-ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -b -m ansible.builtin.command -a 'rpm -q almalinux-release-nvidia-driver nvidia-driver nvidia-open-kmod cuda-nvcc-13-4 cuda-cudart-devel-13-4'
-```
-
-```text
-compute-gpu01 | CHANGED | rc=0 >>
-almalinux-release-nvidia-driver-10-5.el10_1.x86_64
-nvidia-driver-615.71.09-1.el10.x86_64
-nvidia-open-kmod-615.71.09-1.el10_2.x86_64
-cuda-nvcc-13-4-13.4.59-1.x86_64
-cuda-cudart-devel-13-4-13.4.49-1.x86_64
-```
-
-舊 VM 上套件確實已安裝。再查其已啟用套件庫中可供下載的版本，
-`--available` 查套件庫提供的版本，`--qf` 顯示套件名、版本及來源庫；
-它不安裝套件，也不保證新映像會有相同核心或相同可用版本：
-
-```bash
-ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -b -m ansible.builtin.command -a 'dnf repoquery --available almalinux-release-nvidia-driver nvidia-driver nvidia-open-kmod cuda-nvcc-13-4 cuda-cudart-devel-13-4 --qf=%{name}-%{version}-%{release}@%{repoid}'
-```
-
-```text
-compute-gpu01 | CHANGED | rc=0 >>
-almalinux-release-nvidia-driver-10-5.el10_1@extras
-cuda-cudart-devel-13-4-13.4.49-1@almalinux-nvidia
-cuda-nvcc-13-4-13.4.59-1@almalinux-nvidia
-nvidia-driver-615.71.09-1.el10@almalinux-nvidia
-nvidia-open-kmod-615.71.09-1.el10_2@almalinux-nvidia
-```
-
-上面只保留本次重建要用的版本；查詢也列出其他較舊版本。
-`extras` 提供 NVIDIA 套件庫設定包，`almalinux-nvidia` 提供驅動與 CUDA。
-新 VM 建好後仍要先確認其套件庫與核心，再安裝並實測 L4。
+從 `compute-gpu01` 查得重建所需的套件參考：
+`almalinux-release-nvidia-driver` 版本 `10-5.el10_1` 來自 `extras`；
+`nvidia-driver` 與 `nvidia-open-kmod` 版本 `615.71.09`、
+`cuda-nvcc-13-4` 版本 `13.4.59`、
+`cuda-cudart-devel-13-4` 版本 `13.4.49` 來自 `almalinux-nvidia`。
+新 VM 建好後，仍須確認其套件庫與核心可用版本，再安裝並實測 L4。
 
 ### 舊 GPU VM 已停止
 

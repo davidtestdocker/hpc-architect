@@ -902,17 +902,54 @@ openstack network list -f table -c Name -c Status
 三者目前也只是名稱：不能因為叫 `public` 就認定它接到外網，
 或因為叫 `shared` 就認定它真的開放其他專案使用。
 
-**下一步目的：** 查 `private` 的完整屬性。`network show` 會向 Neutron 讀取
+**目的：** 查 `private` 的完整屬性。`network show` 會向 Neutron 讀取
 單一網路的詳細資料；`-f yaml` 讓欄位容易逐行閱讀。
 重點核對 `status`、`admin_state_up`、`router:external`、`shared`
 與 `subnets`：依序看運作狀態、管理設定是否啟用、是否標記為外部網路、
 是否開放其他專案使用，以及關聯的子網 ID。
 子網的 CIDR 與閘道還要另外查；這仍是唯讀操作。
 
-**待執行指令：**
+**已執行指令：**
 
 ```bash
 openstack network show private -f yaml
+```
+
+**實際輸出（保留判讀所需欄位）：**
+
+```yaml
+admin_state_up: true
+id: fb5be63d-7658-453d-9c6d-66243bce244c
+mtu: 1442
+name: private
+port_security_enabled: true
+provider:network_type: geneve
+router:external: false
+shared: false
+status: ACTIVE
+subnets:
+- 3c7f8b05-10e3-4434-a346-98d7c868fd1d
+- c5eaf368-96f1-4c2c-aa82-1de2dd011270
+```
+
+**判讀：** `status: ACTIVE` 表示這個 Neutron 網路物件處於啟用狀態；
+`admin_state_up: true` 表示管理設定允許使用。
+`router:external: false` 表示它不是外部網路，`shared: false` 表示未共享給其他專案。
+`port_security_enabled: true` 表示此網路的 port 預設套用安全控制，
+但這裡沒有查到實際安全群組規則。
+`provider:network_type: geneve` 是這個網路使用的虛擬封裝類型；
+`mtu: 1442` 是其封包大小限制，兩者都不證明 VM 已能連線。
+`subnets` 列出兩個關聯子網 ID，尚未提供各自的 IP 範圍、閘道與 IP 版本。
+
+**下一步目的：** 查第一個關聯子網的詳細資料。
+`subnet show` 只讀取 Neutron 資料，不建立或修改網路；
+重點看 `ip_version`、`cidr`、`gateway_ip` 與 `enable_dhcp`，
+確認這個子網提供哪種 IP、可分配範圍、閘道及是否自動配發位址。
+
+**待執行指令：**
+
+```bash
+openstack subnet show 3c7f8b05-10e3-4434-a346-98d7c868fd1d -f yaml
 ```
 
 **後續驗收：** 需有實際證據：OpenStack API 可用；建立映像、私有網路與子網、

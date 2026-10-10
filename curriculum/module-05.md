@@ -625,11 +625,31 @@ Nova 的 **flavor** 類似目前選用的 VM 機型，描述一種可申請的�
 
 ### 待完成的 OpenStack 實作
 
-在隔離的專用主機或 VM 建立單機 OpenStack 練習環境；
-可依[官方 DevStack 單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)
-評估，但須先確認可用硬體、虛擬化條件、網路與預算。
-DevStack 供開發和練習，不能代表生產叢集維運。
-環境確認後，才記錄實際可用的安裝與操作指令，不預寫尚未驗證的命令。
+**這一層在做什麼：**GCP 建立的 `openstack-lab01` 是練習主機；
+OpenStack 是安裝在這台主機上的資源管理服務。
+後續會用 OpenStack 的指令建立映像、網路與內層 VM。
+**DevStack** 是 OpenStack 官方提供的安裝腳本集合，用來快速建立
+單機開發／練習環境；它不是 OpenStack 的另一個服務，也不代表生產部署。
+做法依[官方單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)。
+
+安裝時用到三個不同來源與用途的檔案：
+
+| 檔案 | 來源與位置 | 何時做什麼 |
+|---|---|---|
+| `local.conf` | 新 VM 的 `/home/a2264/devstack/local.conf` | DevStack 安裝前建立；指定主機 IP、內層 VM 使用 QEMU，以及服務驗證密碼。 |
+| `stack.sh` | 從 OpenStack 官方程式庫下載到新 VM 的 `/home/a2264/devstack/stack.sh` | 在新 VM 讀取 `local.conf`，安裝相依套件、寫入設定並啟動 OpenStack 服務。 |
+| [`write_local_conf.py`](../project/openstack/write_local_conf.py) | 本工作樹自行寫的輔助程式，不屬於 DevStack | 由控制 VM 透過 SSH 送到新 VM 執行，只在新 VM 產生 `local.conf`；不安裝或啟動服務。 |
+
+`local.conf` 中的 `ADMIN_PASSWORD` 用於 OpenStack 管理登入；
+`DATABASE_PASSWORD`、`RABBIT_PASSWORD`、`SERVICE_PASSWORD`
+供資料庫、訊息佇列及 OpenStack 服務之間驗證。
+輔助程式在新 VM 產生一組隨機密碼，供這四項練習環境設定共用，
+讓 `stack.sh` 能在無人輸入密碼時完成安裝；密碼明文只存於新 VM
+權限 `600` 的 `local.conf`，不寫入工作樹或終端輸出。
+管理密碼也會供後續驗證 OpenStack API 時登入使用。
+
+順序是：Git 下載官方 DevStack → 輔助程式建立 `local.conf` →
+`stack.sh` 安裝並啟動服務 → 再由使用者驗證 OpenStack API 與供給操作。
 
 目前 GCP 專案禁止巢狀虛擬化；練習主機將用 DevStack 支援的 QEMU
 執行內層 VM，效能較慢。選用東京 `asia-northeast1-c` 的

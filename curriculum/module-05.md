@@ -4,7 +4,7 @@
 
 ## 要解決的問題與交付物
 
-模組 04 已讓控制節點透過 SSH 在 GPU VM 執行 MPI 工作，
+**問題與目標：** 模組 04 已讓控制節點透過 SSH 在 GPU VM 執行 MPI 工作，
 兩台 VM 也能讀寫 NFS 共享目錄。這證明計算與資料通路可用，
 但當時 GPU VM 並未接受 Slurm 排程。
 本模組把節點設定寫成可重跑的 Ansible playbook，
@@ -12,14 +12,14 @@
 此外，目標職缺列出的 OpenStack 能力須以實際供給與管理 VM 的結果證明，
 不能只靠 GCP 流程對照。
 
-目前已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
+**目前成果：** 已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
 控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
 並在該分區執行二維熱擴散工作，使用 L4 算出與 CPU 一致的結果。
 現有結果仍未驗證乾淨節點重建。
 
 ## 管理位置與本次部署範圍
 
-所有 Ansible 指令都在**控制節點**的
+**執行位置：** 所有 Ansible 指令都在**控制節點**的
 `/root/hpc-arch/project/ansible` 目錄以 root 執行。
 [ansible.cfg](../project/ansible/ansible.cfg) 指向
 [hosts.yml](../project/ansible/inventory/hosts.yml)，
@@ -27,34 +27,38 @@
 連到私有 IP `10.146.0.3` 的 `compute-gpu01`。
 Inventory 只列出已存在的 VM，不會建立雲端資源。
 
-下方先交代已建立的管理通路、NFS 和 MUNGE 前提及其自動化證據。
+**閱讀順序：** 下方先交代已建立的管理通路、NFS 和 MUNGE 前提及其自動化證據。
 **本次兩節點 Slurm 部署的步驟從「1. 核對資源與帳號」開始：**
 先核對 GPU VM 與兩台 VM 的帳號空間，
 再執行 `slurm-identity.yml`，最後才執行 `slurm-two-node.yml`。
 每個步驟都把指令、執行的檔案、檔案內的任務和實際結果放在一起。
 
-工作樹中的 `project/` 檔案是**部署來源**；
+**檔案位置：** 工作樹中的 `project/` 檔案是**部署來源**；
 `/etc/` 下的檔案才是各 VM 服務實際讀取的檔案。
 相同路徑出現在兩台 VM 時，各自是本機磁碟上的一份，並非同一個檔案。
 下方每個步驟分別說明來源、目標及服務何時讀取。
 
 ## 已建立的 Ansible 管理通路
 
-Ansible 沿用模組 04 已驗證的 SSH 管理通路。
+**管理通路：** Ansible 沿用模組 04 已驗證的 SSH 管理通路。
 **Inventory** 列目標主機；**playbook** 描述檔案、掛載和服務應有的狀態；
 **handler** 在任務真的變更時才由 `notify` 觸發。
 正式執行的 `changed` 表示已改動受管狀態；`changed=0` 表示重跑沒有額外變更。
 `--syntax-check` 只解析 playbook，`--check --diff` 只預演，
 都不能當成檔案已複製或服務已啟動。
 
-在控制節點執行下列指令。它先讀取目前目錄的
+**目的與影響：** 在控制節點執行下列指令。它先讀取目前目錄的
 [ansible.cfg](../project/ansible/ansible.cfg)，再依設定讀取
 [hosts.yml](../project/ansible/inventory/hosts.yml) 並列出群組與主機；
 這裡沒有執行 playbook，也不連線或修改 GPU VM：
 
+**已執行指令：**
+
 ```bash
 ansible-inventory --graph
 ```
+
+**實際輸出：**
 
 ```text
 @all:
@@ -65,14 +69,18 @@ ansible-inventory --graph
   |  |--compute-gpu01
 ```
 
-兩個群組各有預期的 VM。下一條指令仍用 `hosts.yml` 選
+**判讀與下一步：** 兩個群組各有預期的 VM。下一條指令仍用 `hosts.yml` 選
 `gpu_compute`，再透過 SSH 在 GPU VM 執行 Ansible 的 `ping` 模組。
 這裡也沒有執行 playbook；這個 `ping` 不是 ICMP，
 回傳 `pong` 才代表遠端模組可執行：
 
+**已執行指令：**
+
 ```bash
 ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -m ansible.builtin.ping
 ```
+
+**實際輸出：**
 
 ```text
 compute-gpu01 | SUCCESS => {
@@ -84,7 +92,7 @@ compute-gpu01 | SUCCESS => {
 
 ## 已完成的 NFS 自動化
 
-模組 04 已手動驗證兩台 VM 對 `/srv/hpc-share` 的雙向讀寫。
+**已有能力：** 模組 04 已手動驗證兩台 VM 對 `/srv/hpc-share` 的雙向讀寫。
 第一條指令執行
 [nfs-controller.yml](../project/ansible/nfs-controller.yml)。
 該檔在**控制節點**依序確認 `nfs-utils`、核對 `/srv/hpc-share`
@@ -94,16 +102,20 @@ compute-gpu01 | SUCCESS => {
 最後確認 `nfs-server` 正在運行。
 匯出檔真的改動時，handler 才執行 `exportfs -ra` 重新讀取分享清單。
 
+**已執行指令：**
+
 ```bash
 ansible-playbook -i /root/hpc-arch/project/ansible/inventory/hosts.yml /root/hpc-arch/project/ansible/nfs-controller.yml
 ```
+
+**實際輸出：**
 
 ```text
 PLAY RECAP
 instance-20260923-104239 : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-[nfs-gpu-client.yml](../project/ansible/nfs-gpu-client.yml)
+**目的與影響：** [nfs-gpu-client.yml](../project/ansible/nfs-gpu-client.yml)
 由下一條指令執行。它在 **GPU VM** 先確認 `nfs-utils`，
 再把控制節點 `10.140.0.2:/srv/hpc-share` 接到**GPU VM 自己的**
 `/srv/hpc-share`，同時核對 GPU VM 的 `/etc/fstab` 項目與掛載狀態。
@@ -114,27 +126,31 @@ instance-20260923-104239 : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescu
 用途與副作用寫在 playbook 中文註解中。
 正式執行與重跑都沒有改動既有掛載：
 
+**已執行指令：**
+
 ```bash
 ansible-playbook nfs-gpu-client.yml
 ```
+
+**實際輸出：**
 
 ```text
 PLAY RECAP
 compute-gpu01 : ok=3 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-同一指令重跑的結果也為 `ok=3 changed=0 failed=0`。
+**判讀：** 同一指令重跑的結果也為 `ok=3 changed=0 failed=0`。
 這證明既有兩台 VM 的 NFS 狀態符合 playbook，
 並沒有提供乾淨節點首次建立掛載的證據。
 
 ## 已完成的 MUNGE 跨節點身分驗證
 
-模組 04 的 MPI 工作由 SSH 啟動，不需要 GPU VM 的 Slurm 服務。
+**新增能力的原因：** 模組 04 的 MPI 工作由 SSH 啟動，不需要 GPU VM 的 Slurm 服務。
 要由 Slurm 控制端分配工作，GPU VM 的 `slurmd` 必須能用 MUNGE
 驗證同一叢集的請求。兩台 VM 使用控制節點既有的 MUNGE 金鑰；
 金鑰內容只留在 VM 的 `/etc/munge/munge.key`，不存入專案或輸出。
 
-GPU VM 已安裝與控制節點同版的運算端套件：
+**已安裝套件：** GPU VM 已安裝與控制節點同版的運算端套件：
 
 | 套件 | 已安裝版本 | 用途 |
 |---|---|---|
@@ -144,7 +160,7 @@ GPU VM 已安裝與控制節點同版的運算端套件：
 同一筆安裝交易另帶入 `bash-completion`、`mariadb-connector-c`、
 `mariadb-connector-c-config`；套件準備不是本模組的操作重點。
 
-下列指令執行 [munge-gpu.yml](../project/ansible/munge-gpu.yml)。
+**目的與影響：** 下列指令執行 [munge-gpu.yml](../project/ansible/munge-gpu.yml)。
 該檔在 **GPU VM** 依序核對 MUNGE 目錄權限、
 從**控制節點的** `/etc/munge/munge.key` 複製金鑰到
 **GPU VM 自己的**同名路徑、設為 `munge:munge` 與 `0600`，
@@ -152,9 +168,13 @@ GPU VM 已安裝與控制節點同版的運算端套件：
 金鑰真的改動時，handler 才重啟 GPU VM 的 MUNGE；
 Ansible 不顯示金鑰內容或差異。
 
+**已執行指令：**
+
 ```bash
 ansible-playbook munge-gpu.yml
 ```
+
+**實際輸出：**
 
 ```text
 TASK [部署叢集共用的 MUNGE 金鑰]           changed: [compute-gpu01]
@@ -164,15 +184,19 @@ PLAY RECAP
 compute-gpu01 : ok=5 changed=3 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-在控制節點以 `a2264` 產生短效憑證，經既有 SSH 金鑰交給 GPU VM 的
+**驗證目的：** 在控制節點以 `a2264` 產生短效憑證，經既有 SSH 金鑰交給 GPU VM 的
 `unmunge` 解碼；左側 `munge -n` 不把金鑰輸出，管線只傳短效憑證。
 `-i` 選 SSH 私鑰，`IdentitiesOnly=yes` 限定使用該金鑰，
 `BatchMode=yes` 不互動詢問，`ConnectTimeout=5` 限制連線等待。
 這只檢查驗證通路，不提交 Slurm 工作或改動服務：
 
+**已執行指令：**
+
 ```bash
 sudo -u a2264 -- munge -n | sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 a2264@10.146.0.3 unmunge
 ```
+
+**實際輸出：**
 
 ```text
 STATUS:          Success (0)
@@ -181,38 +205,42 @@ UID:             a2264 (1000)
 GID:             a2264 (1005)
 ```
 
-GPU VM 成功解碼控制節點的憑證，證明跨 VM 的 MUNGE 驗證通路可用。
+**判讀：** GPU VM 成功解碼控制節點的憑證，證明跨 VM 的 MUNGE 驗證通路可用。
 重跑 `ansible-playbook munge-gpu.yml` 得到 `ok=4 changed=0 failed=0`，
 沒有重新複製金鑰或重啟服務。
 
 ## 1. 核對 GPU VM 資源與帳號空間
 
-Slurm 按節點宣告的 CPU、記憶體和 **GRES**（通用資源）分配工作；
+**目的：** Slurm 按節點宣告的 CPU、記憶體和 **GRES**（通用資源）分配工作；
 GPU 是本叢集的 GRES。先在 GPU VM 以 `a2264` 執行 `slurmd -C`，
 直接讀取本機硬體並列出建議節點設定；
 這條指令不執行 playbook，也不啟動服務：
 
+**已執行指令：**
+
 ```bash
 slurmd -C
 ```
+
+**實際輸出：**
 
 ```text
 NodeName=compute-gpu01 CPUs=4 Boards=1 SocketsPerBoard=1 CoresPerSocket=2 ThreadsPerCore=2 RealMemory=15983 Gres=gpu:nvidia_l4:1
 Found gpu:nvidia_l4:1 with Autodetect=nvidia (Substring of gpu name may be used instead)
 ```
 
-GPU VM 有 4 個邏輯 CPU、15,983 MiB 記憶體和一張 NVIDIA L4。
+**判讀：** GPU VM 有 4 個邏輯 CPU、15,983 MiB 記憶體和一張 NVIDIA L4。
 兩節點設定只宣告 14,000 MiB 給工作，保留其餘容量給系統與服務。
 `slurmd -C` 是硬體探測，不能當成 GPU 已交由 Slurm 分配。
 
 ### 為何要統一帳號編號
 
-Linux 帳號除了名稱，還有數字身分：**UID** 是使用者編號，
+**概念：** Linux 帳號除了名稱，還有數字身分：**UID** 是使用者編號，
 **GID** 是群組編號；檔案擁有權和服務身分會用到它們。
 `800:800` 表示 UID 800 的使用者，其主要群組是 GID 800。
 兩台 VM 即使都有叫 `slurm` 的帳號，也要核對數字身分。
 
-控制節點的 `slurm` 在[模組 01 的單節點建置](module-01.md#驗證身分與服務)
+**現有帳號：** 控制節點的 `slurm` 在[模組 01 的單節點建置](module-01.md#驗證身分與服務)
 由 `useradd -r -M -U -s /sbin/nologin slurm` 建立；
 當時 `id slurm` 回報 `uid=994(slurm) gid=994(slurm)`。
 GPU VM 的 `994:994` 已屬於 `munge`，不能照搬控制節點的數字。
@@ -222,6 +250,8 @@ GPU VM 的 `994:994` 已屬於 `munge`，不能照搬控制節點的數字。
 第二條查 GID 800。
 `ansible all` 選兩台 VM；`getent` 讀帳號資料庫；
 `fail_key=false` 讓查無資料回傳空值。查詢不建立帳號或群組。
+
+**已執行指令：**
 
 ```bash
 ansible all -m ansible.builtin.getent -a 'database=passwd key=800 fail_key=false'
@@ -237,16 +267,18 @@ ansible all -m ansible.builtin.getent -a 'database=group key=800 fail_key=false'
 | `getent_passwd["800"]` | `null` | `null` |
 | `getent_group["800"]` | `null` | `null` |
 
-兩台 VM 的 UID 與 GID 800 都未占用，因此選 `800:800`。
+**判讀：** 兩台 VM 的 UID 與 GID 800 都未占用，因此選 `800:800`。
 
-控制節點的 `/var/spool/slurmctld` 保存排程狀態，
+**改號影響：** 控制節點的 `/var/spool/slurmctld` 保存排程狀態，
 原本由 UID/GID `994:994` 的 `slurm` 帳號持有。
 只改帳號編號，舊狀態檔不會自動變成新帳號的檔案；
 因此下方 playbook 也把這個目錄及其內容交給新的 `800:800` 帳號。
 
 ## 2. 執行 slurm-identity.yml：統一服務帳號
 
-在控制節點的 Ansible 目錄以 root **正式執行**：
+**目的與執行位置：** 在控制節點的 Ansible 目錄以 root **正式執行**：
+
+**已執行指令：**
 
 ```bash
 ansible-playbook slurm-identity.yml
@@ -270,7 +302,7 @@ ansible-playbook slurm-identity.yml
 這一步會變更兩台 VM 的系統帳號，並短暫中斷控制端排程服務；
 不建立 VM、不安裝套件。
 
-下列是這次指令的實際關鍵輸出：
+**實際輸出：** 下列是這次指令的實際關鍵輸出：
 
 ```text
 PLAY [建立 GPU VM 的 Slurm 服務帳號]
@@ -291,13 +323,17 @@ compute-gpu01            : ok=5 changed=2 unreachable=0 failed=0 skipped=0 rescu
 instance-20260923-104239 : ok=14 changed=5 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-兩台 VM 都實際回報 `800:800`；控制服務在遷移後回應 `UP`。
+**判讀：** 兩台 VM 都實際回報 `800:800`；控制服務在遷移後回應 `UP`。
 在控制節點同一目錄以 root 重跑，核對帳號設定不再改動；
 如果實際狀態已偏移，playbook 仍可能修正帳號或服務：
+
+**已執行指令：**
 
 ```bash
 ansible-playbook slurm-identity.yml
 ```
+
+**實際輸出：**
 
 ```text
 TASK [備妥 GPU VM 的 slurm 群組]   ok: [compute-gpu01]
@@ -316,15 +352,17 @@ compute-gpu01            : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescu
 instance-20260923-104239 : ok=4 changed=0 unreachable=0 failed=0 skipped=10 rescued=0 ignored=0
 ```
 
-跳過的 10 個任務是首次遷移用的工作檢查、停機、改號與服務核對；
+**重跑判讀：** 跳過的 10 個任務是首次遷移用的工作檢查、停機、改號與服務核對；
 重跑沒有再次停止服務。重跑本身沒有重新 ping 控制服務，
 `UP` 是首次正式執行的驗證結果。
 
 ## 3. 執行 slurm-two-node.yml：部署排程設定
 
-修改控制端排程設定前，在控制節點以 root 查工作佇列；
+**修改前核對：** 修改控制端排程設定前，在控制節點以 root 查工作佇列；
 `-h` 不顯示標題，`-o` 列出 ID、狀態、使用者和名稱。
 這只讀取當下狀態，不提交或取消工作：
+
+**已執行指令：**
 
 ```bash
 squeue -h -o '%i %T %u %j'
@@ -334,11 +372,13 @@ squeue -h -o '%i %T %u %j'
 
 在控制節點的 Ansible 目錄以 root **正式執行**：
 
+**已執行指令：**
+
 ```bash
 ansible-playbook slurm-two-node.yml
 ```
 
-這條指令執行的是
+**檔案與任務：** 這條指令執行的是
 [slurm-two-node.yml](../project/ansible/slurm-two-node.yml)。
 檔案中的任務依序處理：
 
@@ -370,9 +410,11 @@ ansible-playbook slurm-two-node.yml
    重跑且設定未變時不會無故重啟服務。
 
 複製任務改動檔案時，會在各 VM 留下舊版備份。
-下列是這次指令的實際關鍵輸出；
+**實際輸出：** 下列是這次指令的實際關鍵輸出；
 `顯示 GPU VM 的 GRES 檢查結果` 把前一任務收集的資料印回控制節點，
 供核對 GPU 數量與裝置路徑：
+
+**實際輸出：**
 
 ```text
 PLAY [備妥 GPU VM 的 Slurm 設定並檢查 GPU 對應]
@@ -402,7 +444,7 @@ compute-gpu01            : ok=10 changed=4 unreachable=0 failed=0 skipped=0 resc
 instance-20260923-104239 : ok=3 changed=2 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-`rc=0` 是 `slurmd -G` 的結束代碼，表示這條檢查指令正常結束。
+**判讀：** `rc=0` 是 `slurmd -G` 的結束代碼，表示這條檢查指令正常結束。
 `stderr_lines` 的第二行顯示一張 `nvidia_l4` 對應 `/dev/nvidia0`；
 第一行表示沒有額外的 `cgroup.conf`，這次檢查使用預設值。
 控制節點設定已取代原單節點內容並由 `scontrol reconfigure` 重新讀取；
@@ -412,20 +454,24 @@ GPU VM 的 `slurmd` 已啟動並設為開機啟動。
 
 ## 4. 從控制節點查 GPU 節點是否註冊
 
-上一步已啟動 GPU VM 的 `slurmd`，但 playbook 成功只證明服務任務完成。
+**目的：** 上一步已啟動 GPU VM 的 `slurmd`，但 playbook 成功只證明服務任務完成。
 在**控制節點**以 root 執行下列只讀命令。
 `scontrol` 向正在運行的 `slurmctld` 查詢名為 `compute-gpu01` 的節點；
 這條指令不執行 playbook，不提交工作，也不改動檔案或服務。
+
+**已執行指令：**
 
 ```bash
 scontrol show node compute-gpu01
 ```
 
-結果要核對 `NodeName` 是 `compute-gpu01`、`NodeAddr` 是 GPU VM 的
+**核對欄位：** 結果要核對 `NodeName` 是 `compute-gpu01`、`NodeAddr` 是 GPU VM 的
 私有 IP `10.146.0.3`、`Gres` 宣告一張 `nvidia_l4`，
 並看 `State` 判斷控制端是否認為節點可接工作。
 這只驗證控制端看到的節點狀態；GPU 工作是否真的能使用裝置，
 仍須由實際 Slurm 工作驗證。
+
+**實際輸出：**
 
 ```text
 NodeName=compute-gpu01 Arch=x86_64 CoresPerSocket=2
@@ -438,7 +484,7 @@ NodeName=compute-gpu01 Arch=x86_64 CoresPerSocket=2
    BootTime=2026-10-09T05:28:30 SlurmdStartTime=2026-10-09T06:49:45
 ```
 
-控制服務已記錄 GPU VM 的私有 IP、4 個可用邏輯 CPU、
+**判讀：** 控制服務已記錄 GPU VM 的私有 IP、4 個可用邏輯 CPU、
 14,000 MiB 可排程記憶體和一張 `nvidia_l4`。
 `State=IDLE`、`CPUAlloc=0`、`AllocMem=0` 表示查詢時節點可接新工作且未分配資源；
 `SlurmdStartTime` 顯示運算服務已啟動。
@@ -446,13 +492,13 @@ NodeName=compute-gpu01 Arch=x86_64 CoresPerSocket=2
 
 ## 5. 用 Slurm 請求一張 GPU 的通路驗證
 
-控制端已將 `compute-gpu01` 列為 `IDLE`，接著要確認一般帳號能透過
+**目的：** 控制端已將 `compute-gpu01` 列為 `IDLE`，接著要確認一般帳號能透過
 Slurm 的 `gpu` 分區請求一張 GPU，並在該分區唯一的 GPU VM 啟動程序。
 此處先用驅動提供的 `nvidia-smi -L` 讀取裝置清單，
 核對排程請求和 GPU 裝置通路；它不是代表性計算工作，
 也不能證明 GPU 隔離或計算結果正確。
 
-在**控制節點**以 root 執行下列一條指令。
+**執行位置與影響：** 在**控制節點**以 root 執行下列一條指令。
 `sudo -iu a2264` 改用一般工作帳號；`srun` 向 Slurm 提交同步工作；
 `--partition=gpu` 選 GPU 分區，`--nodes=1 --ntasks=1` 請求一個節點、
 一個行程，`--gres=gpu:1` 請求一張 GPU，`--time=00:02:00` 限制最多兩分鐘。
@@ -460,22 +506,26 @@ Slurm 在分配的節點執行 `nvidia-smi -L` 並把輸出帶回控制節點。
 這條命令不執行 playbook，也不改服務設定或建立雲端資源；
 預期輸出列出一張 NVIDIA L4，若工作無法分配或啟動，依實際訊息排查。
 
+**已執行指令：**
+
 ```bash
 sudo -iu a2264 srun --partition=gpu --nodes=1 --ntasks=1 --gres=gpu:1 --time=00:02:00 nvidia-smi -L
 ```
+
+**實際輸出：**
 
 ```text
 GPU 0: NVIDIA L4 (UUID: GPU-60db0aa8-3f64-a75a-bd6f-cf44fe764b36)
 ```
 
-Slurm 接受一張 GPU 的請求，並在 `gpu` 分區啟動了 `a2264` 的程序；
+**判讀：** Slurm 接受一張 GPU 的請求，並在 `gpu` 分區啟動了 `a2264` 的程序；
 程序能透過 NVIDIA 驅動讀到一張 L4。
 這是排程與裝置可見性的初步驗證，不是 GPU 計算正確性、
 節點主機名或 GPU 隔離的證據。
 
 ## GPU 計算工具準備
 
-下一步要用有已知答案的 GPU 計算工作，核對 Slurm 分配的裝置能否真的執行計算。
+**目的：** 下一步要用有已知答案的 GPU 計算工作，核對 Slurm 分配的裝置能否真的執行計算。
 GPU VM 原有的 NVIDIA 驅動能執行 `nvidia-smi`，但尚缺編譯 CUDA 程式的工具。
 從 GPU VM 已啟用的 AlmaLinux NVIDIA 套件庫安裝 CUDA 13.4 編譯器與
 CUDA 執行階段開發檔；安裝交易新增下列套件，沒有升級 NVIDIA 驅動或 Slurm：
@@ -491,13 +541,17 @@ CUDA 執行階段開發檔；安裝交易新增下列套件，沒有升級 NVIDI
 | `libnvptxcompiler-13-4`、`libnvvm-13-4` | `13.4.59-1` |
 | `gcc-c++`、`libstdc++-devel` | `14.3.1-4.4.el10.alma.2` |
 
-從控制節點透過 Ansible 在 GPU VM 查詢編譯器版本；套件將它放在
+**驗證目的：** 從控制節點透過 Ansible 在 GPU VM 查詢編譯器版本；套件將它放在
 `/usr/local/cuda-13.4/bin/nvcc`，因此使用絕對路徑，不假定它在登入環境的 `PATH` 中。
 這條查詢不編譯程式，也不修改服務：
+
+**已執行指令：**
 
 ```bash
 ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -m ansible.builtin.command -a '/usr/local/cuda-13.4/bin/nvcc --version'
 ```
+
+**實際輸出：**
 
 ```text
 compute-gpu01 | CHANGED | rc=0 >>
@@ -505,27 +559,31 @@ nvcc: NVIDIA (R) Cuda compiler driver
 Cuda compilation tools, release 13.4, V13.4.59
 ```
 
-版本查詢成功；Ansible 的 `CHANGED` 是此一次性 `command` 任務的預設標記，
+**判讀：** 版本查詢成功；Ansible 的 `CHANGED` 是此一次性 `command` 任務的預設標記，
 不代表查詢改動了檔案。安裝後 GPU VM 的 `nvidia-smi -L` 仍辨認一張 L4。
 
 ## 6. 用熱擴散工作核對 GPU 計算
 
-驅動可見與 GPU 分配已驗證，下一步要確認分配到的 L4 真的完成計算。
+**目的：** 驅動可見與 GPU 分配已驗證，下一步要確認分配到的 L4 真的完成計算。
 [heat2d.cu](../project/workloads/heat2d.cu) 實作二維熱擴散：
 在 `1024 × 1024` 網格中心放一個熱源，每輪用上下左右格點更新溫度，
 共執行 200 輪。CPU 與 GPU 使用相同初始條件和更新式，
 最後逐格比較，最大絕對誤差不超過 `0.0001` 才輸出 `validation=PASS`。
 程式也列出執行主機與 GPU 名稱，供核對工作實際執行的位置和裝置。
 
-先從**控制節點**把工作樹中的原始碼複製到控制節點自己的
+**步驟 1｜放置原始碼：** 從**控制節點**把工作樹中的原始碼複製到控制節點自己的
 `/srv/hpc-share/heat2d.cu`，設為 `a2264` 可讀寫。
 這個路徑已由模組 04 建立並由 `nfs-gpu-client.yml` 核對掛載；
 GPU VM 的同一路徑是 NFS 掛載，讀到的是控制節點提供的檔案。
 下面的 Ansible `copy` 只更新這份共享原始碼，沒有複製到 GPU VM 的 `/etc/`：
 
+**已執行指令：**
+
 ```bash
 ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml controller -b -m ansible.builtin.copy -a 'src=/root/hpc-arch/project/workloads/heat2d.cu dest=/srv/hpc-share/heat2d.cu owner=a2264 group=a2264 mode=0644'
 ```
+
+**實際輸出：**
 
 ```text
 instance-20260923-104239 | CHANGED => {
@@ -538,35 +596,43 @@ instance-20260923-104239 | CHANGED => {
 }
 ```
 
-共享原始碼已在控制節點建立，屬於 `a2264`；GPU VM 由既有 NFS 掛載讀取它。
+**結果：** 共享原始碼已在控制節點建立，屬於 `a2264`；GPU VM 由既有 NFS 掛載讀取它。
 
-複製完成後，從**控制節點**透過 Ansible 以 `a2264` 在 **GPU VM**
+**步驟 2｜編譯程式：** 複製完成後，從**控制節點**透過 Ansible 以 `a2264` 在 **GPU VM**
 執行下列 `nvcc` 命令，讀取 GPU VM 掛載的原始碼，
 編譯成同一共享目錄內的 `heat2d` 執行檔。
 `-O2` 啟用編譯最佳化，`-std=c++17` 指定 C++ 語言版本；
 `-arch=sm_89` 產生對應 L4 運算能力 8.9 的 GPU 程式碼。
 這一步會建立或覆寫 `/srv/hpc-share/heat2d`，不改 Slurm 設定或服務：
 
+**已執行指令：**
+
 ```bash
 ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml gpu_compute -b --become-user a2264 -m ansible.builtin.command -a '/usr/local/cuda-13.4/bin/nvcc -O2 -std=c++17 -arch=sm_89 -o /srv/hpc-share/heat2d /srv/hpc-share/heat2d.cu'
 ```
+
+**實際輸出：**
 
 ```text
 compute-gpu01 | CHANGED | rc=0 >>
 ```
 
-GPU VM 編譯成功，終端沒有其他輸出；執行檔已寫入共享目錄。
+**結果：** GPU VM 編譯成功，終端沒有其他輸出；執行檔已寫入共享目錄。
 
-最後在**控制節點**以 `a2264` 提交同步 Slurm 工作，
+**步驟 3｜執行工作：** 在**控制節點**以 `a2264` 提交同步 Slurm 工作，
 請求 `gpu` 分區的一個節點、一個 task、一張 GPU、512 MiB 記憶體，
 並限制最長五分鐘。`srun` 在分配的 GPU VM 執行共享目錄中的程式，
 輸出直接回到控制節點終端；程式不讀寫資料檔或改動服務。
 要同時核對 `host=compute-gpu01`、`device=NVIDIA L4`、
 `validation=PASS` 和工作正常返回，才能確認本次 GPU 計算通路：
 
+**已執行指令：**
+
 ```bash
 sudo -iu a2264 srun --partition=gpu --nodes=1 --ntasks=1 --cpus-per-task=1 --gres=gpu:1 --mem=512M --time=00:05:00 /srv/hpc-share/heat2d 1024 200
 ```
+
+**實際輸出：**
 
 ```text
 host=compute-gpu01 device_index=0 device=NVIDIA L4 grid=1024x1024 steps=200
@@ -574,19 +640,19 @@ cpu_sum=65535.998004 gpu_sum=65535.998004 max_abs_error=0.00000000
 cpu_ms=504.605 gpu_kernel_ms=1.894 validation=PASS
 ```
 
-工作在 `compute-gpu01` 使用 NVIDIA L4 完成 200 輪計算；CPU 與 GPU
+**結果與判讀：** 工作在 `compute-gpu01` 使用 NVIDIA L4 完成 200 輪計算；CPU 與 GPU
 結果逐格比對通過，輸出後返回控制節點提示字元。
 
 ## 7. OpenStack 實作目標與 VM 供給對照
 
 ### 為什麼在這裡談 OpenStack
 
-目標職缺把 OpenStack 列為加分項。現在的叢集已用 GCP 建出兩台 VM；
+**目標與目前狀態：** 目標職缺把 OpenStack 列為加分項。現在的叢集已用 GCP 建出兩台 VM；
 下方對照先說明兩種平台的供給責任，後續仍須在真正運作的 OpenStack
 練習環境建立並管理 VM，才能取得操作證據。
-目前只有流程對照，尚未部署或操作 OpenStack。
+DevStack 已部署；目前已查到服務、映像及網路，尚未用 OpenStack 建立 VM。
 
-**OpenStack 是一套開源雲端基礎設施軟體**，讓組織透過 API 或管理介面
+**OpenStack 是什麼：** 它是一套開源雲端基礎設施軟體，讓組織透過 API 或管理介面
 供給 VM、網路和儲存資源。用已做過的事理解：在 GCP 執行
 `gcloud compute instances create` 申請 VM；在採用 OpenStack 的環境，
 會向該環境的 OpenStack 服務申請 VM 及其網路、映像和磁碟。
@@ -596,7 +662,7 @@ VM 建好後，仍要另外配置登入、共享資料與 Slurm，工作才會�
 
 ### 對照目前建立 GPU 節點的流程
 
-目前的 GPU VM 是由 GCP 建立：模組 04 的
+**現有做法：** 目前的 GPU VM 是由 GCP 建立：模組 04 的
 `gcloud compute instances create compute-gpu01` 指定機型、AlmaLinux 映像、
 開機磁碟、私有網路和無外部 IP；Cloud Router／NAT 另提供對外出口。
 VM 已啟動後，Ansible 才透過 SSH 配置 NFS、MUNGE 與 Slurm。
@@ -614,16 +680,16 @@ Nova 的 **flavor** 類似目前選用的 VM 機型，描述一種可申請的�
 | GCP 專案權限與執行個體 SSH 中繼資料 | Keystone 管理 OpenStack API 的身分與專案權限；VM 內的 SSH 登入、Linux UID/GID 和 MUNGE 金鑰仍須另外配置與驗證。 |
 | 建好 VM 後由 Ansible 設定 Slurm | 取得 VM 的可達位址與登入方式後，更新 inventory，再部署各 VM 的 `/etc/slurm/slurm.conf`、MUNGE 與共享資料掛載；Slurm 排工作，Nova 負責供給 VM，兩者分屬不同層。 |
 
-這份對照依據[模組 04 的實際 GCP 建機紀錄](module-04.md#東京-gpu-節點的配置)
+**資料依據：** 這份對照依據[模組 04 的實際 GCP 建機紀錄](module-04.md#東京-gpu-節點的配置)
 與 OpenStack 官方的
 [Nova VM 建立說明](https://docs.openstack.org/nova/latest/user/launch-instances.html)、
 [PCI 裝置配置](https://docs.openstack.org/nova/latest/admin/pci-passthrough.html)、
 [Neutron 網路說明](https://docs.openstack.org/neutron/latest/admin/intro-os-networking.html)、
 [Cinder 磁碟說明](https://docs.openstack.org/cinder/latest/admin/volume-backed-image.html)
 及 [Keystone 身分說明](https://docs.openstack.org/keystone/latest/contributor/services.html)。
-目前沒有 OpenStack 平台操作輸出，因此上述對照不能列為實作經驗。
+上述對照本身不是操作證據；下方另記已完成的 OpenStack API 查詢。
 
-### 待完成的 OpenStack 實作
+### DevStack 練習環境與已完成的 API 查詢
 
 **這一層在做什麼：**GCP 建立的 `openstack-lab01` 是練習主機；
 OpenStack 是安裝在這台主機上的資源管理服務。
@@ -632,14 +698,14 @@ OpenStack 是安裝在這台主機上的資源管理服務。
 單機開發／練習環境；它不是 OpenStack 的另一個服務，也不代表生產部署。
 做法依[官方單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)。
 
-安裝時主要用到兩個檔案：
+**關鍵檔案：** 安裝時主要用到兩個檔案：
 
 | 檔案 | 來源與位置 | 何時做什麼 |
 |---|---|---|
 | [local.conf（密碼遮蔽副本）](../project/openstack/local.conf.redacted) | 實際檔案在新 VM 的 `/home/a2264/devstack/local.conf`；連結供安全閱讀 | DevStack 安裝前建立；指定主機 IP、內層 VM 使用 QEMU，以及服務驗證密碼。 |
 | [stack.sh（本次下載的官方版本）](https://opendev.org/openstack/devstack/src/commit/64d59574473c148c3d855124ae5f79681854cd0a/stack.sh) | 從 OpenStack 官方程式庫下載到新 VM 的 `/home/a2264/devstack/stack.sh` | 在新 VM 讀取 `local.conf`，安裝相依套件、寫入設定並啟動 OpenStack 服務。 |
 
-`local.conf` 中的 `ADMIN_PASSWORD` 用於 OpenStack 管理登入；
+**密碼用途：** `local.conf` 中的 `ADMIN_PASSWORD` 用於 OpenStack 管理登入；
 `DATABASE_PASSWORD`、`RABBIT_PASSWORD`、`SERVICE_PASSWORD`
 供資料庫、訊息佇列及 OpenStack 服務之間驗證。
 建立 `local.conf` 時在新 VM 產生一組隨機密碼，供這四項練習環境設定共用，
@@ -647,20 +713,24 @@ OpenStack 是安裝在這台主機上的資源管理服務。
 權限 `600` 的 `local.conf`，不寫入工作樹或終端輸出。
 管理密碼也會供後續驗證 OpenStack API 時登入使用。
 
-順序是：Git 下載官方 DevStack → 建立 `local.conf` →
+**安裝順序：** Git 下載官方 DevStack → 建立 `local.conf` →
 `stack.sh` 安裝並啟動服務 → 再由使用者驗證 OpenStack API 與供給操作。
 
-目前 GCP 專案禁止巢狀虛擬化；練習主機將用 DevStack 支援的 QEMU
+**主機規格與限制：** 目前 GCP 專案禁止巢狀虛擬化；練習主機使用 DevStack 支援的 QEMU
 執行內層 VM，效能較慢。選用東京 `asia-northeast1-c` 的
 `e2-standard-2`（2 vCPU、8 GiB）與 40 GiB `pd-standard` 開機磁碟，
 使用 Ubuntu 24.04、既有私有子網與 Cloud NAT；不配置外部 IP、
 GPU 或服務帳戶。這是先驗證 OpenStack 供給功能的最低成本規格；
 若無法承載兩台 Linux 工作節點，再依實際資源使用量調整，不預稱跨節點完成。
 
-下列指令由控制節點向 GCP 建立專用
+#### 1. 建立練習主機
+
+**目的與影響：** 下列指令由控制節點向 GCP 建立專用
 `openstack-lab01`，將控制節點 `/tmp/compute-gpu01-a2264-ssh-keys-20261003`
 中的 `a2264` 公鑰送入新 VM 的 SSH 中繼資料；該檔案不是私鑰。
 VM 不設定自動停止時間，之後由使用者決定何時停止；開機磁碟仍會持續計費。
+
+**已執行指令：**
 
 ```bash
 gcloud compute instances create openstack-lab01 \
@@ -680,88 +750,123 @@ gcloud compute instances create openstack-lab01 \
   --quiet
 ```
 
-執行結果：`openstack-lab01` 建立成功，位於 `asia-northeast1-c`，
+**實際結果：** `openstack-lab01` 建立成功，位於 `asia-northeast1-c`，
 機型 `e2-standard-2`，內網 IP `10.146.0.4`，無外部 IP，狀態 `RUNNING`。
 沒有設定自動停止；40 GiB 磁碟低於 GCP 提醒的 200 GiB 效能門檻。
 
-東京既有 Cloud NAT 涵蓋這台 VM 使用的 `default` 子網。
+**網路結果：** 東京既有 Cloud NAT 涵蓋這台 VM 使用的 `default` 子網。
 新 VM 已實測能連線並解析 DNS，HTTPS 取得 Ubuntu 索引回傳 `200`；
 `apt-get update` 從東京 Ubuntu 鏡像站與安全更新站成功下載 `37.8 MB`
 套件索引，退出碼 0。套件來源可用。
 
-目前 GCP 只提供練習用主機，尚無 OpenStack API。
+#### 2. 取得 DevStack 並完成安裝
+
+**目的與影響：** GCP 提供練習用主機，OpenStack API 由 DevStack 安裝。
 DevStack 會在這台專用 VM 安裝並啟動 Keystone、Nova、Neutron 等服務，
 讓後續能用 OpenStack 建立與管理 VM；首次下載先用 VM 已有的 Git
 從 OpenStack 官方程式庫取得安裝腳本。下列指令由控制節點連到新 VM，
 只新增 `/home/a2264/devstack`，尚不安裝或啟動服務：
 
+**已執行指令：**
+
 ```bash
 sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 a2264@10.146.0.4 'git clone https://opendev.org/openstack/devstack /home/a2264/devstack'
 ```
 
-結果：退出碼 0，官方 DevStack 程式庫已下載到新 VM；
+**實際結果：** 退出碼 0，官方 DevStack 程式庫已下載到新 VM；
 修訂版 `64d59574473c148c3d855124ae5f79681854cd0a`。
 
-DevStack 的 `stack.sh` 需要 `local.conf` 才能以固定設定安裝。
+**安裝設定：** DevStack 的 `stack.sh` 需要 `local.conf` 才能以固定設定安裝。
 新 VM 的 `/home/a2264/devstack/local.conf` 已建立，使用 `10.146.0.4`
 作服務 IP、以 QEMU 執行內層 VM，並含在新 VM 產生的隨機服務密碼；
 建立結果為 `mode 600`，未把密碼寫入工作樹或終端輸出。
 [遮蔽副本](../project/openstack/local.conf.redacted)可用來核對設定；
 重建時須以新密碼取代副本中的 `<redacted>`。
 
-接著由新 VM 的一般使用者執行 `/home/a2264/devstack/stack.sh`。
+**目的與影響：** 接著由新 VM 的一般使用者執行 `/home/a2264/devstack/stack.sh`。
 它會從官方來源下載並安裝 OpenStack 與相依套件，修改這台專用 VM 的
 `/opt/stack`、`/etc` 服務設定並啟動服務；安裝輸出保存在 VM 上權限受限的
-`stack-install.log`。執行指令：
+`stack-install.log`。
+
+**已執行指令：**
 
 ```bash
 sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 a2264@10.146.0.4 'umask 077; cd /home/a2264/devstack && ./stack.sh > stack-install.log 2>&1'
 ```
 
-結果：終端沒有輸出，安裝日誌留在新 VM 的
+**實際結果：** 終端沒有輸出，安裝日誌留在新 VM 的
 `/home/a2264/devstack/stack-install.log`；`stack.sh` 退出碼 0。
 這表示安裝程序完成，OpenStack API 與 VM 供給仍待實際驗證。
 
-下一步在 `openstack-lab01` 使用 DevStack 附的 `openrc`。
+#### 3. 載入憑證並查詢 API
+
+**目的與影響：** 在 `openstack-lab01` 使用 DevStack 附的 `openrc`。
 它把 OpenStack API 位址與管理員登入資訊載入目前的 shell，
 讓稍後的 `openstack` 指令能向 API 驗證；`admin admin` 分別是使用者
 與專案名稱。`source` 只影響目前的 shell，不會變更服務或建立資源。
-執行指令：
+
+**已執行指令：**
 
 ```bash
 source ~/devstack/openrc admin admin
 ```
 
-結果：無終端輸出，shell 已返回提示字元；這只載入登入環境，
+**實際結果與判讀：** 無終端輸出，shell 已返回提示字元；這只載入登入環境，
 尚不能證明 OpenStack API 可用。
 
-`openstack` 是操作 OpenStack API 的命令列工具。
+**工具與目的：** `openstack` 是操作 OpenStack API 的命令列工具。
 在同一個 shell 列出 Keystone 登錄的服務名稱與類型，
 用來確認管理員憑證能向 API 查詢服務目錄；這是唯讀操作，
-查到服務也還不代表每個服務都能建立資源。執行指令：
+查到服務也還不代表每個服務都能建立資源。
+
+**已執行指令：**
 
 ```bash
 openstack service list -f table -c Name -c Type
 ```
 
-結果：Keystone 成功回傳 `keystone`、`nova`、`cinder`、`placement`、
-`glance`、`nova_legacy`、`neutron` 的名稱與類型。
-管理員憑證與 Keystone API 可用；其他服務的實際操作仍待驗證。
+**實際輸出：**
 
-先查 Glance 的映像名稱與狀態，確認是否已有可供建立 VM 的映像。
+```text
++-------------+----------------+
+| Name        | Type           |
++-------------+----------------+
+| keystone    | identity       |
+| nova        | compute        |
+| cinder      | block-storage  |
+| placement   | placement      |
+| glance      | image          |
+| nova_legacy | compute_legacy |
+| neutron     | network        |
++-------------+----------------+
+```
+
+**判讀：** 管理員憑證與 Keystone API 可用；其他服務的實際操作仍待驗證。
+
+**目的：** 查 Glance 的映像名稱與狀態，確認是否已有可供建立 VM 的映像。
 `image list` 是唯讀查詢；`-c` 只保留本次要核對的兩欄。
-執行指令：
+
+**已執行指令：**
 
 ```bash
 openstack image list -f table -c Name -c Status
 ```
 
-結果：Glance 回傳 `cirros-0.6.3-x86_64-disk`，狀態 `active`。
-映像已登錄且可供建機請求；是否能開機仍待實際 VM 驗證。
+**實際輸出：**
+
+```text
++--------------------------+--------+
+| Name                     | Status |
++--------------------------+--------+
+| cirros-0.6.3-x86_64-disk | active |
++--------------------------+--------+
+```
+
+**判讀：** 映像已登錄且可供建機請求；是否能開機仍待實際 VM 驗證。
 
 ### Neutron 網路：先分清網路、子網與路由
 
-在 GCP 建 VM 時會選 VPC 與子網；在 OpenStack，Nova 建 VM 時把
+**概念：** 在 GCP 建 VM 時會選 VPC 與子網；在 OpenStack，Nova 建 VM 時把
 虛擬網卡接到 Neutron 的 **port**，port 屬於某個 **network**。
 **subnet** 定義該網路可分配的 IP 範圍、閘道與 DHCP；
 **router** 才負責讓不同網路互通或連往外部網路；
@@ -770,15 +875,17 @@ openstack image list -f table -c Name -c Status
 [Neutron 官方網路概念](https://docs.openstack.org/neutron/latest/admin/intro-os-networking.html)
 說明了這些資源的關係。
 
-先查目前有哪些 network。`-f table` 使用表格；
+**目的：** 查目前有哪些 network。`-f table` 使用表格；
 `-c Name -c Status` 原本想只看名稱與狀態，但這個清單輸出
-沒有提供 `Status` 欄。指令是唯讀查詢，不建立網路或 VM：
+沒有提供 `Status` 欄。指令是唯讀查詢，不建立網路或 VM。
+
+**已執行指令：**
 
 ```bash
 openstack network list -f table -c Name -c Status
 ```
 
-實際輸出：
+**實際輸出：**
 
 ```text
 +---------+
@@ -790,23 +897,25 @@ openstack network list -f table -c Name -c Status
 +---------+
 ```
 
-輸出只有 `Name` 欄，列出 `public`、`shared`、`private`。
+**判讀：** 輸出只有 `Name` 欄，列出 `public`、`shared`、`private`。
 這證明 Neutron API 可以回傳三個網路物件；沒有狀態證據。
 三者目前也只是名稱：不能因為叫 `public` 就認定它接到外網，
 或因為叫 `shared` 就認定它真的開放其他專案使用。
 
-下一步查 `private` 的完整屬性。`network show` 會向 Neutron 讀取
+**下一步目的：** 查 `private` 的完整屬性。`network show` 會向 Neutron 讀取
 單一網路的詳細資料；`-f yaml` 讓欄位容易逐行閱讀。
 重點核對 `status`、`admin_state_up`、`router:external`、`shared`
 與 `subnets`：依序看運作狀態、管理設定是否啟用、是否標記為外部網路、
 是否開放其他專案使用，以及關聯的子網 ID。
-子網的 CIDR 與閘道還要另外查；這仍是唯讀操作，待執行：
+子網的 CIDR 與閘道還要另外查；這仍是唯讀操作。
+
+**待執行指令：**
 
 ```bash
 openstack network show private -f yaml
 ```
 
-驗收需有實際證據：OpenStack API 可用；建立映像、私有網路與子網、
+**後續驗收：** 需有實際證據：OpenStack API 可用；建立映像、私有網路與子網、
 安全規則及儲存卷；用 OpenStack 建立 CPU VM，確認開機、連線與磁碟讀寫；
 再驗證 VM 的停止、啟動與資源清理。保留可重跑設定、必要輸出、
 故障判斷及與現有 GCP 供給流程的差異。
@@ -839,4 +948,4 @@ CPU 與 GPU 逐格比較為 `validation=PASS`。
 - 單張 L4 只能驗證單 GPU 管理，不能當成多卡隔離或大型生產叢集經驗。
 - 本模組後續仍須交付可核對的跨節點 CPU 工作、可恢復的故障處理、
   乾淨節點部署，以及 OpenStack VM 供給與管理的實作證據。
-  OpenStack 目前只有流程對照，尚未實作。
+  OpenStack 已完成部署及部分唯讀 API 查詢，尚無 VM 供給與管理證據。

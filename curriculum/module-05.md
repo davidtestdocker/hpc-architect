@@ -9,6 +9,8 @@
 但當時 GPU VM 並未接受 Slurm 排程。
 本模組把節點設定寫成可重跑的 Ansible playbook，
 讓控制端能管理 GPU VM 的身分驗證、Slurm 設定和運算服務。
+此外，目標職缺列出的 OpenStack 能力須以實際供給與管理 VM 的結果證明，
+不能只靠 GCP 流程對照。
 
 目前已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
 控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
@@ -575,14 +577,14 @@ cpu_ms=504.605 gpu_kernel_ms=1.894 validation=PASS
 工作在 `compute-gpu01` 使用 NVIDIA L4 完成 200 輪計算；CPU 與 GPU
 結果逐格比對通過，輸出後返回控制節點提示字元。
 
-## 7. VM 供給方式與 OpenStack 的對照
+## 7. OpenStack 實作目標與 VM 供給對照
 
 ### 為什麼在這裡談 OpenStack
 
-目標職缺把 OpenStack 列為加分項。現在的叢集已用 GCP 建出兩台 VM，
-所以這裡要理解的是：若換一種雲平台供給節點，哪些建機與網路決策要重新確認，
-哪些 VM 內的 NFS、MUNGE、Slurm 配置仍可由 Ansible 接手。
-目前沒有可操作的 OpenStack 平台；這一節交付流程對照，不是部署或操作證據。
+目標職缺把 OpenStack 列為加分項。現在的叢集已用 GCP 建出兩台 VM；
+下方對照先說明兩種平台的供給責任，後續仍須在真正運作的 OpenStack
+練習環境建立並管理 VM，才能取得操作證據。
+目前只有流程對照，尚未部署或操作 OpenStack。
 
 **OpenStack 是一套開源雲端基礎設施軟體**，讓組織透過 API 或管理介面
 供給 VM、網路和儲存資源。用已做過的事理解：在 GCP 執行
@@ -619,8 +621,22 @@ Nova 的 **flavor** 類似目前選用的 VM 機型，描述一種可申請的�
 [Neutron 網路說明](https://docs.openstack.org/neutron/latest/admin/intro-os-networking.html)、
 [Cinder 磁碟說明](https://docs.openstack.org/cinder/latest/admin/volume-backed-image.html)
 及 [Keystone 身分說明](https://docs.openstack.org/keystone/latest/contributor/services.html)。
-目前沒有 OpenStack 平台操作輸出，因此這是供給流程與責任邊界的對照，
-不能列為 OpenStack 實作經驗。
+目前沒有 OpenStack 平台操作輸出，因此上述對照不能列為實作經驗。
+
+### 待完成的 OpenStack 實作
+
+在隔離的專用主機或 VM 建立單機 OpenStack 練習環境；
+可依[官方 DevStack 單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)
+評估，但須先確認可用硬體、虛擬化條件、網路與預算。
+DevStack 供開發和練習，不能代表生產叢集維運。
+環境確認後，才記錄實際可用的安裝與操作指令，不預寫尚未驗證的命令。
+
+驗收需有實際證據：OpenStack API 可用；建立映像、私有網路與子網、
+安全規則及儲存卷；用 OpenStack 建立 CPU VM，確認開機、連線與磁碟讀寫；
+再驗證 VM 的停止、啟動與資源清理。保留可重跑設定、必要輸出、
+故障判斷及與現有 GCP 供給流程的差異。
+沒有可分配的實體 GPU 時，這只證明 OpenStack 的基本供給與管理，
+不列為 OpenStack GPU VM 實作。
 
 ## 8. 單 GPU 配額下替換乾淨節點
 
@@ -732,4 +748,5 @@ gcloud compute instances create compute-gpu02 \
   尚未驗證乾淨環境的首次部署。
 - 單張 L4 只能驗證單 GPU 管理，不能當成多卡隔離或大型生產叢集經驗。
 - 本模組後續仍須交付可核對的跨節點 CPU 工作、可恢復的故障處理、
-  乾淨節點重建證據。OpenStack 目前只有供給流程對照，沒有平台操作證據。
+  乾淨節點重建，以及 OpenStack VM 供給與管理的實作證據。
+  OpenStack 目前只有流程對照，尚未實作。

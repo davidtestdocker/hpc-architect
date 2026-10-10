@@ -632,23 +632,22 @@ OpenStack 是安裝在這台主機上的資源管理服務。
 單機開發／練習環境；它不是 OpenStack 的另一個服務，也不代表生產部署。
 做法依[官方單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)。
 
-安裝時用到三個不同來源與用途的檔案：
+安裝時主要用到兩個檔案：
 
 | 檔案 | 來源與位置 | 何時做什麼 |
 |---|---|---|
 | [local.conf（密碼遮蔽副本）](../project/openstack/local.conf.redacted) | 實際檔案在新 VM 的 `/home/a2264/devstack/local.conf`；連結供安全閱讀 | DevStack 安裝前建立；指定主機 IP、內層 VM 使用 QEMU，以及服務驗證密碼。 |
 | [stack.sh（本次下載的官方版本）](https://opendev.org/openstack/devstack/src/commit/64d59574473c148c3d855124ae5f79681854cd0a/stack.sh) | 從 OpenStack 官方程式庫下載到新 VM 的 `/home/a2264/devstack/stack.sh` | 在新 VM 讀取 `local.conf`，安裝相依套件、寫入設定並啟動 OpenStack 服務。 |
-| [`write_local_conf.py`](../project/openstack/write_local_conf.py) | 本工作樹自行寫的輔助程式，不屬於 DevStack | 由控制 VM 透過 SSH 送到新 VM 執行，只在新 VM 產生 `local.conf`；不安裝或啟動服務。 |
 
 `local.conf` 中的 `ADMIN_PASSWORD` 用於 OpenStack 管理登入；
 `DATABASE_PASSWORD`、`RABBIT_PASSWORD`、`SERVICE_PASSWORD`
 供資料庫、訊息佇列及 OpenStack 服務之間驗證。
-輔助程式在新 VM 產生一組隨機密碼，供這四項練習環境設定共用，
+建立 `local.conf` 時在新 VM 產生一組隨機密碼，供這四項練習環境設定共用，
 讓 `stack.sh` 能在無人輸入密碼時完成安裝；密碼明文只存於新 VM
 權限 `600` 的 `local.conf`，不寫入工作樹或終端輸出。
 管理密碼也會供後續驗證 OpenStack API 時登入使用。
 
-順序是：Git 下載官方 DevStack → 輔助程式建立 `local.conf` →
+順序是：Git 下載官方 DevStack → 建立 `local.conf` →
 `stack.sh` 安裝並啟動服務 → 再由使用者驗證 OpenStack API 與供給操作。
 
 目前 GCP 專案禁止巢狀虛擬化；練習主機將用 DevStack 支援的 QEMU
@@ -704,18 +703,11 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 修訂版 `64d59574473c148c3d855124ae5f79681854cd0a`。
 
 DevStack 的 `stack.sh` 需要 `local.conf` 才能以固定設定安裝。
-控制節點的[設定產生程式](../project/openstack/write_local_conf.py)
-會透過 SSH 在新 VM 執行，於新 VM 的
-`/home/a2264/devstack/local.conf` 建立設定：使用 `10.146.0.4` 作服務 IP、
-以 QEMU 執行內層 VM，並在 VM 上隨機產生服務密碼。
-設定檔權限為 `600`，不把密碼寫入工作樹或終端輸出；既有檔案不會覆寫。
-執行指令：
-
-```bash
-sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 a2264@10.146.0.4 'python3 - /home/a2264/devstack 10.146.0.4' < project/openstack/write_local_conf.py
-```
-
-結果：`created /home/a2264/devstack/local.conf (mode 600)`，退出碼 0。
+新 VM 的 `/home/a2264/devstack/local.conf` 已建立，使用 `10.146.0.4`
+作服務 IP、以 QEMU 執行內層 VM，並含在新 VM 產生的隨機服務密碼；
+建立結果為 `mode 600`，未把密碼寫入工作樹或終端輸出。
+[遮蔽副本](../project/openstack/local.conf.redacted)可用來核對設定；
+重建時須以新密碼取代副本中的 `<redacted>`。
 
 接著由新 VM 的一般使用者執行 `/home/a2264/devstack/stack.sh`。
 它會從官方來源下載並安裝 OpenStack 與相依套件，修改這台專用 VM 的

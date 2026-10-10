@@ -891,10 +891,7 @@ openstack network show private -f yaml
 ```yaml
 admin_state_up: true
 id: fb5be63d-7658-453d-9c6d-66243bce244c
-mtu: 1442
 name: private
-port_security_enabled: true
-provider:network_type: geneve
 router:external: false
 shared: false
 status: ACTIVE
@@ -906,10 +903,6 @@ subnets:
 **判讀：** `status: ACTIVE` 表示這個 Neutron 網路物件處於啟用狀態；
 `admin_state_up: true` 表示管理設定允許使用。
 `router:external: false` 表示它不是外部網路，`shared: false` 表示未共享給其他專案。
-`port_security_enabled: true` 表示此網路的 port 預設套用安全控制，
-但這裡沒有查到實際安全群組規則。
-`provider:network_type: geneve` 是這個網路使用的虛擬封裝類型；
-`mtu: 1442` 是其封包大小限制，兩者都不證明 VM 已能連線。
 `subnets` 列出兩個關聯子網 ID，尚未提供各自的 IP 範圍、閘道與 IP 版本。
 
 **目的：** 列出 `private` 的子網，辨認 CPU VM 可使用的 IPv4 範圍。
@@ -938,12 +931,18 @@ openstack subnet list --network private -f table
 openstack subnet show private-subnet -f yaml
 ```
 
-**實際輸出重點：** `cidr: 10.0.0.0/26`、
-`allocation_pools: 10.0.0.2–10.0.0.62`、
-`gateway_ip: 10.0.0.1`、`enable_dhcp: true`、`dns_nameservers: []`。
+**實際輸出與意思：**
 
-**判讀：** DHCP 可從位址池分配 IPv4；`10.0.0.1` 是設定的閘道。
-接著讀取既有路由器，確認這個閘道連到外部網路；查詢不修改資源：
+| 欄位與實際值 | 白話意思與對 CPU VM 的影響 |
+|---|---|
+| `cidr: 10.0.0.0/26` | `CIDR` 定義整個子網。IPv4 共 32 位元，`/26` 表示前 26 位是網路部分，剩 6 位可變，所以共有 `2^6 = 64` 個位址：`10.0.0.0–10.0.0.63`。`.0` 是網路位址，`.63` 是廣播位址，不分配給 VM。 |
+| `allocation_pools: 10.0.0.2–10.0.0.62` | **位址池**是 Neutron 可自動分給新 VM 網卡的範圍；建一台 VM 時會從中取得一個可用位址，不是每台 VM 都拿到整段。 |
+| `gateway_ip: 10.0.0.1` | 這是子網的閘道；VM 要連往子網以外時，封包先送到這個位址。 |
+| `enable_dhcp: true` | 啟用 DHCP，讓 VM 開機時取得網路設定。 |
+| `dns_nameservers: []` | 子網沒有指定 DNS 伺服器；這個欄位不能證明 VM 能否解析套件庫網域。 |
+
+**下一步目的：** `10.0.0.1` 是否真的由路由器接到外部網路，
+要看路由器設定；下列查詢不修改資源：
 
 **已執行指令：**
 
@@ -951,13 +950,17 @@ openstack subnet show private-subnet -f yaml
 openstack router show router1 -f yaml
 ```
 
-**實際輸出重點：** `status: ACTIVE`；`interfaces_info` 將
-`private-subnet`（`c5eaf368-96f1-4c2c-aa82-1de2dd011270`）
-接到 `10.0.0.1`；`external_gateway_info` 有外部 IPv4 `172.24.4.9`，
-`enable_snat: true`。
+**實際輸出與意思：**
 
-**判讀：** 內部子網已接到設有 SNAT 的路由器。
-VM 實際能否下載套件，建好後直接從 VM 測試；不再逐項查網路欄位。
+| 欄位與實際值 | 白話意思 |
+|---|---|
+| `status: ACTIVE` | OpenStack 顯示路由器已啟用；這本身不是上網測試。 |
+| `interfaces_info`: `private-subnet` → `10.0.0.1` | `router1` 在 CPU VM 的子網上使用 `10.0.0.1`，所以前一條查到的閘道確實接在此路由器。 |
+| `external_gateway_info`: `172.24.4.9` | 路由器在 OpenStack **外部網路這一側**的 IPv4；它不是 GCP 公網 IP。 |
+| `enable_snat: true` | **SNAT（來源位址轉換）**已啟用：VM 的 `10.0.0.x` 封包經路由器往外送時，路由器會把來源位址改成 `172.24.4.9`。 |
+
+**封包路徑：** `CPU VM (10.0.0.x) → router1 (10.0.0.1) → SNAT (172.24.4.9) → OpenStack 外部網路`。
+上游是否真的通往套件庫尚未實測；CPU VM 建好後直接測試套件下載。
 
 ## 目前限制
 

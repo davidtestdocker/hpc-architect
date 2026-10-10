@@ -866,6 +866,11 @@ openstack image list -f table -c Name -c Status
 
 ### Neutron 網路：先分清網路、子網與路由
 
+**要解決的問題：** 接下來要用 OpenStack 建 CPU VM，並在 VM 內安裝套件。
+因此建機前要找出可接的網路、VM 能從哪個子網取得 IP，
+以及之後是否有通往套件來源的出口。
+這裡先查現有設定，再用實際 VM 驗證；看到設定值本身不代表已能上網。
+
 **概念：** 在 GCP 建 VM 時會選 VPC 與子網；在 OpenStack，Nova 建 VM 時把
 虛擬網卡接到 Neutron 的 **port**，port 屬於某個 **network**。
 **subnet** 定義該網路可分配的 IP 範圍、閘道與 DHCP；
@@ -875,7 +880,8 @@ openstack image list -f table -c Name -c Status
 [Neutron 官方網路概念](https://docs.openstack.org/neutron/latest/admin/intro-os-networking.html)
 說明了這些資源的關係。
 
-**目的：** 查目前有哪些 network。`-f table` 使用表格；
+**目的：** 先找出有哪些網路可作為 CPU VM 的候選連接目標。
+`-f table` 使用表格；
 `-c Name -c Status` 原本想只看名稱與狀態，但這個清單輸出
 沒有提供 `Status` 欄。指令是唯讀查詢，不建立網路或 VM。
 
@@ -902,12 +908,12 @@ openstack network list -f table -c Name -c Status
 三者目前也只是名稱：不能因為叫 `public` 就認定它接到外網，
 或因為叫 `shared` 就認定它真的開放其他專案使用。
 
-**目的：** 查 `private` 的完整屬性。`network show` 會向 Neutron 讀取
-單一網路的詳細資料；`-f yaml` 讓欄位容易逐行閱讀。
-重點核對 `status`、`admin_state_up`、`router:external`、`shared`
-與 `subnets`：依序看運作狀態、管理設定是否啟用、是否標記為外部網路、
-是否開放其他專案使用，以及關聯的子網 ID。
-子網的 CIDR 與閘道還要另外查；這仍是唯讀操作。
+**目的：** `private` 是候選網路。查它的屬性，是要知道這個網路是否啟用、
+是否只供目前專案使用，以及它連著哪些子網；建立 VM 時會指定網路，
+而子網決定 VM 可能拿到哪段 IP。
+`network show` 只向 Neutron 讀取設定；`-f yaml` 讓欄位逐行顯示。
+這一步核對 `status`、`admin_state_up`、`router:external`、`shared` 和 `subnets`。
+它不顯示子網的 IP 範圍或閘道，也不能證明 VM 能連到套件來源。
 
 **已執行指令：**
 
@@ -941,10 +947,11 @@ subnets:
 `mtu: 1442` 是其封包大小限制，兩者都不證明 VM 已能連線。
 `subnets` 列出兩個關聯子網 ID，尚未提供各自的 IP 範圍、閘道與 IP 版本。
 
-**下一步目的：** 查第一個關聯子網的詳細資料。
-`subnet show` 只讀取 Neutron 資料，不建立或修改網路；
-重點看 `ip_version`、`cidr`、`gateway_ip` 與 `enable_dhcp`，
-確認這個子網提供哪種 IP、可分配範圍、閘道及是否自動配發位址。
+**下一步目的：** `private` 關聯兩個子網。先查清單中的第一個，
+辨認它是 IPv4 還是 IPv6、VM 可分配的位址範圍、是否設定閘道與 DHCP；
+這些資訊用來判斷它是否適合稍後的 CPU VM，還要依結果處理另一個子網。
+即使子網設有閘道，仍須再核對路由與外部出口，並用 VM 實測套件下載。
+`subnet show` 只讀取 Neutron 設定，不建立或修改網路。
 
 **待執行指令：**
 

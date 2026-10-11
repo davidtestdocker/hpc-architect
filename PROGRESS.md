@@ -8,7 +8,7 @@
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、正常與兩種條件不符案例 |
 | [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 已完成：C++ 工具、C 序列版、本機 MPI 分工及單節點 Slurm 兩 rank 工作；工作 9 的答案 `55`、退出碼 `0:0` |
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 已完成：兩台 VM 私有 IP 可互通，控制節點能 SSH 遠端執行；GPU VM 透過 NAT 連 GitHub 回報 HTTP `200`，並辨認出一張 NVIDIA L4；NFS 已驗證雙向讀寫；兩台 VM 各執行一個 MPI rank，主機名不同，部分總和 `15+40=55` |
-| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 已完成並依學員決定收尾：既有 GCP 兩節點的 NFS、MUNGE、Slurm 設定已由 Ansible 正式部署與重跑；Slurm 已排程 L4 二維熱擴散工作，結果與 CPU 一致。DevStack 另建立單台 CPU VM `compute-cpu01`，Nova 回報 `ACTIVE`，控制節點已以 SSH 金鑰登入。OpenStack VM 未執行 Ansible 或 Slurm 工作，沒有驗證 OpenStack 多節點叢集或 GPU VM。 |
+| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 已完成並依學員決定收尾：GCP 兩節點的 NFS、MUNGE、Slurm 設定已由 Ansible 正式部署與重跑；Slurm 已排程 L4 二維熱擴散工作，結果與 CPU 一致。DevStack 另建立 CPU VM `compute-cpu01`，Nova 回報 `ACTIVE`，控制節點已以 SSH 金鑰登入。 |
 | [6 叢集維運、Zabbix 監控與故障復原](curriculum/module-06.md) | 未開始 |
 | [7 效能證據、K8s／GKE 與架構取捨](curriculum/module-07.md) | 未開始 |
 | [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 |

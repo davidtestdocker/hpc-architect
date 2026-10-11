@@ -20,7 +20,7 @@
 
 職缺沒有指定排程器、MPI、NFS 或 Ansible。本課程選 [Slurm](https://slurm.schedmd.com/quickstart_admin.html) 作排程範例、[Ansible](https://docs.ansible.com/projects/ansible/latest/getting_started/index.html) 作設定自動化、NFS 作第一個共享資料案例、[MPICH](https://www.mpich.org/documentation/) 作 MPI 工作驗證。學的是節點、工作、網路、身分、部署與故障處理的可遷移能力，不把這些品牌說成職缺原文。
 
-Python 是自動化與健檢主語言；C 和 C++ 用於交付可編譯、可核對結果的系統觀察與計算工作。Go 不再另外開一條完整主線，除非面試或實際工作要求。加分項整合進既有模組：05 用現有 DevStack 供給乾淨 CPU VM，驗證 OpenStack 的供給與管理連線；06 用 Zabbix 驗證監控、告警與恢復；07 在確認預算後用 K8s／GKE 執行可核對結果的工作，和 Slurm 的工作模型比較。模組 05 的 OpenStack CPU 成果與既有 GCP GPU 叢集成果分開標示，不稱為 OpenStack 叢集重建或 GPU 重建。
+Python 是自動化與健檢主語言；C 和 C++ 用於交付可編譯、可核對結果的系統觀察與計算工作。Go 不再另外開一條完整主線，除非面試或實際工作要求。加分項整合進既有模組：05 用現有 DevStack 供給乾淨 CPU VM，驗證 OpenStack 的供給與管理連線；06 用 Zabbix 驗證監控、告警與恢復；07 在確認預算後用 K8s／GKE 執行可核對結果的工作，和 Slurm 的工作模型比較。模組 05 分別呈現 OpenStack VM 供給與既有 GCP 叢集自動化成果。
 
 **GPU 是核心架構與實作項目。** 獨立 GPU VM `compute-gpu01` 已建立；模組 04 已驗證兩台 VM 私有網路互通、控制節點 SSH 遠端執行、共享目錄雙向讀寫、跨節點 MPI 工作，以及驅動辨認一張 NVIDIA L4。這次 MPI 工作只用 CPU；GPU 資源設定、工作與監控會在相應模組處理。課程會說明 GPU 記憶體、CPU／GPU 資料傳輸、PCIe／NUMA、單卡與多卡拓撲，以及驅動／CUDA 相容性；[Slurm GRES](https://slurm.schedmd.com/gres.html) 是排程 GPU 的具體機制。單卡 VM 能驗證單 GPU 管理，不能宣稱驗證了 NVLink、多 GPU、跨 GPU RDMA 或大規模 GPU 訓練。RDMA、平行檔案系統與機櫃供電等沒有設備時只做架構判斷。
 

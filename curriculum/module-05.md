@@ -958,34 +958,6 @@ openstack subnet show private-subnet -f yaml
 | `enable_dhcp: true` | 啟用 DHCP，讓 VM 開機時取得網路設定。 |
 | `dns_nameservers: []` | 建立 VM 前，子網沒有指定 DNS 伺服器。 |
 
-**下一步目的：** `10.0.0.1` 是否真的由路由器接到外部網路，
-要看路由器設定；下列查詢不修改資源：
-
-**已執行指令：**
-
-```bash
-openstack router show router1 -f yaml
-```
-
-**實際輸出與意思：**
-
-| 欄位與實際值 | 白話意思 |
-|---|---|
-| `status: ACTIVE` | OpenStack 顯示路由器已啟用；這本身不是上網測試。 |
-| `interfaces_info`: `private-subnet` → `10.0.0.1` | `router1` 在 CPU VM 的子網上使用 `10.0.0.1`，所以前一條查到的閘道確實接在此路由器。 |
-| `external_gateway_info`: `172.24.4.9` | 路由器在 OpenStack **外部網路這一側**的 IPv4；它不是 GCP 公網 IP。 |
-| `enable_snat: true` | **SNAT（來源位址轉換）**已啟用：VM 的 `10.0.0.x` 封包經路由器往外送時，路由器會把來源位址改成 `172.24.4.9`。 |
-
-**封包路徑：** `CPU VM (10.0.0.x) → router1 (10.0.0.1) → SNAT (172.24.4.9) → OpenStack 外部網路`。
-
-**`public` 網路是什麼：** 這套 DevStack 另有一條名為 `public` 的
-OpenStack 虛擬網路，使用 `172.24.4.0/24` 這段位址；
-也就是 `172.24.4.x` 這批地址，前面查到的路由器外側地址
-`172.24.4.9` 就在其中。名稱 `public` 指它在 OpenStack 裡扮演
-外部網路，這些私有位址本身不是 GCP 公網 IP。
-DevStack 的[預設網路說明](https://static.opendev.org/docs/devstack/latest/networking.html)
-也列出此浮動 IP 網段。
-
 ### 準備 Ubuntu VM 開機映像
 
 **目的與影響：** Glance 目前只有 CirrOS；它是小型連線測試系統，
@@ -1090,7 +1062,7 @@ openstack hypervisor stats show
 
 **下一步目的與影響：** Ubuntu 映像是 `admin` 專案的私有映像；
 已核對的 `private` 網路屬於 `demo` 專案，且 `shared: false`。
-CPU VM 要接上這個已有路由器和 SNAT 的網路，需在 `demo` 專案建機，
+CPU VM 要接上這個網路，需在 `demo` 專案建機，
 因此先讓官方 Ubuntu 映像對本套 OpenStack 的其他專案可見。
 `--public` 只改 Glance 映像的專案可見範圍，不會公開 GCP VM 的網路入口，
 不複製映像或建立 VM；日後可改回 `--private`。
@@ -1269,91 +1241,13 @@ openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8
 `10.0.0.62` 是它在 OpenStack `private` 網路上的固定 IP；
 後續從主控台觀察客體開機，並從控制節點測試 SSH 登入。
 
-**目的與影響：** 為了從 `openstack-lab01` 連到 VM，當時先試用
-OpenStack `public` 網路的浮動 IP。這個網路使用 `172.24.4.0/24`；
-`floating ip create` 由 Neutron 從可用位址中分配一個，不能從網段預先推定尾數。
-下列指令在 `demo` 專案新增一個浮動 IP，不修改 GCP 公網 IP。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-openstack floating ip create public
-```
-
-**實際輸出重點：** `floating_ip_address=172.24.4.105`、
-`id=02d49408-c90a-42ff-958c-54350d272ad1`、
-`fixed_ip_address=None`、`port_id=None`、`status=DOWN`。
-
-**判讀：** Neutron 實際分配的是 `172.24.4.105`；此時還沒綁定 VM。
-
-**目的與影響：** 將浮動 IP 對應到 `compute-cpu01` 的私有位址 `10.0.0.62`。
-`--fixed-ip-address` 明確指定 VM 網卡上的 IPv4；不重啟 VM。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-openstack server add floating ip --fixed-ip-address 10.0.0.62 compute-cpu01 172.24.4.105
-```
-
-**實際結果：** 命令沒有終端輸出並返回提示字元；下一條讀取綁定狀態。
-
-**管理路徑檢查：** 讀取剛綁定的浮動 IP `172.24.4.105`，
-確認 `fixed_ip_address` 是否為 VM 的 `10.0.0.62`、`port_id` 是否已有
-網卡、`router_id` 是否有路由器，以及 `status` 的值。
-這是 OpenStack API 的唯讀查詢；不修改 VM、網路或主機檔案。
-確認對應關係後，再查宿主機到這個位址的路由。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-openstack floating ip show 172.24.4.105 -f yaml
-```
-
-**實際輸出重點：** `floating_ip_address=172.24.4.105`、
-`fixed_ip_address=10.0.0.62`、`status=ACTIVE`；
-`port_id=2dec1e5b-37d0-4a1a-89dd-d80b241542dd`，
-`port_details.device_id=24591ad4-7b29-44e2-bed6-3e705714d244`，
-`port_details.status=ACTIVE`，
-`router_id=8f73c572-0cdc-4606-844c-a2b9579fef1e`。
-
-**判讀：** 浮動 IP 已對應到 `compute-cpu01` 的私有 IPv4，
-Neutron 也顯示 VM 網卡和路由器關聯。
-
-**下一步目的與影響：** 查看 `openstack-lab01` 若連向
-`172.24.4.105`，Linux 會選哪張介面、哪個來源 IP。
-`ip route get` 只查本機路由決策，不送封包、不改設定。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-ip route get 172.24.4.105
-```
-
-**實際輸出：**
-
-```text
-172.24.4.105 via 10.146.0.1 dev ens4 src 10.146.0.4 uid 1001
-    cache
-```
-
-**輸出怎麼讀：** `172.24.4.105` 是封包的**目的地**，也就是 VM 的
-浮動 IP；`src 10.146.0.4` 是**寄件者** `openstack-lab01` 的 GCP 網卡 IP；
-`via 10.146.0.1` 是封包先交給的**下一站路由器**，不是把目的地
-改成 `10.146.0.1`；`dev ens4` 表示從 GCP 網卡送出。
-
-**路由判讀：** 依目前路由表，主機連 `172.24.4.105` 時會選
-`ens4`，以 `10.146.0.4` 為來源，下一跳為 GCP 閘道 `10.146.0.1`。
-`ip route get` 顯示的是核心的路由選擇，沒有實際送出封包。
-因此這台主機目前不會經本機 DevStack 的 `public` 網路連到該浮動 IP。
-
-**下一步目的：** 主機連浮動 IP 時選了 GCP 閘道，接著查看主機內是否有
-連到 VM 私有網路 `10.0.0.0/26` 的介面。Linux **網路命名空間**
-是在同一台主機上隔出獨立網卡、IP 與路由的環境。
-OpenStack 的 OVN metadata 服務會為 VM 網路建立名為
-`ovnmeta-<網路 UUID>` 的命名空間，供 VM 取得開機設定；
-它也有連到該網路的介面。先列出這台主機現有的命名空間。
+**管理路徑：** `compute-cpu01` 的 `10.0.0.62` 位於 OpenStack 的
+`private` 網路。控制節點從承載 VM 的 `openstack-lab01` 進入這個網路。
+Linux 網路命名空間是在同一台主機上隔出獨立網卡、IP 與路由的環境；
+OVN metadata 服務會為 VM 網路建立 `ovnmeta-<網路 UUID>` 命名空間，
+並在其中配置連到該網路的介面。先列出宿主機上的命名空間。
 [Neutron metadata 設計](https://docs.openstack.org/neutron/latest/contributor/internals/ovn/metadata_api.html)
-說明了這個介面的來源。
+說明這個介面的來源。
 
 **已執行指令｜在 `openstack-lab01`：**
 
@@ -1415,24 +1309,28 @@ openstack security group rule create --ingress --ethertype IPv4 --protocol tcp -
 **判讀：** `demo` 的 `default` 安全群組已加入限定來源的 SSH 入站規則；
 若要撤銷，可依上面的規則 ID 刪除。
 
-**安全群組附帶狀態：** 先前為浮動 IP 路徑執行過下列規則建立命令；
-它同樣屬於此 `default` 群組，來源範圍是 `172.24.4.0/24`。
-最後的 SSH 登入走 `10.0.0.2/32` 規則。
+**下一步測試：** 直接從 `ovnmeta` 命名空間（來源 `10.0.0.2`）
+連 `compute-cpu01` 的 `10.0.0.62:22`。
+這次只測 SSH 服務是否接受 TCP 連線；`PreferredAuthentications=none`
+不嘗試登入，`ConnectTimeout=5` 限制等待時間，不修改 VM。
+
+**已執行指令｜在 `openstack-lab01`：**
 
 ```bash
-openstack security group rule create --ingress --ethertype IPv4 --protocol tcp --dst-port 22 --remote-ip 172.24.4.0/24 859e6514-e673-47df-aacc-7f10e3ee13b5
+sudo ip netns exec ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c ssh -o BatchMode=yes -o ConnectTimeout=5 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PreferredAuthentications=none ubuntu@10.0.0.62 true
 ```
 
-**實際輸出重點：** 規則 ID `4b34c6d7-cc7e-4412-8014-789bdaeebe1b`；
-`protocol=tcp`、`port_range_min=22`、`port_range_max=22`、
-`remote_ip_prefix=172.24.4.0/24`。
+**實際輸出：**
 
-**下一步目的與影響：** 在承載 VM 的 `openstack-lab01` 直接列出
-libvirt 管理的虛擬機名稱與執行狀態，辨認 `compute-cpu01` 對應的
-虛擬機是否仍在運行。`virsh` 是宿主機管理 QEMU VM 的工具；
-`list --all` 包含運行中及已停止的虛擬機，只讀取狀態，
-不重啟 VM、不更改 OpenStack 資源。結果中的名稱可供下一步
-直接查看該 VM 的主控台或執行狀態。
+```text
+ssh: connect to host 10.0.0.62 port 22: Connection refused
+```
+
+**判讀：** VM 的 TCP 22 拒絕連線；下一步從序列主控台查看客體的 SSH 服務狀態。
+
+**下一步目的：** `virsh` 在宿主機管理 QEMU VM。
+先列出 libvirt 的 VM 名稱，找出要接入序列主控台的實例；
+`list --all` 只讀取名稱與狀態，不修改 VM。
 
 **已執行指令｜在 `openstack-lab01`：**
 
@@ -1530,6 +1428,14 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 \
 
 **判讀：** 控制節點已經透過 `openstack-lab01` 的命名空間，
 以 `ubuntu` 帳號和既有 SSH 金鑰完整登入 OpenStack CPU VM。
+
+**最後使用的連線路徑：** 控制節點先以 SSH 連到 GCP 私有位址
+`10.146.0.4`（`openstack-lab01`）；宿主機上的 `ProxyCommand` 再用
+`sudo ip netns exec` 進入 `private` 網路的 `ovnmeta` 命名空間，
+由 `nc` 連向 VM 的 `10.0.0.62:22`。這段連線的來源位址是命名空間的
+`10.0.0.2`，因此命中安全群組允許 `10.0.0.2/32` 連 TCP 22 的規則；
+VM 內啟動的 `ssh.service` 接受連線，再用已登錄的公鑰核對控制節點私鑰。
+本次管理連線使用 VM 的私有 IP。
 
 ## 成果範圍
 

@@ -1104,6 +1104,214 @@ openstack flavor list -f table -c Name -c VCPUs -c RAM -c Disk
 `m1.small` 的 1 vCPU、2 GiB RAM 與 20 GiB 磁碟是本次 CPU VM 的候選規格，
 建機成功及系統可用仍須實測。
 
+**下一步目的與影響：** `flavor list` 只列出可選的 VM 規格；
+建立 `m1.small` 前，向 Nova 查目前運算主機回報的 vCPU、記憶體和本機磁碟總量及已用量。
+這些是 OpenStack 的資源統計，不等於 VM 一定能排進主機，
+但可先判斷是否明顯沒有餘量。這是唯讀 API 查詢，不修改 VM 或服務。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack hypervisor stats show
+```
+
+**實際輸出重點：** 命令先提示 `This command is deprecated.`，
+接著回報一台運算主機：`vcpus=2`、`vcpus_used=0`、
+`memory_mb=7934`、`free_ram_mb=7422`、`disk_available_least=28` GiB、
+`running_vms=0`。
+
+**判讀：** Nova 的統計有空間安排 1 vCPU、2 GiB RAM、20 GiB 磁碟的
+`m1.small`；舊命令雖有停用警告，本次仍成功返回資料。
+統計不等於 VM 已建成，也不能保證開機成功。
+
+**下一步目的與影響：** Ubuntu 映像是 `admin` 專案的私有映像；
+已核對的 `private` 網路屬於 `demo` 專案，且 `shared: false`。
+CPU VM 要接上這個已有路由器和 SNAT 的網路，需在 `demo` 專案建機，
+因此先讓官方 Ubuntu 映像對本套 OpenStack 的其他專案可見。
+`--public` 只改 Glance 映像的專案可見範圍，不會公開 GCP VM 的網路入口，
+不複製映像或建立 VM；日後可改回 `--private`。
+指令依 [OpenStack CLI 的 image set 說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/image/v2/index.html)。
+
+**已執行指令｜在 `openstack-lab01` 的 admin 專案 shell：**
+
+```bash
+openstack image set --public ubuntu-24.04-minimal-20260905
+```
+
+**實際結果與判讀：** 終端沒有輸出，也沒有回報錯誤；
+Glance 接受了可見範圍變更請求。是否能從 `demo` 專案讀到映像，
+留待切換專案後核對。
+
+**下一步目的與影響：** DevStack 的 `admin` 使用者同時屬於 `admin` 與
+`demo` 專案。`openrc` 第一個 `admin` 是登入使用者，第二個 `demo` 是
+本次 OpenStack 指令操作的專案；`source` 只改目前 shell 的登入環境變數，
+不修改檔案、服務或資源。切換後，後續建機才會歸屬已有 `private` 網路的
+`demo` 專案。依 [DevStack 多節點練習文件](https://docs.openstack.org/devstack/latest/guides/multinode-lab.html)
+確認使用者與專案關係。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+source ~/devstack/openrc admin demo
+```
+
+**實際結果與判讀：** 沒有終端輸出並返回提示字元；
+目前 shell 已載入 `admin` 使用者對 `demo` 專案的登入環境，
+仍需用後續 API 操作確認可用。
+
+**下一步目的與影響：** Ubuntu 雲端映像預計在開機時透過 `cloud-init`
+接收 SSH 公鑰，讓 Ansible 從控制節點登入新 VM。
+先查目前帳號已有的 OpenStack key pair 名稱，避免建立重複資源；
+OpenStack 保存的是公鑰，私鑰應留在可登入 VM 的管理端。
+這是唯讀查詢，不顯示私鑰，也不修改 VM。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack keypair list
+```
+
+**實際結果與判讀：** 沒有列出任何 key pair，
+目前需先向 OpenStack 登錄公鑰，之後才能指定它供新 VM 開機時使用。
+
+**下一步目的與影響：** 控制節點已用 `/home/a2264/.ssh/hpc_gpu_ed25519`
+登入其他叢集節點，其公鑰指紋為
+`SHA256:AMM2zBstxpEzT/150e/m12tGzgOEC6dt+pQ51rgWpWw`。
+在 `openstack-lab01` 查看 `a2264` 帳號允許登入的公鑰指紋，
+確認其中是否正是控制節點這把金鑰；若相同，後續只需將該公鑰登錄到
+OpenStack，不必複製或另建私鑰。`ssh-keygen -lf` 只讀公鑰並顯示指紋，
+不顯示私鑰或修改檔案。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+ssh-keygen -lf /home/a2264/.ssh/authorized_keys
+```
+
+**實際輸出重點：** `authorized_keys` 有三把公鑰；
+其中 `a2264@instance-20260923-104239` 的指紋為
+`SHA256:AMM2zBstxpEzT/150e/m12tGzgOEC6dt+pQ51rgWpWw`，
+與控制節點的既有公鑰一致。
+
+**判讀：** 這把公鑰可供新 VM 登錄，對應私鑰仍只留在控制節點。
+另外兩把屬於其他登入來源，不一併匯入 OpenStack。
+
+**下一步目的與影響：** 從 `openstack-lab01` 自己的
+`/home/a2264/.ssh/authorized_keys` 擷取含控制節點註記的那一行，
+寫成同一台主機的 `/home/a2264/.ssh/openstack-cpu-controller.pub`。
+`grep -F` 以固定字串比對註記，`>` 將匹配的公鑰寫入目標檔；
+只新增或取代這份公鑰檔，不變更 `authorized_keys`、私鑰或 OpenStack 資源。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+grep -F 'a2264@instance-20260923-104239' /home/a2264/.ssh/authorized_keys > /home/a2264/.ssh/openstack-cpu-controller.pub
+```
+
+**實際結果與判讀：** 指令沒有終端輸出並返回提示字元；
+符合已找到匹配公鑰並寫入新檔的情況。OpenStack 尚未登錄這把金鑰。
+
+**下一步目的與影響：** 在目前 `admin` 使用者、`demo` 專案的 shell，
+由 Nova 讀取 `openstack-lab01` 上的
+`/home/a2264/.ssh/openstack-cpu-controller.pub`，
+登錄名為 `openstack-cpu-controller` 的 key pair。
+`--public-key` 指定只匯入公鑰；Nova 不會取得控制節點的私鑰。
+這會新增 OpenStack 金鑰紀錄，但尚不建 VM、也不改 GCP 資源。
+指令依 [OpenStack CLI 的 keypair create 說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/compute/v2/index.html)。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack keypair create --public-key /home/a2264/.ssh/openstack-cpu-controller.pub openstack-cpu-controller
+```
+
+**實際輸出重點：** `name` 與 `id` 都是 `openstack-cpu-controller`，
+`type=ssh`，OpenStack 回報指紋
+`5a:2a:a3:fa:f2:1e:79:1b:b7:e1:d6:0d:f9:a0:d1:c8`。
+
+**判讀：** Nova 已登錄這份公鑰；指紋顯示格式與前面
+`ssh-keygen` 的 SHA-256 格式不同，兩者來自同一份已核對的公鑰檔。
+目前尚未將 key pair 指定給任何新 VM。
+
+**下一步目的與影響：** 新 VM 即使有登入金鑰，若網卡的安全群組
+沒有允許 SSH 入站，控制節點仍無法登入。安全群組是套用在 VM 網卡上的
+封包規則集合。不同專案可以各有一個同名 `default` 群組，
+先用 `--project demo` 找出這次應使用的群組 ID，
+再依 ID 讀取入站與出站規則。這一步是唯讀查詢，不改動防火牆。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack security group list --project demo
+```
+
+**實際輸出重點：** `demo` 專案 ID 為
+`4be84dab90684063847d60ee97acca4e`；其 `default` 安全群組 ID 為
+`859e6514-e673-47df-aacc-7f10e3ee13b5`，`Shared=False`。
+
+**判讀：** 已辨認這次 VM 要用的群組，後續用 ID 指定，
+避免和其他專案的同名群組混淆；目前還沒確認群組內的規則。
+
+**下一步目的與影響：** 讀取這個 `demo` 專案群組的規則，
+核對有無 TCP 22 入站，以及 IPv4 出站能否連套件來源。
+這是唯讀 API 查詢，不建立或修改規則。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack security group rule list 859e6514-e673-47df-aacc-7f10e3ee13b5
+```
+
+**實際輸出重點：** IPv4 出站規則允許 `0.0.0.0/0`，
+協定未限制；IPv4 入站規則的來源安全群組為
+`859e6514-e673-47df-aacc-7f10e3ee13b5`，協定未限制。
+另有同樣模式的 IPv6 出站與群組內入站規則；沒有明列 TCP 22 入站。
+
+**判讀：** IPv4 出站不受這個安全群組阻擋，但套件下載仍須等 VM
+開機後實測路由與 DNS。既有 IPv4 入站規則只讓同群組的 VM 互通；
+從練習環境的外部網段連入新 VM 時，還需要 SSH 入站規則。
+
+**下一步目的與影響：** 在 `demo` 專案的 `default` 安全群組新增一條
+IPv4 TCP 22 入站規則，來源限於既有 OpenStack 練習環境的
+`172.24.4.0/24` 外部子網，供之後從 `openstack-lab01` 經該子網登入
+新 VM。這會影響套用此群組的 `demo` VM 網卡；目前查得沒有執行中的
+OpenStack VM。它不建 VM、不修改 GCP 防火牆；如需撤銷，可按建立結果
+回報的規則 ID 刪除。`--remote-ip` 限制來源，`--dst-port` 指定目的埠；
+指令語法依 [OpenStack CLI 安全群組規則說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/network/v2/index.html)。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack security group rule create --ingress --ethertype IPv4 --protocol tcp --dst-port 22 --remote-ip 172.24.4.0/24 859e6514-e673-47df-aacc-7f10e3ee13b5
+```
+
+**實際輸出重點：** 新規則 ID 為
+`4b34c6d7-cc7e-4412-8014-789bdaeebe1b`；
+`security_group_id=859e6514-e673-47df-aacc-7f10e3ee13b5`，
+`direction=ingress`、`ether_type=IPv4`、`protocol=tcp`、
+`port_range_min=22`、`port_range_max=22`，
+`remote_ip_prefix=172.24.4.0/24`。
+
+**判讀：** `demo` 的 `default` 安全群組已允許該外部子網向套用此群組的
+VM 發起 SSH 連線。這只確認規則建立；VM 的開機、位址與實際 SSH
+通路仍須在建機後驗證。
+
+**下一步目的與影響：** 以已匯入的 Ubuntu Minimal 映像建立一台
+`compute-cpu01`，採用 `m1.small`（1 vCPU、2048 MiB RAM、20 GiB 磁碟）。
+它將接到 `demo` 專案既有的 `private` 網路，使用已登錄的
+`openstack-cpu-controller` 公鑰與剛設定 SSH 入站的安全群組。
+Nova 在 `openstack-lab01` 內配置虛擬磁碟、網卡與 QEMU VM，
+占用該 GCP 主機資源；不另建 GCP VM，但運作期間持續消耗主機容量。
+`--wait` 讓 CLI 等待建機結果；如要復原，可按 VM 名稱刪除該 OpenStack VM，
+刪除會失去其本機磁碟資料。選項依
+[OpenStack CLI server create 說明](https://docs.openstack.org/python-openstackclient/2025.1/cli/command-objects/server.html)。
+
+**待執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8d4646f --network private --key-name openstack-cpu-controller --security-group 859e6514-e673-47df-aacc-7f10e3ee13b5 --wait compute-cpu01
+```
+
 ## 目前限制
 
 - 尚未由 Slurm 跨節點執行 CPU 工作。

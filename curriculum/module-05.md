@@ -1162,10 +1162,11 @@ source ~/devstack/openrc admin demo
 **金鑰如何進入新 VM：** `cloud-init` 是 Ubuntu 雲端映像內的開機設定工具。
 新 VM 第一次啟動時，它會讀取 OpenStack 提供的設定資料，
 把指定的 SSH 公鑰放進 VM 登入帳號的 `authorized_keys`。
-這次要用的是**控制節點現有 SSH 私鑰所對應的公鑰**：
-控制節點保留私鑰，OpenStack 只登錄公鑰；建 VM 時指定登錄名稱，
-OpenStack 才知道要提供哪一把公鑰。之後控制節點持私鑰嘗試 SSH 登入，
-VM 用已安裝的公鑰核對身分。Ansible 將沿用這條 SSH 通路；
+**本次流程：控制節點持有私鑰 → OpenStack 保存對應公鑰 →
+新 VM 開機時由 `cloud-init` 安裝公鑰 → 控制節點才能嘗試 SSH 登入。**
+建 VM 時指定已登錄的金鑰名稱，OpenStack 才知道要提供哪一把公鑰；
+VM 用已安裝的公鑰核對控制節點持有的私鑰。
+Ansible 將沿用這條 SSH 通路；
 能否實際登入仍須等 VM 建立後驗證。
 
 **下一步目的與影響：** 先用 `openstack keypair list` 查目前帳號已有的

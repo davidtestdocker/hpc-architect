@@ -672,8 +672,8 @@ Neutron 提供網路；Ansible 不負責建立 VM。
 這個網址使用 `openstack-lab01` 的 **GCP 私有 IP**，
 瀏覽器須能連入該私有網路才打得開。
 
-**畫面操作：** 開啟 Horizon、以 DevStack 的 `admin` 使用者登入並選擇
-`admin` 專案後，可依下表查看這次會用到的資源。
+**畫面操作：** 開啟 Horizon、以 DevStack 的 `admin` 使用者登入後，
+可依下表查看這次會用到的資源；截圖當時選取的是 `demo` 專案。
 選單名稱參照 [Horizon 官方使用說明](https://docs.openstack.org/horizon/latest/en_GB/user/log-in.html)；
 密碼留在 VM 上的 `local.conf`，不記入本文件。
 
@@ -685,8 +685,14 @@ Neutron 提供網路；Ansible 不負責建立 VM。
 | `Project → Compute → Instances` | 建立 CPU VM，之後查看狀態與 IP | `openstack server create/list` |
 | `Admin → Compute → Flavors` | 查看 CPU、記憶體與磁碟規格 | `openstack flavor list` |
 
-`Create Image`、`Launch Instance` 等按鈕會真的建立資源；
-瀏覽器連通性與實際登入尚未驗證，故表中是操作路徑，不是已完成結果。
+**實際結果：** [Horizon 網路清單截圖](../project/openstack/openstack.png)
+顯示瀏覽器已開啟 `http://127.0.0.1:18080/dashboard/admin/networks/`，
+右上角登入使用者為 `admin`，清單列出 `public`、`shared`、`private`；
+`private` 顯示 `10.0.0.0/26` 子網。這證明瀏覽器能連到 Horizon 並查看網路清單，
+不代表已建立內層 CPU VM。`Create Image`、`Launch Instance` 等按鈕會真的建立資源；
+表中其他畫面仍是操作路徑，不是已完成結果。
+
+![Horizon 管理員網路清單，顯示 public、shared、private 網路](../project/openstack/openstack.png)
 
 **從自己電腦開啟：** `10.146.0.4` 是私有 IP，外部瀏覽器直連會失敗。
 由自己電腦的終端建立 SSH 轉接後，瀏覽器改開

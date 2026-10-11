@@ -16,7 +16,8 @@
 **目前成果：** 已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
 控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
 並在該分區執行二維熱擴散工作，使用 L4 算出與 CPU 一致的結果。
-現有結果仍未驗證 OpenStack 供給的乾淨 CPU VM 與 Ansible 首次部署。
+OpenStack 已建立 `compute-cpu01`，Nova 回報 `ACTIVE`；
+其 SSH、套件來源與 Ansible 首次部署仍待驗證。
 
 ## 管理位置與本次部署範圍
 
@@ -1314,10 +1315,42 @@ Nova 在 `openstack-lab01` 內配置虛擬磁碟、網卡與 QEMU VM，
 刪除會失去其本機磁碟資料。選項依
 [OpenStack CLI server create 說明](https://docs.openstack.org/python-openstackclient/2025.1/cli/command-objects/server.html)。
 
-**待執行指令｜在 `openstack-lab01`：**
+**已執行指令｜在 `openstack-lab01`：**
 
 ```bash
 openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8d4646f --network private --key-name openstack-cpu-controller --security-group 859e6514-e673-47df-aacc-7f10e3ee13b5 --wait compute-cpu01
+```
+
+**實際輸出重點：** `name=compute-cpu01`、
+`id=24591ad4-7b29-44e2-bed6-3e705714d244`、`status=ACTIVE`、
+`power_state=Running`、`host=openstack-lab01`、
+`addresses=private=10.0.0.62`（另有 IPv6 位址）。
+映像是 `ubuntu-24.04-minimal-20260905`，規格為
+1 vCPU、2048 MiB RAM、20 GiB 磁碟；
+`key_name=openstack-cpu-controller`、`security_groups=default`、
+`project_id=4be84dab90684063847d60ee97acca4e`。
+
+**判讀：** Nova 已在 `openstack-lab01` 建立並啟動這台內層 VM。
+`10.0.0.62` 是它在 OpenStack `private` 網路上的固定 IP；
+`ACTIVE` 還不能證明 Ubuntu 已完成開機、`cloud-init` 已安裝公鑰，
+或從管理端能 SSH 登入。
+
+**浮動 IP 的用途：** `10.0.0.62` 位於 VM 的私有子網。
+要從 `openstack-lab01` 的 OpenStack 外部網路連進去，
+可先從 `public` 網路取得一個浮動 IP，再把它對應到 VM 的私有 IP。
+這裡的 `public` 是 OpenStack 內的外部網路名稱，
+其 `172.24.4.0/24` 位址不是 GCP 公網 IP。
+
+**下一步目的與影響：** 在目前 `demo` 專案分配一個 OpenStack 浮動 IP。
+它占用練習環境 `public` 網路的一個位址；建立後尚未連到 VM，
+也不新增 GCP VM、GCP 公網 IP 或 GCP 防火牆規則。
+確認不再使用後，可按回報的浮動 IP ID 釋放。
+指令依 [OpenStack CLI 浮動 IP 說明](https://docs.openstack.org/python-openstackclient/2025.2/cli/command-objects/floating-ip.html)。
+
+**待執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack floating ip create public
 ```
 
 ## 目前限制
@@ -1325,5 +1358,5 @@ openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8
 - 尚未由 Slurm 跨節點執行 CPU 工作。
 - NFS、MUNGE 與 Slurm playbook 已在既有兩台 VM 執行；
   尚未驗證乾淨環境的首次部署。
-- OpenStack CPU VM、套件來源、Ansible 首次部署及 CPU 工作尚未驗證。
+- OpenStack CPU VM 已建立；SSH、套件來源、Ansible 首次部署及 CPU 工作尚未驗證。
   現有 DevStack 不能供給 GPU VM。

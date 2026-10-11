@@ -1032,6 +1032,69 @@ curl -fL --output /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img h
 **判讀：** Ubuntu 映像已下載到 `openstack-lab01`；
 還沒確認檔案校驗值，也尚未匯入 Glance。
 
+**下一步目的與影響：** 從控制節點登入 `openstack-lab01`，
+接續核對已下載的 Ubuntu 映像。SSH 只建立互動連線，
+不修改 VM 檔案或 OpenStack 資源；`--tunnel-through-iap` 經 GCP IAP 連到沒有公網 IP 的 VM。
+
+**已執行指令｜控制節點 `instance-20260923-104239`：**
+
+```bash
+gcloud compute ssh a2264@openstack-lab01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c --tunnel-through-iap
+```
+
+**實際結果：** 登入後出現 `a2264@openstack-lab01:~$` 提示字元。
+**判讀：** 已進入目標 VM 的互動 shell；這不表示映像已通過校驗。
+
+**下一步目的與影響：** 在 `openstack-lab01` 計算剛下載映像的 SHA-256，
+與 [Ubuntu 官方此版本的 SHA256SUMS](https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260905/SHA256SUMS)
+所列 `ubuntu-24.04-minimal-cloudimg-amd64.img` 值
+`46b0dbaffa6950a7da5ff2dc5ed34c46084610b3b6d1fae8f1ec2d7e953984a3` 比對。
+此指令只讀取主機上的映像檔，不修改檔案、服務或 OpenStack 資源。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+sha256sum /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img
+```
+
+**實際輸出：**
+
+```text
+46b0dbaffa6950a7da5ff2dc5ed34c46084610b3b6d1fae8f1ec2d7e953984a3  /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img
+```
+
+**判讀：** 輸出與 Ubuntu 官方這個版本的映像校驗值一致，
+下載檔案可用於下一步匯入。
+
+**下一步目的與影響：** 目前是新的 SSH shell，需再次載入 DevStack
+的管理員環境，供後續 `openstack` 指令向 API 驗證。
+`admin admin` 是使用者與專案名稱；`source` 只設定目前 shell 的環境變數，
+不修改檔案、服務或雲端資源。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+source ~/devstack/openrc admin admin
+```
+
+**實際結果與判讀：** 沒有終端輸出，返回 `a2264@openstack-lab01:~$`；
+目前 shell 已載入管理員環境。前述 API 查詢已確認這套環境可查詢 Glance。
+
+**下一步目的與影響：** 將校驗通過的 Ubuntu QCOW2 檔案從
+`openstack-lab01` 的 `/home/a2264/` 上傳到同一台主機承載的 Glance，
+讓後續 OpenStack CPU VM 能選它作開機映像。`--file` 指定來源檔，
+`--disk-format qcow2` 指定磁碟格式，`--container-format bare` 表示沒有外層容器，
+`--private` 限定目前 `admin` 專案可見。
+這會在 Glance 新增約 252 MB 的映像資料，佔用既有 VM 的儲存空間；
+不新建 GCP VM，也不會刪除原始 `.img` 檔。若不再使用，可刪除這個 Glance 映像。
+指令語法依 [OpenStack CLI 的 image create 說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/image/v2/index.html)。
+
+**待執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack image create ubuntu-24.04-minimal-20260905 --file /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img --disk-format qcow2 --container-format bare --private
+```
+
 ## 目前限制
 
 - 尚未由 Slurm 跨節點執行 CPU 工作。

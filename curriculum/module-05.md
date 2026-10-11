@@ -666,6 +666,43 @@ Neutron 提供網路；Ansible 不負責建立 VM。
 單機開發／練習環境；它不是 OpenStack 的另一個服務，也不代表生產部署。
 做法依[官方單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)。
 
+**Horizon 網頁介面：** DevStack 安裝紀錄顯示入口為
+`http://10.146.0.4/dashboard`。Horizon 是在瀏覽器操作 OpenStack 的介面；
+下文的 `openstack` 指令則從命令列操作同一套 API，資源可以互相對照。
+這個網址使用 `openstack-lab01` 的 **GCP 私有 IP**，
+瀏覽器須能連入該私有網路才打得開。
+
+**畫面操作：** 開啟 Horizon、以 DevStack 的 `admin` 使用者登入並選擇
+`admin` 專案後，可依下表查看這次會用到的資源。
+選單名稱參照 [Horizon 官方使用說明](https://docs.openstack.org/horizon/latest/en_GB/user/log-in.html)；
+密碼留在 VM 上的 `local.conf`，不記入本文件。
+
+| Horizon 畫面 | 在這次環境中看什麼 | 對應命令列操作 |
+|---|---|---|
+| `Project → Compute → Images` | 看目前的 CirrOS；上傳 Ubuntu 映像後從這裡核對狀態 | `openstack image list` |
+| `Project → Network → Networks` | 點進 `private`，查看 `private-subnet` | `openstack network/subnet show` |
+| `Project → Network → Routers` | 點進 `router1`，查看私有子網介面與外部閘道 | `openstack router show` |
+| `Project → Compute → Instances` | 建立 CPU VM，之後查看狀態與 IP | `openstack server create/list` |
+| `Admin → Compute → Flavors` | 查看 CPU、記憶體與磁碟規格 | `openstack flavor list` |
+
+`Create Image`、`Launch Instance` 等按鈕會真的建立資源；
+瀏覽器連通性與實際登入尚未驗證，故表中是操作路徑，不是已完成結果。
+
+**從自己電腦開啟：** `10.146.0.4` 是私有 IP，外部瀏覽器直連會失敗。
+由自己電腦的終端建立 SSH 轉接後，瀏覽器改開
+`http://127.0.0.1:18080/dashboard`。`-L` 只在自己電腦的
+`127.0.0.1:18080` 監聽，經 SSH 送到 `openstack-lab01` 的
+`127.0.0.1:80`；`-N` 不開遠端 shell，終端保持執行代表轉接仍在。
+`--tunnel-through-iap` 讓沒有公網 IP 的 GCP VM 透過 IAP 建立 SSH 連線。
+此步不新增雲端 VM 或公開 HTTP 連入規則；若本機尚無 gcloud SSH 金鑰，
+`gcloud compute ssh` 可能建立金鑰並加入 GCP 登入資訊。
+
+**待執行指令｜自己電腦的終端：**
+
+```bash
+gcloud compute ssh a2264@openstack-lab01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c --tunnel-through-iap --ssh-flag="-N" --ssh-flag="-L 127.0.0.1:18080:127.0.0.1:80"
+```
+
 **關鍵檔案：** 安裝時主要用到兩個檔案：
 
 | 檔案 | 來源與位置 | 何時做什麼 |
@@ -961,6 +998,33 @@ openstack router show router1 -f yaml
 
 **封包路徑：** `CPU VM (10.0.0.x) → router1 (10.0.0.1) → SNAT (172.24.4.9) → OpenStack 外部網路`。
 上游是否真的通往套件庫尚未實測；CPU VM 建好後直接測試套件下載。
+
+### 準備可安裝套件的 Linux 映像
+
+**目的與影響：** Glance 目前只有 CirrOS；它是小型連線測試系統，
+不適合接下來安裝 Ansible 管理的叢集套件。
+改用 [Ubuntu 官方 Ubuntu Minimal 24.04 x86_64 雲端映像](https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260905/)；
+固定 `20260905` 版本，讓日後可找到同一份來源。
+下載的 `.img` 是 VM 開機磁碟的 **QCOW2 映像檔**，先存於
+`openstack-lab01` 的 `/home/a2264/`，約 252 MB；
+這一步只新增主機上的檔案，尚未匯入 Glance，也不會建立 VM。
+
+**已執行指令｜在 `openstack-lab01`：** `curl` 從 Ubuntu 官方下載映像，
+`-f` 在 HTTP 錯誤時回報失敗，`-L` 跟隨官方重新導向，
+`--output` 指定主機上的目標檔案。
+
+```bash
+curl -fL --output /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260905/ubuntu-24.04-minimal-cloudimg-amd64.img
+```
+
+**實際輸出：**
+
+```text
+100  252M  100  252M    0     0  45.3M      0  0:00:05  0:00:05 --:--:-- 54.6M
+```
+
+**判讀：** Ubuntu 映像已下載到 `openstack-lab01`；
+還沒確認檔案校驗值，也尚未匯入 Glance。
 
 ## 目前限制
 

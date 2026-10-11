@@ -1022,6 +1022,14 @@ openstack router show router1 -f yaml
 **封包路徑：** `CPU VM (10.0.0.x) → router1 (10.0.0.1) → SNAT (172.24.4.9) → OpenStack 外部網路`。
 上游是否真的通往套件庫尚未實測；CPU VM 建好後直接測試套件下載。
 
+**`public` 網路是什麼：** 這套 DevStack 另有一條名為 `public` 的
+OpenStack 虛擬網路，使用 `172.24.4.0/24` 這段位址；
+也就是 `172.24.4.x` 這批地址，前面查到的路由器外側地址
+`172.24.4.9` 就在其中。名稱 `public` 指它在 OpenStack 裡扮演
+外部網路，這些私有位址本身不是 GCP 公網 IP。
+DevStack 的[預設網路說明](https://static.opendev.org/docs/devstack/latest/networking.html)
+也列出此浮動 IP 網段。
+
 ### 準備可安裝套件的 Linux 映像
 
 **目的與影響：** Glance 目前只有 CirrOS；它是小型連線測試系統，
@@ -1335,11 +1343,15 @@ openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8
 `ACTIVE` 還不能證明 Ubuntu 已完成開機、`cloud-init` 已安裝公鑰，
 或從管理端能 SSH 登入。
 
-**浮動 IP 的用途：** `10.0.0.62` 位於 VM 的私有子網。
-要從 `openstack-lab01` 的 OpenStack 外部網路連進去，
-可先從 `public` 網路取得一個浮動 IP，再把它對應到 VM 的私有 IP。
-這裡的 `public` 是 OpenStack 內的外部網路名稱，
-其 `172.24.4.0/24` 位址不是 GCP 公網 IP。
+**為什麼要分配浮動 IP：** 這次的目的是讓**控制節點**日後透過 SSH
+登入 `compute-cpu01`，讓 Ansible 管理這台新 VM。
+控制節點目前沒有直接連到 VM 私有位址 `10.0.0.62` 的路徑。
+本次選用的連線路徑是：
+`控制節點 → SSH 到 openstack-lab01 → OpenStack 浮動 IP → compute-cpu01 (10.0.0.62)`。
+浮動 IP 是 OpenStack 從 `public` 網路的 `172.24.4.x` 位址中分配一個，
+再對應到 VM 的 `10.0.0.62`；建 VM 時不會自動取得浮動 IP。
+這個 IP 供本次從 VM 私有網路外側連入，並非所有 OpenStack VM
+都必須有浮動 IP。上述 SSH 路徑仍待實測。
 
 **下一步目的與影響：** 在目前 `demo` 專案分配一個 OpenStack 浮動 IP。
 它占用練習環境 `public` 網路的一個位址；建立後尚未連到 VM，

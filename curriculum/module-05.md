@@ -730,14 +730,23 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 
 **安裝檔案：** 下載的 [stack.sh（官方版本）](https://opendev.org/openstack/devstack/src/commit/64d59574473c148c3d855124ae5f79681854cd0a/stack.sh)
 在新 VM 的 `/home/a2264/devstack/stack.sh`，執行時讀取同目錄的 `local.conf`。
-DevStack 的 `stack.sh` 需要 `local.conf` 才能以固定設定安裝。
-新 VM 的 `/home/a2264/devstack/local.conf` 已建立，使用 `10.146.0.4`
-作服務 IP、以 QEMU 執行內層 VM，並含在新 VM 產生的隨機服務密碼；
-建立結果為 `mode 600`，未把密碼寫入工作樹或終端輸出。
-[遮蔽副本](../project/openstack/local.conf.redacted)可用來核對設定；
-重建時須以新密碼取代副本中的 `<redacted>`。
-`ADMIN_PASSWORD` 用於管理登入；`DATABASE_PASSWORD`、
-`RABBIT_PASSWORD`、`SERVICE_PASSWORD` 供 OpenStack 內部服務驗證。
+**目的與影響：** 控制節點把
+[設定產生程式](../project/openstack/write_local_conf.py) 經 SSH 傳給新 VM 的 Python；
+程式在**新 VM**建立 `/home/a2264/devstack/local.conf`，設定服務 IP
+`10.146.0.4`、QEMU 虛擬化與隨機服務密碼。`python3 -` 從標準輸入讀程式，
+`<` 讀控制節點工作樹中的來源檔；密碼只在新 VM 產生，程式遇到既有設定檔會停止而不覆寫。
+
+**已執行指令｜在控制節點的工作樹：**
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 a2264@10.146.0.4 'python3 - /home/a2264/devstack 10.146.0.4' < project/openstack/write_local_conf.py
+```
+
+**實際結果：** `created /home/a2264/devstack/local.conf (mode 600)`，退出碼 0。
+
+**判讀：** `stack.sh` 將讀取新 VM 上這份設定；
+[遮蔽副本](../project/openstack/local.conf.redacted)保留非機密設定供核對。
+`ADMIN_PASSWORD` 用於管理登入，另外三個密碼欄位供 OpenStack 內部服務驗證。
 
 **目的與影響：** 接著由新 VM 的一般使用者執行 `/home/a2264/devstack/stack.sh`。
 它會從官方來源下載並安裝 OpenStack 與相依套件，修改這台專用 VM 的
@@ -1260,7 +1269,35 @@ openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8
 `10.0.0.62` 是它在 OpenStack `private` 網路上的固定 IP；
 後續從主控台觀察客體開機，並從控制節點測試 SSH 登入。
 
-**管理路徑檢查：** 讀取當時已分配的浮動 IP `172.24.4.105`，
+**目的與影響：** 為了從 `openstack-lab01` 連到 VM，當時先試用
+OpenStack `public` 網路的浮動 IP。這個網路使用 `172.24.4.0/24`；
+`floating ip create` 由 Neutron 從可用位址中分配一個，不能從網段預先推定尾數。
+下列指令在 `demo` 專案新增一個浮動 IP，不修改 GCP 公網 IP。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack floating ip create public
+```
+
+**實際輸出重點：** `floating_ip_address=172.24.4.105`、
+`id=02d49408-c90a-42ff-958c-54350d272ad1`、
+`fixed_ip_address=None`、`port_id=None`、`status=DOWN`。
+
+**判讀：** Neutron 實際分配的是 `172.24.4.105`；此時還沒綁定 VM。
+
+**目的與影響：** 將浮動 IP 對應到 `compute-cpu01` 的私有位址 `10.0.0.62`。
+`--fixed-ip-address` 明確指定 VM 網卡上的 IPv4；不重啟 VM。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack server add floating ip --fixed-ip-address 10.0.0.62 compute-cpu01 172.24.4.105
+```
+
+**實際結果：** 命令沒有終端輸出並返回提示字元；下一條讀取綁定狀態。
+
+**管理路徑檢查：** 讀取剛綁定的浮動 IP `172.24.4.105`，
 確認 `fixed_ip_address` 是否為 VM 的 `10.0.0.62`、`port_id` 是否已有
 網卡、`router_id` 是否有路由器，以及 `status` 的值。
 這是 OpenStack API 的唯讀查詢；不修改 VM、網路或主機檔案。
@@ -1377,6 +1414,18 @@ openstack security group rule create --ingress --ethertype IPv4 --protocol tcp -
 
 **判讀：** `demo` 的 `default` 安全群組已加入限定來源的 SSH 入站規則；
 若要撤銷，可依上面的規則 ID 刪除。
+
+**安全群組附帶狀態：** 先前為浮動 IP 路徑執行過下列規則建立命令；
+它同樣屬於此 `default` 群組，來源範圍是 `172.24.4.0/24`。
+最後的 SSH 登入走 `10.0.0.2/32` 規則。
+
+```bash
+openstack security group rule create --ingress --ethertype IPv4 --protocol tcp --dst-port 22 --remote-ip 172.24.4.0/24 859e6514-e673-47df-aacc-7f10e3ee13b5
+```
+
+**實際輸出重點：** 規則 ID `4b34c6d7-cc7e-4412-8014-789bdaeebe1b`；
+`protocol=tcp`、`port_range_min=22`、`port_range_max=22`、
+`remote_ip_prefix=172.24.4.0/24`。
 
 **下一步目的與影響：** 在承載 VM 的 `openstack-lab01` 直接列出
 libvirt 管理的虛擬機名稱與執行狀態，辨認 `compute-cpu01` 對應的

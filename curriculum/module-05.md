@@ -1346,12 +1346,12 @@ openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8
 **為什麼要分配浮動 IP：** 這次的目的是讓**控制節點**日後透過 SSH
 登入 `compute-cpu01`，讓 Ansible 管理這台新 VM。
 控制節點目前沒有直接連到 VM 私有位址 `10.0.0.62` 的路徑。
-本次選用的連線路徑是：
-`控制節點 → SSH 到 openstack-lab01 → OpenStack 浮動 IP → compute-cpu01 (10.0.0.62)`。
+原先預備經 `openstack-lab01` 的浮動 IP 連入；下方路由實測顯示
+主機目前把封包交給 GCP 閘道，因此改由已接入私有網路的
+`ovnmeta` 命名空間進行 SSH 連線。
 浮動 IP 是 OpenStack 從 `public` 網路的 `172.24.4.x` 位址中分配一個，
 再對應到 VM 的 `10.0.0.62`；建 VM 時不會自動取得浮動 IP。
-這個 IP 供本次從 VM 私有網路外側連入，並非所有 OpenStack VM
-都必須有浮動 IP。上述 SSH 路徑仍待實測。
+這個 IP 已配置並綁定，但目前不作為管理連線目的地。
 
 **下一步目的與影響：** 在目前 `demo` 專案分配一個 OpenStack 浮動 IP。
 它占用練習環境 `public` 網路的一個位址；建立後尚未連到 VM，
@@ -1359,16 +1359,374 @@ openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8
 確認不再使用後，可按回報的浮動 IP ID 釋放。
 指令依 [OpenStack CLI 浮動 IP 說明](https://docs.openstack.org/python-openstackclient/2025.2/cli/command-objects/floating-ip.html)。
 
-**待執行指令｜在 `openstack-lab01`：**
+**已執行指令｜在 `openstack-lab01`：**
 
 ```bash
 openstack floating ip create public
 ```
+
+**實際輸出重點：** `floating_ip_address=172.24.4.105`、
+`id=02d49408-c90a-42ff-958c-54350d272ad1`、
+`floating_network_id=2ec44f3f-5719-4dab-a1df-0e7b4a1d8aab`、
+`project_id=4be84dab90684063847d60ee97acca4e`。
+`fixed_ip_address=None`、`port_id=None`、`status=DOWN`。
+
+**判讀：** `demo` 專案已從 OpenStack `public` 網路取得 `172.24.4.105`；
+目前還沒對應到任何 VM 網卡，因此無法用這個地址登入 `compute-cpu01`。
+
+**下一步目的與影響：** 把已分配的 `172.24.4.105` 對應到
+`compute-cpu01` 的私有 IPv4 `10.0.0.62`。
+`--fixed-ip-address` 明確指定目標 IPv4，避免與同一 VM 的 IPv6 位址混淆。
+這會建立 OpenStack 內的位址對應，讓練習環境從該浮動 IP 連到 VM；
+不會重新開機或新增 GCP 公網 IP。需要復原時，可從 VM 移除浮動 IP
+對應，已分配的地址則要另外釋放。
+指令依 [OpenStack CLI server add floating ip 說明](https://docs.openstack.org/python-openstackclient/2025.1/cli/command-objects/server.html)。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack server add floating ip --fixed-ip-address 10.0.0.62 compute-cpu01 172.24.4.105
+```
+
+**實際結果與判讀：** 指令沒有終端輸出並返回提示字元，
+OpenStack 未回報綁定錯誤。這符合已把 `172.24.4.105` 對應到
+`compute-cpu01` 的請求成功；完整 SSH 通路仍須從控制節點實測。
+
+**管理端身分：** 控制節點持有前面登錄到 OpenStack 的公鑰所對應的
+私鑰；私鑰不放到 `openstack-lab01`。後續要由控制節點經
+`openstack-lab01` 的 `ovnmeta` 命名空間連入 VM 私有位址，
+以 `ubuntu` 帳號執行遠端指令，才能驗證整條 SSH 通路。
+
+**下一步目的與影響：** 讀取浮動 IP `172.24.4.105` 的實際綁定狀態，
+確認 `fixed_ip_address` 是否為 VM 的 `10.0.0.62`、`port_id` 是否已有
+網卡、`router_id` 是否有路由器，以及 `status` 的值。
+這是 OpenStack API 的唯讀查詢；不修改 VM、網路或主機檔案。
+確認對應關係後，再依結果判斷下一個網路或 VM 檢查。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack floating ip show 172.24.4.105 -f yaml
+```
+
+**實際輸出重點：** `floating_ip_address=172.24.4.105`、
+`fixed_ip_address=10.0.0.62`、`status=ACTIVE`；
+`port_id=2dec1e5b-37d0-4a1a-89dd-d80b241542dd`，
+`port_details.device_id=24591ad4-7b29-44e2-bed6-3e705714d244`，
+`port_details.status=ACTIVE`，
+`router_id=8f73c572-0cdc-4606-844c-a2b9579fef1e`。
+
+**判讀：** 浮動 IP 已對應到 `compute-cpu01` 的私有 IPv4，
+Neutron 也顯示 VM 網卡和路由器關聯。`ACTIVE` 是資源狀態，
+還不能證明從主機發出的 SSH 封包能通過安全群組或抵達 VM。
+
+**下一步目的與影響：** 查看 `openstack-lab01` 若連向
+`172.24.4.105`，Linux 會選哪張介面、哪個來源 IP。
+此前 SSH 入站規則只允許 `172.24.4.0/24` 來源；
+這條指令的 `src` 欄位可直接判斷主機的連線是否落在允許範圍。
+`ip route get` 只查本機路由決策，不送封包、不改設定。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+ip route get 172.24.4.105
+```
+
+**實際輸出：**
+
+```text
+172.24.4.105 via 10.146.0.1 dev ens4 src 10.146.0.4 uid 1001
+    cache
+```
+
+**輸出怎麼讀：** `172.24.4.105` 是封包的**目的地**，也就是 VM 的
+浮動 IP；`src 10.146.0.4` 是**寄件者** `openstack-lab01` 的 GCP 網卡 IP；
+`via 10.146.0.1` 是封包先交給的**下一站路由器**，不是把目的地
+改成 `10.146.0.1`；`dev ens4` 表示從 GCP 網卡送出。
+
+**實際走向與判讀：** `openstack-lab01 (10.146.0.4) → GCP 閘道
+(10.146.0.1) → 嘗試尋找 172.24.4.105`。此主機目前選的是 GCP 出口，
+沒有把封包送進本機 DevStack 的 `172.24.4.0/24` 外部網路；
+來源 `10.146.0.4` 也不在先前 SSH 安全群組允許的 `172.24.4.0/24`。
+因此浮動 IP 綁定成功，仍不足以讓這台主機從目前路由直接連入 VM。
+
+**`ovnmeta` 是什麼、從哪裡來：** Linux 網路命名空間讓同一台宿主機上的
+程式有獨立的網卡、IP 與路由表。這裡的 `ovnmeta-<網路 UUID>` 是
+OpenStack Neutron 的 OVN metadata 服務為 VM 所在網路建立的命名空間，
+原本用來把 VM 對 `169.254.169.254` 的 metadata 請求轉給 Nova；
+VM 的 `cloud-init` 會利用 metadata 取得開機設定及公鑰。
+[Neutron 的 OVN metadata 設計說明](https://docs.openstack.org/neutron/latest/contributor/internals/ovn/metadata_api.html)
+指出服務會為網路建立 metadata port、命名空間及連接 OVS 的介面，
+並把該 port 的私有 IP 設到空間內的介面上。
+[Neutron 官方參考架構](https://docs.openstack.org/neutron/latest/admin/ovn/refarch/refarch.html)
+也說明這類命名空間可在運算節點上用來連入同網路的 VM。
+它不是另一台 VM，也不是 GCP 網卡或 OpenStack 浮動 IP。
+
+**管理路徑的關鍵證據：** `private` 網路先前查得 UUID 為
+`fb5be63d-7658-453d-9c6d-66243bce244c`；下面實際列出的
+`ovnmeta` 名稱尾段與它完全相同，證明這是 `private` 網路對應的
+metadata 命名空間。先辨認實際名稱：
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+sudo ip netns list
+```
+
+**實際輸出：**
+
+```text
+ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c (id: 0)
+```
+
+**判讀：** 唯一列出的命名空間對應 `private` 網路。為確認它在該網路
+使用哪個地址，在此空間讀取網卡與位址；兩條命令都不修改網路。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+sudo ip netns exec ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c ip -br addr
+```
+
+**實際輸出重點：**
+
+```text
+tapfb5be63d-71@if8 UP 169.254.169.254/32 10.0.0.2/26
+```
+
+**判讀：** `tapfb5be63d-71@if8` 是該空間內已啟用的介面；
+`169.254.169.254/32` 是 metadata 服務位址，`10.0.0.2/26` 是
+這個空間在 `private` 子網 `10.0.0.0/26` 上實際持有的 IPv4。
+`10.0.0.2` 不是 VM 位址（VM 是 `10.0.0.62`），也不是路由器閘道
+（`10.0.0.1`）；它落在先前查得的 Neutron 位址池
+`10.0.0.2–10.0.0.62` 內。依上面的 OVN metadata 機制，
+這是 metadata 介面取得的私有 IP；本次已從介面實測核對地址，
+尚未另外查該 metadata port 的 Neutron 紀錄。
+兩者同在私有子網，從此空間連 VM 時可用它作來源；
+後續 SSH 登入成功才證實整條通路確實可用。這個名稱與位址來自
+目前的 Neutron 網路狀態；若網路重建，重跑前須重新查詢。
+此前安全群組只允許 `172.24.4.0/24` 來源連 TCP 22，
+沒有允許 `10.0.0.2`；要使用這條路徑，須新增限於該來源的規則。
+
+**下一步目的與影響：** 透過 Nova 讀取 `compute-cpu01` 最後 80 行
+開機主控台紀錄，查看 Ubuntu 是否開到登入階段、`cloud-init`
+是否有完成或報錯。這是 OpenStack API 的唯讀查詢，不依賴 VM
+回應 ICMP，也不修改 VM 或服務。`--lines 80` 限制輸出長度；
+若紀錄不足以判斷，須依實際內容再查。
+指令語法依 [OpenStack CLI 的 console log 說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/compute/v2/index.html#console-log-show)。
+
+**已執行指令｜在 `openstack-lab01` 的 `demo` 專案 shell：**
+
+```bash
+openstack console log show --lines 80 compute-cpu01
+```
+
+**實際輸出重點：** `cloud-init` 顯示 `ens3` 的預設閘道為
+`10.0.0.1`、直連網段為 `10.0.0.0/26`，且有到 `10.0.0.2`
+的主機路由。紀錄也顯示產生了 VM 自己的 SSH host keys，
+接著回報 `cloud-init.service` 的 Network Stage 完成，
+`network-online.target` 已到達。提供的最後一行在
+`cloud-init-hotplugd` 訊息處截斷。
+
+**判讀：** VM 已執行到網路設定及 SSH 主機金鑰產生階段；
+這份節錄沒有顯示完整 `cloud-init` 結束或 SSH 登入成功。
+目前已知主機連浮動 IP 會走 GCP 閘道，且安全群組沒有允許
+從 `ovnmeta` 的 `10.0.0.2` 進入 VM 的 SSH。
+後續先按這個來源新增範圍限定的入站規則，再實測 TCP 22。
+
+**下一步目的與影響：** 在 `demo` 專案的 `default` 安全群組
+`859e6514-e673-47df-aacc-7f10e3ee13b5` 新增 IPv4 入站規則，
+只允許來源 `10.0.0.2/32` 連到 TCP 22。這是 `ovnmeta` 命名空間
+目前的私有 IP；規則會影響使用此安全群組的 VM 網卡，
+並不修改 VM、GCP 防火牆或私鑰。`--ingress` 指入站，
+`--ethertype IPv4` 限定 IPv4，`--protocol tcp` 和 `--dst-port 22`
+限定 SSH 目的埠，`--remote-ip` 限定來源。OpenStack 回報規則 ID 後，
+可用該 ID 刪除規則以復原。這步只是開放入站，還不能證明 SSH
+服務已啟動或金鑰登入成功。
+
+**已執行指令｜在 `openstack-lab01` 的 `demo` 專案 shell：**
+
+```bash
+openstack security group rule create --ingress --ethertype IPv4 --protocol tcp --dst-port 22 --remote-ip 10.0.0.2/32 859e6514-e673-47df-aacc-7f10e3ee13b5
+```
+
+**實際輸出重點：** 新規則 ID 為
+`b6f7b2c7-930d-4218-9fbd-36a9039bdf1d`；
+`security_group_id=859e6514-e673-47df-aacc-7f10e3ee13b5`、
+`direction=ingress`、`ether_type=IPv4`、`protocol=tcp`、
+`port_range_min=22`、`port_range_max=22`、
+`remote_ip_prefix=10.0.0.2/32`。
+
+**判讀：** `demo` 的 `default` 安全群組已加入限定來源的 SSH 入站規則。
+OpenStack 回報規則已建立，尚未證明 VM 的 TCP 22 有回應；
+若要撤銷，可依上面的規則 ID 刪除。
+
+**下一步目的與影響：** 在承載 VM 的 `openstack-lab01` 直接列出
+libvirt 管理的虛擬機名稱與執行狀態，辨認 `compute-cpu01` 對應的
+虛擬機是否仍在運行。`virsh` 是宿主機管理 QEMU VM 的工具；
+`list --all` 包含運行中及已停止的虛擬機，只讀取狀態，
+不重啟 VM、不更改 OpenStack 資源。結果中的名稱可供下一步
+直接查看該 VM 的主控台或執行狀態。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+sudo virsh list --all
+```
+
+**實際輸出：**
+
+```text
+ Id   Name                State
+-----------------------------------
+ 1    instance-00000001   running
+```
+
+**判讀：** libvirt 回報這台宿主機上的 `instance-00000001` 正在執行。
+這只證明虛擬機程序存在，不代表 Ubuntu 已完成開機或 SSH 已監聽。
+
+**下一步目的與影響：** 從 `openstack-lab01` 接上
+`instance-00000001` 的序列主控台，直接讀取 VM 當前顯示的畫面，
+判斷它是在開機、登入提示或錯誤狀態。`virsh console` 只建立互動
+主控台連線，不重啟 VM；按 Enter 只要求畫面更新，按 `Ctrl+]`
+離開連線。不要在主控台輸入修改系統的命令。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+sudo virsh console instance-00000001
+```
+
+**實際輸出重點：** 顯示
+`Connected to domain 'instance-00000001'`，按 Enter 後出現
+`root@compute-cpu01:~#` 提示字元。
+
+**判讀：** 已透過序列主控台進入 `compute-cpu01` 的 root shell；
+Ubuntu 已運行，但先前的 TCP 22 連線仍被拒絕，需直接查看 SSH
+服務狀態。離開主控台用 `Ctrl+]`，不會關閉 VM。
+
+**下一步目的與影響：** 在目前的 `compute-cpu01` root shell
+讀取 Ubuntu 的 `ssh` 服務狀態和最近訊息。`systemctl status`
+只查服務，不啟動或修改它；`--no-pager` 讓完整結果直接顯示，
+避免卡在分頁器。用 `Loaded`、`Active` 與服務訊息判斷
+SSH 是否安裝、是否運行及有無啟動錯誤。
+
+**已執行指令｜在 `compute-cpu01` 的 root shell：**
+
+```bash
+systemctl status ssh --no-pager
+```
+
+**實際輸出重點：** `ssh.service - OpenBSD Secure Shell server`；
+`Loaded: loaded (/usr/lib/systemd/system/ssh.service; disabled; preset: enabled)`、
+`Active: inactive (dead)`，並顯示 `TriggeredBy: ssh.socket`。
+
+**判讀：** VM 已安裝 SSH 服務，但目前沒有運行，且未設為開機啟動。
+這與從 `ovnmeta` 連 TCP 22 收到 `Connection refused` 一致。
+`ssh.socket` 的存在不代表這次已接受連線；需啟動服務後實測。
+
+**下一步目的與影響：** 在 `compute-cpu01` 的 root shell
+啟動 `ssh.service` 並設為開機啟動，讓已存在的 Ubuntu SSH
+服務現在和重開機後都能接受連線。`enable` 更新 systemd 的
+開機啟動連結，`--now` 同時立即啟動服務；不安裝套件，
+不修改 OpenStack 安全群組。現有入站規則會允許
+`10.0.0.2/32` 和先前設定的 `172.24.4.0/24` 來源連 TCP 22。
+若需復原，可執行 `systemctl disable --now ssh`，
+立即停止服務並取消開機啟動。執行後須再驗證服務狀態及實際登入。
+
+**已執行指令｜在 `compute-cpu01` 的 root shell：**
+
+```bash
+systemctl enable --now ssh
+```
+
+**實際輸出重點：** systemd 顯示建立
+`/etc/systemd/system/sshd.service` 與
+`/etc/systemd/system/multi-user.target.wants/ssh.service`
+兩個指向 `ssh.service` 的連結。
+
+**判讀：** 開機啟動連結已建立。原主控台未返回提示字元，
+因此沒有用這條命令的退出碼確認完整成功；
+後續從控制節點以金鑰登入成功，見下方實測。
+
+**宿主機限制：** `openstack-lab01` 使用 `e2-standard-2`，
+實際沒有 `/dev/kvm`；[Google 文件](https://docs.cloud.google.com/compute/docs/instances/nested-virtualization/overview)
+也列出 E2 不支援巢狀虛擬化。內層 `compute-cpu01` 因此沒有
+KVM 硬體加速可用；這不妨礙下方已完成的 SSH 登入。
+
+**目的與影響：** 客體當時尚未完成開機，從 `openstack-lab01` 的
+`demo` 專案以 Nova 對 `compute-cpu01` 執行硬重啟，相當於強制重置
+內層 VM 電源；未寫入磁碟的資料可能遺失，VM 的既有磁碟與網卡設定
+不會因這條命令刪除。宿主機 `openstack-lab01` 不會重啟，
+也不新增 GCP 資源。先前已實測的 `source ~/devstack/openrc admin demo`
+只設定目前 shell 的 OpenStack 登入環境；執行下列命令前須在這個
+專案環境中。`--hard` 指定強制重啟；沒有 `--wait`，因此指令返回
+只代表 Nova 接受請求，之後仍須單獨核對 VM 狀態和登入。
+
+**已執行指令｜在 `openstack-lab01` 的 `demo` 專案 shell：**
+
+```bash
+openstack server reboot --hard compute-cpu01
+```
+
+**實際結果與判讀：** 指令沒有終端輸出並返回提示字元，
+Nova 沒有回報硬重啟請求錯誤；是否恢復運行須看下一條查詢。
+
+**驗證目的與影響：** 在同一個 `demo` 專案 shell 向 Nova 查
+`compute-cpu01` 的工作狀態與電源狀態欄位。這是唯讀 API 查詢，
+不操作 VM；`ACTIVE` 只表示 Nova 認為 VM 在運行，
+不能代替 Ubuntu 開機與 SSH 登入驗證。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack server show -f value -c status -c power_state compute-cpu01
+```
+
+**實際輸出：**
+
+```text
+ACTIVE
+```
+
+**判讀：** Nova 回報 `status=ACTIVE`；本次輸出沒有顯示
+`power_state` 欄位值，不能聲稱該欄已核對。之後的客體開機與
+SSH 登入另以實際輸出確認。
+
+**客體開機結果：** `compute-cpu01` 主控台後續顯示
+`Cloud-init v. 26.1-0ubuntu1~24.04.1 finished`、
+`Ubuntu 24.04.4 LTS compute-cpu01 ttyS0` 與 `compute-cpu01 login:`。
+這表示客體已到登入階段；單憑主控台提示仍不能證明遠端金鑰登入。
+
+**目的與影響：** 從控制節點以既有私鑰登入 `compute-cpu01`，
+驗證管理端到 OpenStack 客體的完整 SSH 通路。
+私鑰留在控制節點；`ProxyCommand` 讓 SSH 先連到
+`openstack-lab01`，在其 `ovnmeta` 命名空間用 `nc` 將連線送到
+`10.0.0.62:22`。`ns` 只是目前 shell 的暫時變數；這些命令
+不修改 VM 或網路設定。
+
+**已執行指令｜在控制節點 `instance-20260923-104239`：**
+
+```bash
+ns=ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 \
+  -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 \
+  -o "ProxyCommand=ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 a2264@10.146.0.4 sudo ip netns exec $ns nc %h %p" \
+  ubuntu@10.0.0.62
+```
+
+**實際結果：** 出現 `ubuntu@compute-cpu01:~$` 提示字元。
+
+**判讀：** 控制節點已經透過 `openstack-lab01` 的命名空間，
+以 `ubuntu` 帳號和既有 SSH 金鑰完整登入 OpenStack CPU VM。
+這證明連線及身分驗證成功；套件下載、Ansible 首次部署與
+CPU 工作尚未由這次登入驗證。
 
 ## 目前限制
 
 - 尚未由 Slurm 跨節點執行 CPU 工作。
 - NFS、MUNGE 與 Slurm playbook 已在既有兩台 VM 執行；
   尚未驗證乾淨環境的首次部署。
-- OpenStack CPU VM 已建立；SSH、套件來源、Ansible 首次部署及 CPU 工作尚未驗證。
+- OpenStack CPU VM 已建立，控制節點已用 SSH 金鑰登入；
+  宿主機沒有 KVM 加速，套件來源、Ansible 首次部署及 CPU 工作尚未驗證。
   現有 DevStack 不能供給 GPU VM。

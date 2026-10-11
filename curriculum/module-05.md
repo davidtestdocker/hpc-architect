@@ -5,7 +5,7 @@
 ## 要解決的問題與交付物
 
 **問題與目標：** 模組 04 已讓控制節點透過 SSH 在 GPU VM 執行 MPI 工作，
-兩台 VM 也能讀寫 NFS 共享目錄。這證明計算與資料通路可用，
+兩台 VM 也能讀寫 NFS 共享目錄。計算與資料通路已可用，
 但當時 GPU VM 並未接受 Slurm 排程。
 本模組把節點設定寫成可重跑的 Ansible playbook，
 讓控制端能管理 GPU VM 的身分驗證、Slurm 設定和運算服務。
@@ -29,7 +29,7 @@ OpenStack 已建立 `compute-cpu01`，Nova 回報 `ACTIVE`，
 連到私有 IP `10.146.0.3` 的 `compute-gpu01`。
 Inventory 只列出已存在的 VM，不會建立雲端資源。
 
-**閱讀順序：** 下方先交代已建立的管理通路、NFS 和 MUNGE 前提及其自動化證據。
+**閱讀順序：** 下方先交代已建立的管理通路、NFS 和 MUNGE 設定及執行結果。
 **本次兩節點 Slurm 部署的步驟從「1. 核對資源與帳號」開始：**
 先核對 GPU VM 與兩台 VM 的帳號空間，
 再執行 `slurm-identity.yml`，最後才執行 `slurm-two-node.yml`。
@@ -141,9 +141,8 @@ PLAY RECAP
 compute-gpu01 : ok=3 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-**判讀：** 同一指令重跑的結果也為 `ok=3 changed=0 failed=0`。
-這證明既有兩台 VM 的 NFS 狀態符合 playbook，
-並沒有提供乾淨節點首次建立掛載的證據。
+**判讀：** 同一指令重跑的結果也為 `ok=3 changed=0 failed=0`；
+既有兩台 VM 的 NFS 狀態符合 playbook。
 
 ## 已完成的 MUNGE 跨節點身分驗證
 
@@ -207,7 +206,7 @@ UID:             a2264 (1000)
 GID:             a2264 (1005)
 ```
 
-**判讀：** GPU VM 成功解碼控制節點的憑證，證明跨 VM 的 MUNGE 驗證通路可用。
+**判讀：** GPU VM 成功解碼控制節點的憑證，跨 VM 的 MUNGE 驗證通路可用。
 重跑 `ansible-playbook munge-gpu.yml` 得到 `ok=4 changed=0 failed=0`，
 沒有重新複製金鑰或重啟服務。
 
@@ -451,12 +450,10 @@ instance-20260923-104239 : ok=3 changed=2 unreachable=0 failed=0 skipped=0 rescu
 第一行表示沒有額外的 `cgroup.conf`，這次檢查使用預設值。
 控制節點設定已取代原單節點內容並由 `scontrol reconfigure` 重新讀取；
 GPU VM 的 `slurmd` 已啟動並設為開機啟動。
-這些結果尚未證明 GPU VM 已在控制端註冊、工作能使用 GPU，
-或 GPU 工作已受隔離。
 
 ## 4. 從控制節點查 GPU 節點是否註冊
 
-**目的：** 上一步已啟動 GPU VM 的 `slurmd`，但 playbook 成功只證明服務任務完成。
+**目的：** 上一步已啟動 GPU VM 的 `slurmd`；這一步查控制端看到的節點狀態。
 在**控制節點**以 root 執行下列只讀命令。
 `scontrol` 向正在運行的 `slurmctld` 查詢名為 `compute-gpu01` 的節點；
 這條指令不執行 playbook，不提交工作，也不改動檔案或服務。
@@ -470,8 +467,7 @@ scontrol show node compute-gpu01
 **核對欄位：** 結果要核對 `NodeName` 是 `compute-gpu01`、`NodeAddr` 是 GPU VM 的
 私有 IP `10.146.0.3`、`Gres` 宣告一張 `nvidia_l4`，
 並看 `State` 判斷控制端是否認為節點可接工作。
-這只驗證控制端看到的節點狀態；GPU 工作是否真的能使用裝置，
-仍須由實際 Slurm 工作驗證。
+下一節由實際 Slurm 工作讀取 GPU 裝置。
 
 **實際輸出：**
 
@@ -490,15 +486,13 @@ NodeName=compute-gpu01 Arch=x86_64 CoresPerSocket=2
 14,000 MiB 可排程記憶體和一張 `nvidia_l4`。
 `State=IDLE`、`CPUAlloc=0`、`AllocMem=0` 表示查詢時節點可接新工作且未分配資源；
 `SlurmdStartTime` 顯示運算服務已啟動。
-這是節點註冊證據，還不是 GPU 工作或 GPU 隔離證據。
 
 ## 5. 用 Slurm 請求一張 GPU 的通路驗證
 
 **目的：** 控制端已將 `compute-gpu01` 列為 `IDLE`，接著要確認一般帳號能透過
 Slurm 的 `gpu` 分區請求一張 GPU，並在該分區唯一的 GPU VM 啟動程序。
 此處先用驅動提供的 `nvidia-smi -L` 讀取裝置清單，
-核對排程請求和 GPU 裝置通路；它不是代表性計算工作，
-也不能證明 GPU 隔離或計算結果正確。
+核對排程請求和 GPU 裝置通路；代表性計算工作在下一節執行。
 
 **執行位置與影響：** 在**控制節點**以 root 執行下列一條指令。
 `sudo -iu a2264` 改用一般工作帳號；`srun` 向 Slurm 提交同步工作；
@@ -521,9 +515,7 @@ GPU 0: NVIDIA L4 (UUID: GPU-60db0aa8-3f64-a75a-bd6f-cf44fe764b36)
 ```
 
 **判讀：** Slurm 接受一張 GPU 的請求，並在 `gpu` 分區啟動了 `a2264` 的程序；
-程序能透過 NVIDIA 驅動讀到一張 L4。
-這是排程與裝置可見性的初步驗證，不是 GPU 計算正確性、
-節點主機名或 GPU 隔離的證據。
+程序能透過 NVIDIA 驅動讀到一張 L4；下一節執行二維熱擴散工作。
 
 ## GPU 計算工具準備
 
@@ -649,7 +641,7 @@ cpu_ms=504.605 gpu_kernel_ms=1.894 validation=PASS
 
 **目標與架構：** GCP 的 `openstack-lab01` 承載 DevStack；
 DevStack 的 OpenStack 在這台主機內建立一台乾淨 CPU VM，
-再由 Ansible 配置 VM 內的 CPU 服務。Nova 建 VM，Glance 提供映像，
+驗證 VM 供給與管理連線。Nova 建 VM，Glance 提供映像，
 Neutron 提供網路；Ansible 不負責建立 VM。
 
 **為何不能建 GPU VM：** `openstack-lab01` 沒有 GPU，
@@ -658,79 +650,11 @@ Neutron 提供網路；Ansible 不負責建立 VM。
 也沒有 IOMMU／DMAR，不能用作 OpenStack GPU 運算主機。
 這次只建 CPU VM；先前在 GCP 執行的 GPU 工作是另一項成果。
 
-### DevStack 練習環境與已完成的 API 查詢
-
-**資源關係：** `openstack-lab01` 是 GCP 的 `e2-standard-2` CPU VM。
-內層 CPU VM 使用它的 CPU、記憶體和磁碟；`compute-gpu01` 不屬於這套 OpenStack。
+### 建立 DevStack 練習環境
 
 **DevStack** 是 OpenStack 官方提供的安裝腳本集合，用來快速建立
 單機開發／練習環境；它不是 OpenStack 的另一個服務，也不代表生產部署。
 做法依[官方單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)。
-
-**Horizon 網頁介面：** DevStack 安裝紀錄顯示入口為
-`http://10.146.0.4/dashboard`。Horizon 是在瀏覽器操作 OpenStack 的介面；
-下文的 `openstack` 指令則從命令列操作同一套 API，資源可以互相對照。
-這個網址使用 `openstack-lab01` 的 **GCP 私有 IP**，
-瀏覽器須能連入該私有網路才打得開。
-
-**畫面操作：** 開啟 Horizon、以 DevStack 的 `admin` 使用者登入後，
-可依下表查看這次會用到的資源；截圖當時選取的是 `demo` 專案。
-選單名稱參照 [Horizon 官方使用說明](https://docs.openstack.org/horizon/latest/en_GB/user/log-in.html)；
-密碼留在 VM 上的 `local.conf`，不記入本文件。
-
-| Horizon 畫面 | 在這次環境中看什麼 | 對應命令列操作 |
-|---|---|---|
-| `Project → Compute → Images` | 查看 CirrOS 與已匯入的 Ubuntu 映像 | `openstack image list` |
-| `Project → Network → Networks` | 點進 `private`，查看 `private-subnet` | `openstack network/subnet show` |
-| `Project → Network → Routers` | 點進 `router1`，查看私有子網介面與外部閘道 | `openstack router show` |
-| `Project → Compute → Instances` | 建立 CPU VM，之後查看狀態與 IP | `openstack server create/list` |
-| `Admin → Compute → Flavors` | 查看 CPU、記憶體與磁碟規格 | `openstack flavor list` |
-
-**實際結果：** [Horizon 網路清單截圖](../project/openstack/openstack.png)
-顯示瀏覽器已開啟 `http://127.0.0.1:18080/dashboard/admin/networks/`，
-右上角登入使用者為 `admin`，清單列出 `public`、`shared`、`private`；
-`private` 顯示 `10.0.0.0/26` 子網。這證明瀏覽器能連到 Horizon 並查看網路清單，
-不代表已建立內層 CPU VM。`Create Image`、`Launch Instance` 等按鈕會真的建立資源；
-表中其他畫面仍是操作路徑，不是已完成結果。
-
-![Horizon 管理員網路清單，顯示 public、shared、private 網路](../project/openstack/openstack.png)
-
-**從自己電腦開啟：** `10.146.0.4` 是私有 IP，外部瀏覽器直連會失敗。
-由自己電腦的終端建立 SSH 轉接後，瀏覽器改開
-`http://127.0.0.1:18080/dashboard`。`-L` 只在自己電腦的
-`127.0.0.1:18080` 監聽，經 SSH 送到 `openstack-lab01` 的
-`127.0.0.1:80`；`-N` 不開遠端 shell，終端保持執行代表轉接仍在。
-`--tunnel-through-iap` 讓沒有公網 IP 的 GCP VM 透過 IAP 建立 SSH 連線。
-此步不新增雲端 VM 或公開 HTTP 連入規則；若本機尚無 gcloud SSH 金鑰，
-`gcloud compute ssh` 可能建立金鑰並加入 GCP 登入資訊。
-
-**待執行指令｜自己電腦的終端：**
-
-```bash
-gcloud compute ssh a2264@openstack-lab01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c --tunnel-through-iap --ssh-flag="-N" --ssh-flag="-L 127.0.0.1:18080:127.0.0.1:80"
-```
-
-**關鍵檔案：** 安裝時主要用到兩個檔案：
-
-| 檔案 | 來源與位置 | 何時做什麼 |
-|---|---|---|
-| [local.conf（密碼遮蔽副本）](../project/openstack/local.conf.redacted) | 實際檔案在新 VM 的 `/home/a2264/devstack/local.conf`；連結供安全閱讀 | DevStack 安裝前建立；指定主機 IP、內層 VM 使用 QEMU，以及服務驗證密碼。 |
-| [stack.sh（本次下載的官方版本）](https://opendev.org/openstack/devstack/src/commit/64d59574473c148c3d855124ae5f79681854cd0a/stack.sh) | 從 OpenStack 官方程式庫下載到新 VM 的 `/home/a2264/devstack/stack.sh` | 在新 VM 讀取 `local.conf`，安裝相依套件、寫入設定並啟動 OpenStack 服務。 |
-
-**密碼用途：** `local.conf` 中的 `ADMIN_PASSWORD` 用於 OpenStack 管理登入；
-`DATABASE_PASSWORD`、`RABBIT_PASSWORD`、`SERVICE_PASSWORD`
-供資料庫、訊息佇列及 OpenStack 服務之間驗證。
-建立 `local.conf` 時在新 VM 產生一組隨機密碼，供這四項練習環境設定共用，
-讓 `stack.sh` 能在無人輸入密碼時完成安裝；密碼明文只存於新 VM
-權限 `600` 的 `local.conf`，不寫入工作樹或終端輸出。
-管理密碼也會供後續驗證 OpenStack API 時登入使用。
-
-**安裝順序：** Git 下載官方 DevStack → 建立 `local.conf` →
-`stack.sh` 安裝並啟動服務 → 再由使用者驗證 OpenStack API 與供給操作。
-
-**主機規格：** `openstack-lab01` 位於東京，使用 Ubuntu 24.04、
-2 vCPU、8 GiB 記憶體及 40 GiB 開機磁碟，透過既有 Cloud NAT 上網。
-E2 機型不支援硬體輔助巢狀虛擬化，因此 DevStack 以 QEMU 執行內層 CPU VM。
 
 #### 1. 建立練習主機
 
@@ -762,11 +686,30 @@ gcloud compute instances create openstack-lab01 \
 **實際結果：** `openstack-lab01` 建立成功，位於 `asia-northeast1-c`，
 機型 `e2-standard-2`，內網 IP `10.146.0.4`，無外部 IP，狀態 `RUNNING`。
 沒有設定自動停止；40 GiB 磁碟低於 GCP 提醒的 200 GiB 效能門檻。
+主機使用 Ubuntu 24.04、2 vCPU 與 8 GiB 記憶體；內層 VM 使用這台主機的資源。
 
 **網路結果：** 東京既有 Cloud NAT 涵蓋這台 VM 使用的 `default` 子網。
 新 VM 已實測能連線並解析 DNS，HTTPS 取得 Ubuntu 索引回傳 `200`；
 `apt-get update` 從東京 Ubuntu 鏡像站與安全更新站成功下載 `37.8 MB`
 套件索引，退出碼 0。套件來源可用。
+
+**目的：** 確認這台 GCP E2 宿主機是否提供 KVM 裝置，決定 DevStack
+內層 VM 使用的虛擬化方式。指令只查裝置，不修改主機。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+ls -l /dev/kvm
+```
+
+**實際輸出：**
+
+```text
+ls: cannot access '/dev/kvm': No such file or directory
+```
+
+**判讀：** 這台宿主機沒有 KVM 裝置，因此 `local.conf` 選用 QEMU
+執行內層 CPU VM。
 
 #### 2. 取得 DevStack 並完成安裝
 
@@ -785,12 +728,16 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 **實際結果：** 退出碼 0，官方 DevStack 程式庫已下載到新 VM；
 修訂版 `64d59574473c148c3d855124ae5f79681854cd0a`。
 
-**安裝設定：** DevStack 的 `stack.sh` 需要 `local.conf` 才能以固定設定安裝。
+**安裝檔案：** 下載的 [stack.sh（官方版本）](https://opendev.org/openstack/devstack/src/commit/64d59574473c148c3d855124ae5f79681854cd0a/stack.sh)
+在新 VM 的 `/home/a2264/devstack/stack.sh`，執行時讀取同目錄的 `local.conf`。
+DevStack 的 `stack.sh` 需要 `local.conf` 才能以固定設定安裝。
 新 VM 的 `/home/a2264/devstack/local.conf` 已建立，使用 `10.146.0.4`
 作服務 IP、以 QEMU 執行內層 VM，並含在新 VM 產生的隨機服務密碼；
 建立結果為 `mode 600`，未把密碼寫入工作樹或終端輸出。
 [遮蔽副本](../project/openstack/local.conf.redacted)可用來核對設定；
 重建時須以新密碼取代副本中的 `<redacted>`。
+`ADMIN_PASSWORD` 用於管理登入；`DATABASE_PASSWORD`、
+`RABBIT_PASSWORD`、`SERVICE_PASSWORD` 供 OpenStack 內部服務驗證。
 
 **目的與影響：** 接著由新 VM 的一般使用者執行 `/home/a2264/devstack/stack.sh`。
 它會從官方來源下載並安裝 OpenStack 與相依套件，修改這台專用 VM 的
@@ -805,7 +752,7 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 
 **實際結果：** 終端沒有輸出，安裝日誌留在新 VM 的
 `/home/a2264/devstack/stack-install.log`；`stack.sh` 退出碼 0。
-這表示安裝程序完成，OpenStack API 與 VM 供給仍待實際驗證。
+安裝程序完成；後續接著操作 OpenStack API 建立 VM。
 
 #### 3. 載入憑證並查詢 API
 
@@ -837,12 +784,12 @@ source ~/devstack/openrc admin admin
 ```
 
 **實際結果與判讀：** 初次及後續重新登入時執行均無終端輸出，
-shell 返回提示字元；這只載入登入環境，尚不能證明 OpenStack API 可用。
+shell 返回提示字元；登入環境已載入目前 shell。
 
 **工具與目的：** `openstack` 是操作 OpenStack API 的命令列工具。
 在同一個 shell 列出 Keystone 登錄的服務名稱與類型，
 用來確認管理員憑證能向 API 查詢服務目錄；這是唯讀操作，
-查到服務也還不代表每個服務都能建立資源。
+後續再由各服務執行實際資源操作。
 
 **已執行指令：**
 
@@ -866,7 +813,7 @@ openstack service list -f table -c Name -c Type
 +-------------+----------------+
 ```
 
-**判讀：** 管理員憑證與 Keystone API 可用；其他服務的實際操作仍待驗證。
+**判讀：** 管理員憑證可查詢 Keystone API 的服務目錄。
 
 **目的：** 查 Glance 的映像名稱與狀態，確認是否已有可供建立 VM 的映像。
 `image list` 是唯讀查詢；`-c` 只保留本次要核對的兩欄。
@@ -887,14 +834,13 @@ openstack image list -f table -c Name -c Status
 +--------------------------+--------+
 ```
 
-**判讀：** 映像已登錄且可供建機請求；是否能開機仍待實際 VM 驗證。
+**判讀：** CirrOS 映像已登錄且狀態為 `active`。
 
 ### Neutron 網路：先分清網路、子網與路由
 
-**這次探索要核對的問題：** 建立 VM 前須知道它能接哪個網路、
-從哪個子網取得 IP，以及有沒有通往套件來源的出口。
-以下查詢只確認現有 DevStack 網路設定；沒有建立 VM，
-也不能證明這套無 GPU 的環境適合重建目標。
+**這次要核對的問題：** 建立 VM 前須知道它能接哪個網路、
+從哪個子網取得 IP，以及路由器如何連接該子網。
+以下查詢確認現有 DevStack 網路設定。
 
 **概念：** 在 GCP 建 VM 時會選 VPC 與子網；在 OpenStack，Nova 建 VM 時把
 虛擬網卡接到 Neutron 的 **port**，port 屬於某個 **network**。
@@ -929,16 +875,19 @@ openstack network list -f table -c Name -c Status
 ```
 
 **判讀：** 輸出只有 `Name` 欄，列出 `public`、`shared`、`private`。
-這證明 Neutron API 可以回傳三個網路物件；沒有狀態證據。
-三者目前也只是名稱：不能因為叫 `public` 就認定它接到外網，
-或因為叫 `shared` 就認定它真的開放其他專案使用。
+Neutron API 回傳三個網路物件；後續讀取 `private` 的實際設定。
+
+**Horizon 畫面：** [實際截圖](../project/openstack/openstack.png)
+也列出 `public`、`shared`、`private`；`private` 顯示 `10.0.0.0/26`。
+Horizon 是操作同一套 OpenStack 資源的網頁介面。
+
+![Horizon 網路清單](../project/openstack/openstack.png)
 
 **目的：** 查 `private` 的屬性，是要知道這個網路是否啟用、
 是否只供目前專案使用，以及它連著哪些子網；建立 VM 時會指定網路，
 而子網決定 VM 可能拿到哪段 IP。
 `network show` 只向 Neutron 讀取設定；`-f yaml` 讓欄位逐行顯示。
 這一步核對 `status`、`admin_state_up`、`router:external`、`shared` 和 `subnets`。
-它不顯示子網的 IP 範圍或閘道，也不能證明 VM 能連到套件來源。
 
 **已執行指令：**
 
@@ -963,7 +912,7 @@ subnets:
 **判讀：** `status: ACTIVE` 表示這個 Neutron 網路物件處於啟用狀態；
 `admin_state_up: true` 表示管理設定允許使用。
 `router:external: false` 表示它不是外部網路，`shared: false` 表示未共享給其他專案。
-`subnets` 列出兩個關聯子網 ID，尚未提供各自的 IP 範圍、閘道與 IP 版本。
+`subnets` 列出兩個關聯子網 ID；下一條查詢讀取子網範圍。
 
 **目的：** 列出 `private` 的子網，辨認 CPU VM 可使用的 IPv4 範圍。
 這是 `openstack-lab01` 上的唯讀查詢，不建立或修改網路。
@@ -981,9 +930,8 @@ openstack subnet list --network private -f table
 | `ipv6-private-subnet` | `fdfa:e16c:8d73::/64` |
 | `private-subnet` | `10.0.0.0/26` |
 
-**判讀：** `private-subnet` 是這個網路的 IPv4 子網；
-列表尚未顯示它的閘道、DHCP 或 DNS，也不能證明 VM 可以上網。
-下一條在 `openstack-lab01` 讀取該子網設定，不修改資源：
+**判讀：** `private-subnet` 是 `10.0.0.0/26` IPv4 子網。
+下一條在 `openstack-lab01` 讀取它的閘道、DHCP 與 DNS 設定：
 
 **已執行指令：**
 
@@ -999,7 +947,7 @@ openstack subnet show private-subnet -f yaml
 | `allocation_pools: 10.0.0.2–10.0.0.62` | **位址池**是 Neutron 可自動分給新 VM 網卡的範圍；建一台 VM 時會從中取得一個可用位址，不是每台 VM 都拿到整段。 |
 | `gateway_ip: 10.0.0.1` | 這是子網的閘道；VM 要連往子網以外時，封包先送到這個位址。 |
 | `enable_dhcp: true` | 啟用 DHCP，讓 VM 開機時取得網路設定。 |
-| `dns_nameservers: []` | 子網沒有指定 DNS 伺服器；這個欄位不能證明 VM 能否解析套件庫網域。 |
+| `dns_nameservers: []` | 建立 VM 前，子網沒有指定 DNS 伺服器。 |
 
 **下一步目的：** `10.0.0.1` 是否真的由路由器接到外部網路，
 要看路由器設定；下列查詢不修改資源：
@@ -1020,7 +968,6 @@ openstack router show router1 -f yaml
 | `enable_snat: true` | **SNAT（來源位址轉換）**已啟用：VM 的 `10.0.0.x` 封包經路由器往外送時，路由器會把來源位址改成 `172.24.4.9`。 |
 
 **封包路徑：** `CPU VM (10.0.0.x) → router1 (10.0.0.1) → SNAT (172.24.4.9) → OpenStack 外部網路`。
-上游是否真的通往套件庫尚未實測；CPU VM 建好後直接測試套件下載。
 
 **`public` 網路是什麼：** 這套 DevStack 另有一條名為 `public` 的
 OpenStack 虛擬網路，使用 `172.24.4.0/24` 這段位址；
@@ -1030,10 +977,10 @@ OpenStack 虛擬網路，使用 `172.24.4.0/24` 這段位址；
 DevStack 的[預設網路說明](https://static.opendev.org/docs/devstack/latest/networking.html)
 也列出此浮動 IP 網段。
 
-### 準備可安裝套件的 Linux 映像
+### 準備 Ubuntu VM 開機映像
 
 **目的與影響：** Glance 目前只有 CirrOS；它是小型連線測試系統，
-不適合接下來安裝 Ansible 管理的叢集套件。
+本次改用 Ubuntu 映像建立可登入的 CPU VM。
 改用 [Ubuntu 官方 Ubuntu Minimal 24.04 x86_64 雲端映像](https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260905/)；
 固定 `20260905` 版本，讓日後可找到同一份來源。
 下載的 `.img` 是 VM 開機磁碟的 **QCOW2 映像檔**，先存於
@@ -1062,7 +1009,7 @@ curl -fL --output /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img h
 `--disk-format qcow2` 指定磁碟格式，`--container-format bare` 表示沒有外層容器，
 `--private` 限定目前 `admin` 專案可見。
 這會在 Glance 新增約 252 MB 的映像資料，佔用既有 VM 的儲存空間；
-不新建 GCP VM，也不會刪除原始 `.img` 檔。若不再使用，可刪除這個 Glance 映像。
+原始 `.img` 檔留在宿主機；若不再使用，可刪除這個 Glance 映像。
 指令語法依 [OpenStack CLI 的 image create 說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/image/v2/index.html)。
 
 **已執行指令｜在 `openstack-lab01`：**
@@ -1084,7 +1031,7 @@ openstack image create ubuntu-24.04-minimal-20260905 --file /home/a2264/ubuntu-2
 
 **判讀：** Glance 已接受映像並標為 `active`；`private` 表示僅映像所屬專案可見。
 `size` 是上傳檔案實際大小，`virtual_size` 約為 3.5 GiB，
-挑選 VM 規格時要給開機磁碟足夠空間。這仍不能證明 VM 能開機。
+挑選 VM 規格時要給開機磁碟足夠空間。
 
 **下一步目的與影響：** 查 Nova 已提供的 VM 規格（flavor）：
 每種規格決定 vCPU、RAM 與開機磁碟容量。先找能容納映像虛擬磁碟、
@@ -1131,7 +1078,6 @@ openstack hypervisor stats show
 
 **判讀：** Nova 的統計有空間安排 1 vCPU、2 GiB RAM、20 GiB 磁碟的
 `m1.small`；舊命令雖有停用警告，本次仍成功返回資料。
-統計不等於 VM 已建成，也不能保證開機成功。
 
 **下一步目的與影響：** Ubuntu 映像是 `admin` 專案的私有映像；
 已核對的 `private` 網路屬於 `demo` 專案，且 `shared: false`。
@@ -1192,8 +1138,7 @@ openstack keypair list
 目前需先向 OpenStack 登錄公鑰，之後才能指定它供新 VM 開機時使用。
 
 **下一步目的與影響：** 控制節點已用 `/home/a2264/.ssh/hpc_gpu_ed25519`
-登入其他叢集節點，其公鑰指紋為
-`SHA256:AMM2zBstxpEzT/150e/m12tGzgOEC6dt+pQ51rgWpWw`。
+登入其他叢集節點。
 在 `openstack-lab01` 查看 `a2264` 帳號允許登入的公鑰指紋，
 確認其中是否正是控制節點這把金鑰；若相同，後續只需將該公鑰登錄到
 OpenStack，不必複製或另建私鑰。`ssh-keygen -lf` 只讀公鑰並顯示指紋，
@@ -1270,7 +1215,7 @@ openstack security group list --project demo
 避免和其他專案的同名群組混淆；目前還沒確認群組內的規則。
 
 **下一步目的與影響：** 讀取這個 `demo` 專案群組的規則，
-核對有無 TCP 22 入站，以及 IPv4 出站能否連套件來源。
+核對 TCP 22 入站設定。
 這是唯讀 API 查詢，不建立或修改規則。
 
 **已執行指令｜在 `openstack-lab01`：**
@@ -1284,41 +1229,14 @@ openstack security group rule list 859e6514-e673-47df-aacc-7f10e3ee13b5
 `859e6514-e673-47df-aacc-7f10e3ee13b5`，協定未限制。
 另有同樣模式的 IPv6 出站與群組內入站規則；沒有明列 TCP 22 入站。
 
-**判讀：** IPv4 出站不受這個安全群組阻擋，但套件下載仍須等 VM
-開機後實測路由與 DNS。既有 IPv4 入站規則只讓同群組的 VM 互通；
-從練習環境的外部網段連入新 VM 時，還需要 SSH 入站規則。
-
-**下一步目的與影響：** 在 `demo` 專案的 `default` 安全群組新增一條
-IPv4 TCP 22 入站規則，來源限於既有 OpenStack 練習環境的
-`172.24.4.0/24` 外部子網，供之後從 `openstack-lab01` 經該子網登入
-新 VM。這會影響套用此群組的 `demo` VM 網卡；目前查得沒有執行中的
-OpenStack VM。它不建 VM、不修改 GCP 防火牆；如需撤銷，可按建立結果
-回報的規則 ID 刪除。`--remote-ip` 限制來源，`--dst-port` 指定目的埠；
-指令語法依 [OpenStack CLI 安全群組規則說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/network/v2/index.html)。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-openstack security group rule create --ingress --ethertype IPv4 --protocol tcp --dst-port 22 --remote-ip 172.24.4.0/24 859e6514-e673-47df-aacc-7f10e3ee13b5
-```
-
-**實際輸出重點：** 新規則 ID 為
-`4b34c6d7-cc7e-4412-8014-789bdaeebe1b`；
-`security_group_id=859e6514-e673-47df-aacc-7f10e3ee13b5`，
-`direction=ingress`、`ether_type=IPv4`、`protocol=tcp`、
-`port_range_min=22`、`port_range_max=22`，
-`remote_ip_prefix=172.24.4.0/24`。
-
-**判讀：** `demo` 的 `default` 安全群組已允許該外部子網向套用此群組的
-VM 發起 SSH 連線。這只確認規則建立；VM 的開機、位址與實際 SSH
-通路仍須在建機後驗證。
+**判讀：** 既有 IPv4 入站規則只讓同群組的 VM 互通。
 
 **下一步目的與影響：** 以已匯入的 Ubuntu Minimal 映像建立一台
 `compute-cpu01`，採用 `m1.small`（1 vCPU、2048 MiB RAM、20 GiB 磁碟）。
 它將接到 `demo` 專案既有的 `private` 網路，使用已登錄的
-`openstack-cpu-controller` 公鑰與剛設定 SSH 入站的安全群組。
+`openstack-cpu-controller` 公鑰與 `demo` 專案的 `default` 安全群組。
 Nova 在 `openstack-lab01` 內配置虛擬磁碟、網卡與 QEMU VM，
-占用該 GCP 主機資源；不另建 GCP VM，但運作期間持續消耗主機容量。
+運作期間占用這台宿主機的 CPU、記憶體與磁碟容量。
 `--wait` 讓 CLI 等待建機結果；如要復原，可按 VM 名稱刪除該 OpenStack VM，
 刪除會失去其本機磁碟資料。選項依
 [OpenStack CLI server create 說明](https://docs.openstack.org/python-openstackclient/2025.1/cli/command-objects/server.html)。
@@ -1340,68 +1258,13 @@ openstack server create --flavor m1.small --image 8279b5ea-5e41-44a4-8fa9-598ec8
 
 **判讀：** Nova 已在 `openstack-lab01` 建立並啟動這台內層 VM。
 `10.0.0.62` 是它在 OpenStack `private` 網路上的固定 IP；
-`ACTIVE` 還不能證明 Ubuntu 已完成開機、`cloud-init` 已安裝公鑰，
-或從管理端能 SSH 登入。
+後續從主控台觀察客體開機，並從控制節點測試 SSH 登入。
 
-**為什麼要分配浮動 IP：** 這次的目的是讓**控制節點**日後透過 SSH
-登入 `compute-cpu01`，讓 Ansible 管理這台新 VM。
-控制節點目前沒有直接連到 VM 私有位址 `10.0.0.62` 的路徑。
-原先預備經 `openstack-lab01` 的浮動 IP 連入；下方路由實測顯示
-主機目前把封包交給 GCP 閘道，因此改由已接入私有網路的
-`ovnmeta` 命名空間進行 SSH 連線。
-浮動 IP 是 OpenStack 從 `public` 網路的 `172.24.4.x` 位址中分配一個，
-再對應到 VM 的 `10.0.0.62`；建 VM 時不會自動取得浮動 IP。
-這個 IP 已配置並綁定，但目前不作為管理連線目的地。
-
-**下一步目的與影響：** 在目前 `demo` 專案分配一個 OpenStack 浮動 IP。
-它占用練習環境 `public` 網路的一個位址；建立後尚未連到 VM，
-也不新增 GCP VM、GCP 公網 IP 或 GCP 防火牆規則。
-確認不再使用後，可按回報的浮動 IP ID 釋放。
-指令依 [OpenStack CLI 浮動 IP 說明](https://docs.openstack.org/python-openstackclient/2025.2/cli/command-objects/floating-ip.html)。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-openstack floating ip create public
-```
-
-**實際輸出重點：** `floating_ip_address=172.24.4.105`、
-`id=02d49408-c90a-42ff-958c-54350d272ad1`、
-`floating_network_id=2ec44f3f-5719-4dab-a1df-0e7b4a1d8aab`、
-`project_id=4be84dab90684063847d60ee97acca4e`。
-`fixed_ip_address=None`、`port_id=None`、`status=DOWN`。
-
-**判讀：** `demo` 專案已從 OpenStack `public` 網路取得 `172.24.4.105`；
-目前還沒對應到任何 VM 網卡，因此無法用這個地址登入 `compute-cpu01`。
-
-**下一步目的與影響：** 把已分配的 `172.24.4.105` 對應到
-`compute-cpu01` 的私有 IPv4 `10.0.0.62`。
-`--fixed-ip-address` 明確指定目標 IPv4，避免與同一 VM 的 IPv6 位址混淆。
-這會建立 OpenStack 內的位址對應，讓練習環境從該浮動 IP 連到 VM；
-不會重新開機或新增 GCP 公網 IP。需要復原時，可從 VM 移除浮動 IP
-對應，已分配的地址則要另外釋放。
-指令依 [OpenStack CLI server add floating ip 說明](https://docs.openstack.org/python-openstackclient/2025.1/cli/command-objects/server.html)。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-openstack server add floating ip --fixed-ip-address 10.0.0.62 compute-cpu01 172.24.4.105
-```
-
-**實際結果與判讀：** 指令沒有終端輸出並返回提示字元，
-OpenStack 未回報綁定錯誤。這符合已把 `172.24.4.105` 對應到
-`compute-cpu01` 的請求成功；完整 SSH 通路仍須從控制節點實測。
-
-**管理端身分：** 控制節點持有前面登錄到 OpenStack 的公鑰所對應的
-私鑰；私鑰不放到 `openstack-lab01`。後續要由控制節點經
-`openstack-lab01` 的 `ovnmeta` 命名空間連入 VM 私有位址，
-以 `ubuntu` 帳號執行遠端指令，才能驗證整條 SSH 通路。
-
-**下一步目的與影響：** 讀取浮動 IP `172.24.4.105` 的實際綁定狀態，
+**管理路徑檢查：** 讀取當時已分配的浮動 IP `172.24.4.105`，
 確認 `fixed_ip_address` 是否為 VM 的 `10.0.0.62`、`port_id` 是否已有
 網卡、`router_id` 是否有路由器，以及 `status` 的值。
 這是 OpenStack API 的唯讀查詢；不修改 VM、網路或主機檔案。
-確認對應關係後，再依結果判斷下一個網路或 VM 檢查。
+確認對應關係後，再查宿主機到這個位址的路由。
 
 **已執行指令｜在 `openstack-lab01`：**
 
@@ -1417,13 +1280,10 @@ openstack floating ip show 172.24.4.105 -f yaml
 `router_id=8f73c572-0cdc-4606-844c-a2b9579fef1e`。
 
 **判讀：** 浮動 IP 已對應到 `compute-cpu01` 的私有 IPv4，
-Neutron 也顯示 VM 網卡和路由器關聯。`ACTIVE` 是資源狀態，
-還不能證明從主機發出的 SSH 封包能通過安全群組或抵達 VM。
+Neutron 也顯示 VM 網卡和路由器關聯。
 
 **下一步目的與影響：** 查看 `openstack-lab01` 若連向
 `172.24.4.105`，Linux 會選哪張介面、哪個來源 IP。
-此前 SSH 入站規則只允許 `172.24.4.0/24` 來源；
-這條指令的 `src` 欄位可直接判斷主機的連線是否落在允許範圍。
 `ip route get` 只查本機路由決策，不送封包、不改設定。
 
 **已執行指令｜在 `openstack-lab01`：**
@@ -1444,28 +1304,19 @@ ip route get 172.24.4.105
 `via 10.146.0.1` 是封包先交給的**下一站路由器**，不是把目的地
 改成 `10.146.0.1`；`dev ens4` 表示從 GCP 網卡送出。
 
-**實際走向與判讀：** `openstack-lab01 (10.146.0.4) → GCP 閘道
-(10.146.0.1) → 嘗試尋找 172.24.4.105`。此主機目前選的是 GCP 出口，
-沒有把封包送進本機 DevStack 的 `172.24.4.0/24` 外部網路；
-來源 `10.146.0.4` 也不在先前 SSH 安全群組允許的 `172.24.4.0/24`。
-因此浮動 IP 綁定成功，仍不足以讓這台主機從目前路由直接連入 VM。
+**路由判讀：** 依目前路由表，主機連 `172.24.4.105` 時會選
+`ens4`，以 `10.146.0.4` 為來源，下一跳為 GCP 閘道 `10.146.0.1`。
+`ip route get` 顯示的是核心的路由選擇，沒有實際送出封包。
+因此這台主機目前不會經本機 DevStack 的 `public` 網路連到該浮動 IP。
 
-**`ovnmeta` 是什麼、從哪裡來：** Linux 網路命名空間讓同一台宿主機上的
-程式有獨立的網卡、IP 與路由表。這裡的 `ovnmeta-<網路 UUID>` 是
-OpenStack Neutron 的 OVN metadata 服務為 VM 所在網路建立的命名空間，
-原本用來把 VM 對 `169.254.169.254` 的 metadata 請求轉給 Nova；
-VM 的 `cloud-init` 會利用 metadata 取得開機設定及公鑰。
-[Neutron 的 OVN metadata 設計說明](https://docs.openstack.org/neutron/latest/contributor/internals/ovn/metadata_api.html)
-指出服務會為網路建立 metadata port、命名空間及連接 OVS 的介面，
-並把該 port 的私有 IP 設到空間內的介面上。
-[Neutron 官方參考架構](https://docs.openstack.org/neutron/latest/admin/ovn/refarch/refarch.html)
-也說明這類命名空間可在運算節點上用來連入同網路的 VM。
-它不是另一台 VM，也不是 GCP 網卡或 OpenStack 浮動 IP。
-
-**管理路徑的關鍵證據：** `private` 網路先前查得 UUID 為
-`fb5be63d-7658-453d-9c6d-66243bce244c`；下面實際列出的
-`ovnmeta` 名稱尾段與它完全相同，證明這是 `private` 網路對應的
-metadata 命名空間。先辨認實際名稱：
+**下一步目的：** 主機連浮動 IP 時選了 GCP 閘道，接著查看主機內是否有
+連到 VM 私有網路 `10.0.0.0/26` 的介面。Linux **網路命名空間**
+是在同一台主機上隔出獨立網卡、IP 與路由的環境。
+OpenStack 的 OVN metadata 服務會為 VM 網路建立名為
+`ovnmeta-<網路 UUID>` 的命名空間，供 VM 取得開機設定；
+它也有連到該網路的介面。先列出這台主機現有的命名空間。
+[Neutron metadata 設計](https://docs.openstack.org/neutron/latest/contributor/internals/ovn/metadata_api.html)
+說明了這個介面的來源。
 
 **已執行指令｜在 `openstack-lab01`：**
 
@@ -1479,8 +1330,9 @@ sudo ip netns list
 ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c (id: 0)
 ```
 
-**判讀：** 唯一列出的命名空間對應 `private` 網路。為確認它在該網路
-使用哪個地址，在此空間讀取網卡與位址；兩條命令都不修改網路。
+**判讀：** 名稱尾段 `fb5be63d-7658-453d-9c6d-66243bce244c`
+與前面查得的 `private` 網路 UUID 相同。
+下一條讀取這個命名空間的網卡與 IP；指令不修改網路。
 
 **已執行指令｜在 `openstack-lab01`：**
 
@@ -1497,42 +1349,9 @@ tapfb5be63d-71@if8 UP 169.254.169.254/32 10.0.0.2/26
 **判讀：** `tapfb5be63d-71@if8` 是該空間內已啟用的介面；
 `169.254.169.254/32` 是 metadata 服務位址，`10.0.0.2/26` 是
 這個空間在 `private` 子網 `10.0.0.0/26` 上實際持有的 IPv4。
-`10.0.0.2` 不是 VM 位址（VM 是 `10.0.0.62`），也不是路由器閘道
-（`10.0.0.1`）；它落在先前查得的 Neutron 位址池
-`10.0.0.2–10.0.0.62` 內。依上面的 OVN metadata 機制，
-這是 metadata 介面取得的私有 IP；本次已從介面實測核對地址，
-尚未另外查該 metadata port 的 Neutron 紀錄。
-兩者同在私有子網，從此空間連 VM 時可用它作來源；
-後續 SSH 登入成功才證實整條通路確實可用。這個名稱與位址來自
-目前的 Neutron 網路狀態；若網路重建，重跑前須重新查詢。
-此前安全群組只允許 `172.24.4.0/24` 來源連 TCP 22，
-沒有允許 `10.0.0.2`；要使用這條路徑，須新增限於該來源的規則。
-
-**下一步目的與影響：** 透過 Nova 讀取 `compute-cpu01` 最後 80 行
-開機主控台紀錄，查看 Ubuntu 是否開到登入階段、`cloud-init`
-是否有完成或報錯。這是 OpenStack API 的唯讀查詢，不依賴 VM
-回應 ICMP，也不修改 VM 或服務。`--lines 80` 限制輸出長度；
-若紀錄不足以判斷，須依實際內容再查。
-指令語法依 [OpenStack CLI 的 console log 說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/compute/v2/index.html#console-log-show)。
-
-**已執行指令｜在 `openstack-lab01` 的 `demo` 專案 shell：**
-
-```bash
-openstack console log show --lines 80 compute-cpu01
-```
-
-**實際輸出重點：** `cloud-init` 顯示 `ens3` 的預設閘道為
-`10.0.0.1`、直連網段為 `10.0.0.0/26`，且有到 `10.0.0.2`
-的主機路由。紀錄也顯示產生了 VM 自己的 SSH host keys，
-接著回報 `cloud-init.service` 的 Network Stage 完成，
-`network-online.target` 已到達。提供的最後一行在
-`cloud-init-hotplugd` 訊息處截斷。
-
-**判讀：** VM 已執行到網路設定及 SSH 主機金鑰產生階段；
-這份節錄沒有顯示完整 `cloud-init` 結束或 SSH 登入成功。
-目前已知主機連浮動 IP 會走 GCP 閘道，且安全群組沒有允許
-從 `ovnmeta` 的 `10.0.0.2` 進入 VM 的 SSH。
-後續先按這個來源新增範圍限定的入站規則，再實測 TCP 22。
+從這個空間連向同一子網的 `compute-cpu01`（`10.0.0.62`）時，
+連線來源是 `10.0.0.2`。下一步為這個來源新增 TCP 22 入站規則。
+若 `private` 網路重建，須重新查詢命名空間名稱及 IP。
 
 **下一步目的與影響：** 在 `demo` 專案的 `default` 安全群組
 `859e6514-e673-47df-aacc-7f10e3ee13b5` 新增 IPv4 入站規則，
@@ -1541,8 +1360,7 @@ openstack console log show --lines 80 compute-cpu01
 並不修改 VM、GCP 防火牆或私鑰。`--ingress` 指入站，
 `--ethertype IPv4` 限定 IPv4，`--protocol tcp` 和 `--dst-port 22`
 限定 SSH 目的埠，`--remote-ip` 限定來源。OpenStack 回報規則 ID 後，
-可用該 ID 刪除規則以復原。這步只是開放入站，還不能證明 SSH
-服務已啟動或金鑰登入成功。
+可用該 ID 刪除規則以復原。
 
 **已執行指令｜在 `openstack-lab01` 的 `demo` 專案 shell：**
 
@@ -1557,8 +1375,7 @@ openstack security group rule create --ingress --ethertype IPv4 --protocol tcp -
 `port_range_min=22`、`port_range_max=22`、
 `remote_ip_prefix=10.0.0.2/32`。
 
-**判讀：** `demo` 的 `default` 安全群組已加入限定來源的 SSH 入站規則。
-OpenStack 回報規則已建立，尚未證明 VM 的 TCP 22 有回應；
+**判讀：** `demo` 的 `default` 安全群組已加入限定來源的 SSH 入站規則；
 若要撤銷，可依上面的規則 ID 刪除。
 
 **下一步目的與影響：** 在承載 VM 的 `openstack-lab01` 直接列出
@@ -1583,7 +1400,6 @@ sudo virsh list --all
 ```
 
 **判讀：** libvirt 回報這台宿主機上的 `instance-00000001` 正在執行。
-這只證明虛擬機程序存在，不代表 Ubuntu 已完成開機或 SSH 已監聽。
 
 **下一步目的與影響：** 從 `openstack-lab01` 接上
 `instance-00000001` 的序列主控台，直接讀取 VM 當前顯示的畫面，
@@ -1602,8 +1418,7 @@ sudo virsh console instance-00000001
 `root@compute-cpu01:~#` 提示字元。
 
 **判讀：** 已透過序列主控台進入 `compute-cpu01` 的 root shell；
-Ubuntu 已運行，但先前的 TCP 22 連線仍被拒絕，需直接查看 SSH
-服務狀態。離開主控台用 `Ctrl+]`，不會關閉 VM。
+接著直接查看客體的 SSH 服務狀態。離開主控台用 `Ctrl+]`，不會關閉 VM。
 
 **下一步目的與影響：** 在目前的 `compute-cpu01` root shell
 讀取 Ubuntu 的 `ssh` 服務狀態和最近訊息。`systemctl status`
@@ -1622,15 +1437,13 @@ systemctl status ssh --no-pager
 `Active: inactive (dead)`，並顯示 `TriggeredBy: ssh.socket`。
 
 **判讀：** VM 已安裝 SSH 服務，但目前沒有運行，且未設為開機啟動。
-這與從 `ovnmeta` 連 TCP 22 收到 `Connection refused` 一致。
-`ssh.socket` 的存在不代表這次已接受連線；需啟動服務後實測。
 
 **下一步目的與影響：** 在 `compute-cpu01` 的 root shell
 啟動 `ssh.service` 並設為開機啟動，讓已存在的 Ubuntu SSH
 服務現在和重開機後都能接受連線。`enable` 更新 systemd 的
 開機啟動連結，`--now` 同時立即啟動服務；不安裝套件，
-不修改 OpenStack 安全群組。現有入站規則會允許
-`10.0.0.2/32` 和先前設定的 `172.24.4.0/24` 來源連 TCP 22。
+不修改 OpenStack 安全群組。前面新增的入站規則允許
+`10.0.0.2/32` 來源連 TCP 22。
 若需復原，可執行 `systemctl disable --now ssh`，
 立即停止服務並取消開機啟動。執行後須再驗證服務狀態及實際登入。
 
@@ -1645,58 +1458,7 @@ systemctl enable --now ssh
 `/etc/systemd/system/multi-user.target.wants/ssh.service`
 兩個指向 `ssh.service` 的連結。
 
-**判讀：** 開機啟動連結已建立。原主控台未返回提示字元，
-因此沒有用這條命令的退出碼確認完整成功；
-後續從控制節點以金鑰登入成功，見下方實測。
-
-**宿主機限制：** `openstack-lab01` 使用 `e2-standard-2`，
-實際沒有 `/dev/kvm`；[Google 文件](https://docs.cloud.google.com/compute/docs/instances/nested-virtualization/overview)
-也列出 E2 不支援巢狀虛擬化。內層 `compute-cpu01` 因此沒有
-KVM 硬體加速可用；這不妨礙下方已完成的 SSH 登入。
-
-**目的與影響：** 客體當時尚未完成開機，從 `openstack-lab01` 的
-`demo` 專案以 Nova 對 `compute-cpu01` 執行硬重啟，相當於強制重置
-內層 VM 電源；未寫入磁碟的資料可能遺失，VM 的既有磁碟與網卡設定
-不會因這條命令刪除。宿主機 `openstack-lab01` 不會重啟，
-也不新增 GCP 資源。先前已實測的 `source ~/devstack/openrc admin demo`
-只設定目前 shell 的 OpenStack 登入環境；執行下列命令前須在這個
-專案環境中。`--hard` 指定強制重啟；沒有 `--wait`，因此指令返回
-只代表 Nova 接受請求，之後仍須單獨核對 VM 狀態和登入。
-
-**已執行指令｜在 `openstack-lab01` 的 `demo` 專案 shell：**
-
-```bash
-openstack server reboot --hard compute-cpu01
-```
-
-**實際結果與判讀：** 指令沒有終端輸出並返回提示字元，
-Nova 沒有回報硬重啟請求錯誤；是否恢復運行須看下一條查詢。
-
-**驗證目的與影響：** 在同一個 `demo` 專案 shell 向 Nova 查
-`compute-cpu01` 的工作狀態與電源狀態欄位。這是唯讀 API 查詢，
-不操作 VM；`ACTIVE` 只表示 Nova 認為 VM 在運行，
-不能代替 Ubuntu 開機與 SSH 登入驗證。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-openstack server show -f value -c status -c power_state compute-cpu01
-```
-
-**實際輸出：**
-
-```text
-ACTIVE
-```
-
-**判讀：** Nova 回報 `status=ACTIVE`；本次輸出沒有顯示
-`power_state` 欄位值，不能聲稱該欄已核對。之後的客體開機與
-SSH 登入另以實際輸出確認。
-
-**客體開機結果：** `compute-cpu01` 主控台後續顯示
-`Cloud-init v. 26.1-0ubuntu1~24.04.1 finished`、
-`Ubuntu 24.04.4 LTS compute-cpu01 ttyS0` 與 `compute-cpu01 login:`。
-這表示客體已到登入階段；單憑主控台提示仍不能證明遠端金鑰登入。
+**判讀：** 開機啟動連結已建立。
 
 **目的與影響：** 從控制節點以既有私鑰登入 `compute-cpu01`，
 驗證管理端到 OpenStack 客體的完整 SSH 通路。
@@ -1719,7 +1481,6 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 \
 
 **判讀：** 控制節點已經透過 `openstack-lab01` 的命名空間，
 以 `ubuntu` 帳號和既有 SSH 金鑰完整登入 OpenStack CPU VM。
-這證明連線及身分驗證成功。
 
 ## 成果範圍
 

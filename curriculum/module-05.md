@@ -808,10 +808,26 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 
 #### 3. 載入憑證並查詢 API
 
+**進入操作主機：** 後續從控制節點 `instance-20260923-104239`
+開啟互動 shell 時，使用下列已實測的 SSH 指令進入 `openstack-lab01`。
+它透過 GCP IAP 連到沒有公網 IP 的 VM，只建立連線，
+不修改 VM 檔案或 OpenStack 資源。上面的安裝命令則是從控制節點遠端執行，
+無須先進入互動 shell。
+
+**已執行指令｜控制節點：**
+
+```bash
+gcloud compute ssh a2264@openstack-lab01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c --tunnel-through-iap
+```
+
+**實際結果與判讀：** 出現 `a2264@openstack-lab01:~$` 提示字元，
+表示已進入目標 VM；尚未載入這個 shell 的 OpenStack 登入環境。
+
 **目的與影響：** 在 `openstack-lab01` 使用 DevStack 附的 `openrc`。
 它把 OpenStack API 位址與管理員登入資訊載入目前的 shell，
 讓稍後的 `openstack` 指令能向 API 驗證；`admin admin` 分別是使用者
-與專案名稱。`source` 只影響目前的 shell，不會變更服務或建立資源。
+與專案名稱。每次開新的 SSH shell 都要重新執行；`source` 只影響目前的 shell，
+不會變更服務或建立資源。
 
 **已執行指令：**
 
@@ -819,8 +835,8 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 source ~/devstack/openrc admin admin
 ```
 
-**實際結果與判讀：** 無終端輸出，shell 已返回提示字元；這只載入登入環境，
-尚不能證明 OpenStack API 可用。
+**實際結果與判讀：** 初次及後續重新登入時執行均無終端輸出，
+shell 返回提示字元；這只載入登入環境，尚不能證明 OpenStack API 可用。
 
 **工具與目的：** `openstack` 是操作 OpenStack API 的命令列工具。
 在同一個 shell 列出 Keystone 登錄的服務名稱與類型，
@@ -1029,58 +1045,9 @@ curl -fL --output /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img h
 100  252M  100  252M    0     0  45.3M      0  0:00:05  0:00:05 --:--:-- 54.6M
 ```
 
-**判讀：** Ubuntu 映像已下載到 `openstack-lab01`；
-還沒確認檔案校驗值，也尚未匯入 Glance。
+**判讀：** Ubuntu 映像已下載到 `openstack-lab01`，尚未匯入 Glance。
 
-**下一步目的與影響：** 從控制節點登入 `openstack-lab01`，
-接續核對已下載的 Ubuntu 映像。SSH 只建立互動連線，
-不修改 VM 檔案或 OpenStack 資源；`--tunnel-through-iap` 經 GCP IAP 連到沒有公網 IP 的 VM。
-
-**已執行指令｜控制節點 `instance-20260923-104239`：**
-
-```bash
-gcloud compute ssh a2264@openstack-lab01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c --tunnel-through-iap
-```
-
-**實際結果：** 登入後出現 `a2264@openstack-lab01:~$` 提示字元。
-**判讀：** 已進入目標 VM 的互動 shell；這不表示映像已通過校驗。
-
-**下一步目的與影響：** 在 `openstack-lab01` 計算剛下載映像的 SHA-256，
-與 [Ubuntu 官方此版本的 SHA256SUMS](https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260905/SHA256SUMS)
-所列 `ubuntu-24.04-minimal-cloudimg-amd64.img` 值
-`46b0dbaffa6950a7da5ff2dc5ed34c46084610b3b6d1fae8f1ec2d7e953984a3` 比對。
-此指令只讀取主機上的映像檔，不修改檔案、服務或 OpenStack 資源。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sha256sum /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img
-```
-
-**實際輸出：**
-
-```text
-46b0dbaffa6950a7da5ff2dc5ed34c46084610b3b6d1fae8f1ec2d7e953984a3  /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img
-```
-
-**判讀：** 輸出與 Ubuntu 官方這個版本的映像校驗值一致，
-下載檔案可用於下一步匯入。
-
-**下一步目的與影響：** 目前是新的 SSH shell，需再次載入 DevStack
-的管理員環境，供後續 `openstack` 指令向 API 驗證。
-`admin admin` 是使用者與專案名稱；`source` 只設定目前 shell 的環境變數，
-不修改檔案、服務或雲端資源。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-source ~/devstack/openrc admin admin
-```
-
-**實際結果與判讀：** 沒有終端輸出，返回 `a2264@openstack-lab01:~$`；
-目前 shell 已載入管理員環境。前述 API 查詢已確認這套環境可查詢 Glance。
-
-**下一步目的與影響：** 將校驗通過的 Ubuntu QCOW2 檔案從
+**下一步目的與影響：** 將下載的 Ubuntu QCOW2 檔案從
 `openstack-lab01` 的 `/home/a2264/` 上傳到同一台主機承載的 Glance，
 讓後續 OpenStack CPU VM 能選它作開機映像。`--file` 指定來源檔，
 `--disk-format qcow2` 指定磁碟格式，`--container-format bare` 表示沒有外層容器，

@@ -679,7 +679,7 @@ Neutron 提供網路；Ansible 不負責建立 VM。
 
 | Horizon 畫面 | 在這次環境中看什麼 | 對應命令列操作 |
 |---|---|---|
-| `Project → Compute → Images` | 看目前的 CirrOS；上傳 Ubuntu 映像後從這裡核對狀態 | `openstack image list` |
+| `Project → Compute → Images` | 查看 CirrOS 與已匯入的 Ubuntu 映像 | `openstack image list` |
 | `Project → Network → Networks` | 點進 `private`，查看 `private-subnet` | `openstack network/subnet show` |
 | `Project → Network → Routers` | 點進 `router1`，查看私有子網介面與外部閘道 | `openstack router show` |
 | `Project → Compute → Instances` | 建立 CPU VM，之後查看狀態與 IP | `openstack server create/list` |
@@ -1056,11 +1056,53 @@ curl -fL --output /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img h
 不新建 GCP VM，也不會刪除原始 `.img` 檔。若不再使用，可刪除這個 Glance 映像。
 指令語法依 [OpenStack CLI 的 image create 說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/image/v2/index.html)。
 
-**待執行指令｜在 `openstack-lab01`：**
+**已執行指令｜在 `openstack-lab01`：**
 
 ```bash
 openstack image create ubuntu-24.04-minimal-20260905 --file /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img --disk-format qcow2 --container-format bare --private
 ```
+
+**實際輸出重點：**
+
+| 欄位 | 值 |
+|---|---|
+| `id` | `8279b5ea-5e41-44a4-8fa9-598ec8d4646f` |
+| `name` | `ubuntu-24.04-minimal-20260905` |
+| `status` | `active` |
+| `disk_format` / `container_format` | `qcow2` / `bare` |
+| `visibility` | `private` |
+| `size` / `virtual_size` | `264372224` bytes / `3758096384` bytes |
+
+**判讀：** Glance 已接受映像並標為 `active`；`private` 表示僅映像所屬專案可見。
+`size` 是上傳檔案實際大小，`virtual_size` 約為 3.5 GiB，
+挑選 VM 規格時要給開機磁碟足夠空間。這仍不能證明 VM 能開機。
+
+**下一步目的與影響：** 查 Nova 已提供的 VM 規格（flavor）：
+每種規格決定 vCPU、RAM 與開機磁碟容量。先找能容納映像虛擬磁碟、
+又適合這台 2 vCPU／8 GiB DevStack 主機的選項，避免直接建立不合適的 VM。
+這是唯讀 API 查詢，不新增資源；欄位只顯示名稱與三項容量。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+openstack flavor list -f table -c Name -c VCPUs -c RAM -c Disk
+```
+
+**實際輸出重點：** `RAM` 單位為 MiB，`Disk` 單位為 GiB。
+
+| 規格 | vCPU | RAM | 開機磁碟 |
+|---|---:|---:|---:|
+| `m1.tiny` | 1 | 512 MiB | 1 GiB |
+| `ds1G` | 1 | 1024 MiB | 10 GiB |
+| `m1.small` | 1 | 2048 MiB | 20 GiB |
+| `ds2G` | 2 | 2048 MiB | 10 GiB |
+| `m1.medium` | 2 | 4096 MiB | 40 GiB |
+
+**判讀：** 清單表示這些規格可被目前專案看見，
+不保證當下的配額或主機剩餘資源足以建立 VM。
+`m1.tiny` 的 1 GiB 磁碟小於映像的約 3.5 GiB 虛擬容量；
+`m1.small` 的 1 vCPU、2 GiB RAM 與 20 GiB 磁碟是本次 CPU VM 的候選規格，
+建機成功及系統可用仍須實測。
 
 ## 目前限制
 

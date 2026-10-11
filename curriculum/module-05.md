@@ -9,15 +9,16 @@
 但當時 GPU VM 並未接受 Slurm 排程。
 本模組把節點設定寫成可重跑的 Ansible playbook，
 讓控制端能管理 GPU VM 的身分驗證、Slurm 設定和運算服務。
-本模組接著由現有 DevStack 的 OpenStack 服務供給乾淨 CPU VM，
-再用 Ansible 從新系統配置可驗證的 CPU 叢集服務。
-既有 GCP VM 的 GPU 工作結果另列，不當作 OpenStack GPU 重建。
+另由現有 DevStack 的 OpenStack 服務供給一台乾淨 CPU VM，
+驗證資源建立、網路與控制節點登入。
+既有 GCP VM 的叢集與 GPU 工作結果和 OpenStack 單台 CPU VM 分開列示。
 
-**目前成果：** 已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
+**已完成成果：** 已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
 控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
 並在該分區執行二維熱擴散工作，使用 L4 算出與 CPU 一致的結果。
-OpenStack 已建立 `compute-cpu01`，Nova 回報 `ACTIVE`；
-其 SSH、套件來源與 Ansible 首次部署仍待驗證。
+OpenStack 已建立 `compute-cpu01`，Nova 回報 `ACTIVE`，
+控制節點也已用 SSH 金鑰登入。OpenStack 這部分是單台 VM 供給與登入證據；
+沒有在該 VM 上執行 Ansible 或建立 OpenStack 多節點叢集。
 
 ## 管理位置與本次部署範圍
 
@@ -1719,14 +1720,14 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 \
 
 **判讀：** 控制節點已經透過 `openstack-lab01` 的命名空間，
 以 `ubuntu` 帳號和既有 SSH 金鑰完整登入 OpenStack CPU VM。
-這證明連線及身分驗證成功；套件下載、Ansible 首次部署與
-CPU 工作尚未由這次登入驗證。
+這證明連線及身分驗證成功；這次登入不代表已在 OpenStack VM
+部署叢集服務或執行 CPU 工作。
 
-## 目前限制
+## 成果界線
 
 - 尚未由 Slurm 跨節點執行 CPU 工作。
 - NFS、MUNGE 與 Slurm playbook 已在既有兩台 VM 執行；
   尚未驗證乾淨環境的首次部署。
 - OpenStack CPU VM 已建立，控制節點已用 SSH 金鑰登入；
-  宿主機沒有 KVM 加速，套件來源、Ansible 首次部署及 CPU 工作尚未驗證。
-  現有 DevStack 不能供給 GPU VM。
+  未在這台 VM 上執行 Ansible 或 Slurm 工作，也沒有建立 OpenStack 多節點叢集。
+  宿主機沒有 KVM 加速；現有 DevStack 不能供給 GPU VM。

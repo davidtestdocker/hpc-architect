@@ -8,11 +8,11 @@
 | [2 Linux 問題判斷與 Python 健檢工具](curriculum/module-02.md) | 已完成：健檢 CLI、使用說明、正常與兩種條件不符案例 |
 | [3 C/C++ 系統程式與 MPI 工作](curriculum/module-03.md) | 已完成：C++ 工具、C 序列版、本機 MPI 分工及單節點 Slurm 兩 rank 工作；工作 9 的答案 `55`、退出碼 `0:0` |
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 已完成：兩台 VM 私有 IP 可互通，控制節點能 SSH 遠端執行；GPU VM 透過 NAT 連 GitHub 回報 HTTP `200`，並辨認出一張 NVIDIA L4；NFS 已驗證雙向讀寫；兩台 VM 各執行一個 MPI rank，主機名不同，部分總和 `15+40=55` |
-| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 進行中：既有 GCP 叢集的 Ansible、Slurm 與 L4 工作已有實測結果。`openstack-lab01` 沒有 GPU；既有 G2 VM 也沒有 IOMMU／DMAR，**目前這套 OpenStack 不能建立 GPU VM**。DevStack 已建立乾淨 CPU VM `compute-cpu01`，Nova 回報 `ACTIVE`，私有 IP 為 `10.0.0.62`，規格是 `m1.small`。控制節點已透過 SSH 金鑰登入該 VM。宿主機為 E2，沒有 `/dev/kvm`，內層 VM 無法使用 KVM 加速；套件下載與 Ansible 首次部署仍待驗證。`private` 的 IPv4 子網為 `10.0.0.0/26`，DHCP 已啟用；`router1` 連接該子網與外部網路，SNAT 已啟用。Ubuntu Minimal 24.04 映像已匯入 Glance，狀態 `active`。 |
+| [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 已完成並依學員決定收尾：既有 GCP 兩節點的 NFS、MUNGE、Slurm 設定已由 Ansible 正式部署與重跑；Slurm 已排程 L4 二維熱擴散工作，結果與 CPU 一致。DevStack 另建立單台 CPU VM `compute-cpu01`，Nova 回報 `ACTIVE`，控制節點已以 SSH 金鑰登入。OpenStack VM 未執行 Ansible 或 Slurm 工作，沒有驗證 OpenStack 多節點叢集或 GPU VM。 |
 | [6 叢集維運、Zabbix 監控與故障復原](curriculum/module-06.md) | 未開始 |
 | [7 效能證據、K8s／GKE 與架構取捨](curriculum/module-07.md) | 未開始 |
 | [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 |
 
-依模組順序推進；目前進行模組 05 叢集建置與管理自動化。
+依模組順序推進；模組 05 已依實際成果收尾，模組 06 尚未開始。
 模組 04 的跨節點 MPI 由 `mpirun` 透過 SSH 啟動，只用 CPU；
 這不代表已驗證跨節點 Slurm 排程或 GPU 計算。

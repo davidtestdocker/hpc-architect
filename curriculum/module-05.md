@@ -1159,11 +1159,18 @@ source ~/devstack/openrc admin demo
 目前 shell 已載入 `admin` 使用者對 `demo` 專案的登入環境，
 仍需用後續 API 操作確認可用。
 
-**下一步目的與影響：** Ubuntu 雲端映像預計在開機時透過 `cloud-init`
-接收 SSH 公鑰，讓 Ansible 從控制節點登入新 VM。
-先查目前帳號已有的 OpenStack key pair 名稱，避免建立重複資源；
-OpenStack 保存的是公鑰，私鑰應留在可登入 VM 的管理端。
-這是唯讀查詢，不顯示私鑰，也不修改 VM。
+**金鑰如何進入新 VM：** `cloud-init` 是 Ubuntu 雲端映像內的開機設定工具。
+新 VM 第一次啟動時，它會讀取 OpenStack 提供的設定資料，
+把指定的 SSH 公鑰放進 VM 登入帳號的 `authorized_keys`。
+這次要用的是**控制節點現有 SSH 私鑰所對應的公鑰**：
+控制節點保留私鑰，OpenStack 只登錄公鑰；建 VM 時指定登錄名稱，
+OpenStack 才知道要提供哪一把公鑰。之後控制節點持私鑰嘗試 SSH 登入，
+VM 用已安裝的公鑰核對身分。Ansible 將沿用這條 SSH 通路；
+能否實際登入仍須等 VM 建立後驗證。
+
+**下一步目的與影響：** 先用 `openstack keypair list` 查目前帳號已有的
+OpenStack 金鑰名稱，避免重複登錄。這是唯讀查詢，
+不顯示私鑰，也不修改 VM。
 
 **已執行指令｜在 `openstack-lab01`：**
 

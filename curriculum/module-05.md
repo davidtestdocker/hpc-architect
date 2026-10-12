@@ -1482,5 +1482,52 @@ CPU 客體要掛載控制節點的 NFS、連到 Slurm 控制服務時，
 `br-ex` 不是 OpenStack 強制固定的名稱。
 本機的 [local.conf 遮蔽副本](../project/openstack/local.conf.redacted)
 沒有指定外部橋名稱，但這仍不足以證明執行中的 OVN 網路
-實際對應到哪個橋。先核對本機執行中的橋接對應及路由器外側網段，
-再決定是否需要變更宿主機介面、位址或轉址；目前不執行橋接變更。
+實際對應到哪個橋。
+
+**已執行指令｜控制節點，透過 SSH 在 `openstack-lab01` 啟用介面：**
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'sudo ip link set dev br-ex up'
+```
+
+**實際結果與判讀：** 指令沒有終端輸出並返回控制節點提示字元，
+沒有回報錯誤。這表示宿主機接受了啟用 `br-ex` 介面的操作；
+尚不能由此確認它對應哪個 OpenStack 外部網路，
+也不能證明客體到 GCP 的通路已接通。
+此操作沒有配置 IP、NAT 或更動客體；如需撤銷，
+在確認介面沒有其他用途後可於宿主機執行 `sudo ip link set dev br-ex down`。
+
+**查詢目的與影響：** 在宿主機唯讀查詢 Open vSwitch 的
+`ovn-bridge-mappings`；這個欄位把 OVN 使用的網路名稱對應到
+宿主機橋接介面。這項查詢實際在啟用 `br-ex` **之後**執行；
+單有橋名仍不代表整條客體回程已可用。
+查詢不修改介面、VM 或雲端資源。
+
+**已執行指令｜控制節點：**
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'sudo ovs-vsctl get Open_vSwitch . external_ids:ovn-bridge-mappings'
+```
+
+**實際輸出：**
+
+```text
+"public:br-ex"
+```
+
+**判讀：** 執行中的 OVN 橋接對應把 `public` 這個實體網路標籤
+映射到宿主機的 `br-ex`。這比 DevStack 預設名稱更直接；
+仍須核對 Neutron 的 `public` 網路物件是否使用同一實體網路標籤。
+本次查詢沒有配置位址或轉址，尚不能證明客體到控制節點可達。
+
+**下一步目的與影響：** 在 `openstack-lab01` 載入 `admin demo`
+的 OpenStack API 憑證，唯讀查詢 `public` 網路的外部網路屬性
+及 `provider:physical_network`。這個欄位若是 `public`，
+才能把上面的 `public:br-ex` 對應連到該 Neutron 網路；
+查詢不變更 VM、網路或宿主機設定。
+
+**待執行指令｜控制節點：**
+
+```bash
+sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'source /home/a2264/devstack/openrc admin demo && openstack network show public -f yaml -c name -c router:external -c provider:physical_network'
+```

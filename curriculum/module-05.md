@@ -1466,73 +1466,74 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 \
 VM 內啟動的 `ssh.service` 接受連線，再用已登錄的公鑰核對控制節點私鑰。
 本次管理連線使用 VM 的私有 IP。
 
-### 接通 CPU 客體到控制節點的工作網路
+### CPU 客體到控制節點的網路通路
 
-**現有能力與缺口：** 控制節點已能透過宿主機的 OVN 命名空間
-SSH 登入 `compute-cpu01`。這條連線由控制節點發起；
-CPU 客體要掛載控制節點的 NFS、連到 Slurm 控制服務時，
-則需要從客體 `10.0.0.62` 向控制節點 `10.140.0.2` 發起連線。
-上文已記錄 `openstack subnet show private-subnet -f yaml` 的結果：
-`gateway_ip: 10.0.0.1`。這證明 Neutron 子網宣告的閘道位址，
-不能單憑它判定客體目前的預設路由，或判定閘道屬於哪個路由器。
+**要解決的問題：** 控制節點已能透過 OVN 命名空間 SSH **進入**
+`compute-cpu01`，但這不能證明客體能主動連到控制節點。
+NFS 掛載與 Slurm 節點服務都需要後一個方向。
+本節只處理 `compute-cpu01` 到控制節點 `10.140.0.2` 的出站路徑。
 
-**外部橋名稱的依據與限制：**
+**先分清三個網段：**
+
+| 位置 | 本次位址 | 作用 |
+|---|---|---|
+| OpenStack `private` | 客體 `10.0.0.62`；`router1` 內側 `10.0.0.1` | 客體把跨子網封包交給 Neutron 路由器 |
+| DevStack `public` | `router1` 外側 `172.24.4.9`；宿主機 `br-ex` `172.24.4.1` | Neutron 路由器與宿主機之間的外部網段 |
+| GCP VPC | 宿主機 `ens4` `10.146.0.4`；控制節點 `10.140.0.2` | 宿主機連往控制節點的網段 |
+
+```text
+客體 10.0.0.62
+  → router1 內側 10.0.0.1
+  → Neutron 把來源改成 router1 外側 172.24.4.9
+  → public 網路、br-ex；宿主機在這段的位址是 172.24.4.1
+  → 宿主機經 ens4 送出，把來源再改成 10.146.0.4
+  → GCP VPC → 控制節點 10.140.0.2:22
+```
+
+兩次改的是**來源位址**；這次測試的目的位址一直是
+控制節點 `10.140.0.2:22`。
+`br-ex` 是這台宿主機接 DevStack `public` 的橋，
+`ens4` 才是宿主機接 GCP VPC 的網卡。
+**來源轉址（SNAT）**會在封包離開某一層時改寫來源 IP，
+讓回覆能沿已建立的連線反向返回。本次需要兩段：
+Neutron 把 `10.0.0.62` 轉成 `172.24.4.9`；
+宿主機再把 `172.24.4.9` 轉成 `10.146.0.4`。
+下列指令與輸出逐段核對這條路徑。
+
+#### 1. 確認 `public` 對應的宿主機橋
+
 [DevStack 官方網路文件](https://docs.openstack.org/devstack/latest/networking.html)
-把 `br-ex` 列為預設環境的外部橋，並說明預設不接實體網卡；
-`br-ex` 不是 OpenStack 強制固定的名稱。
-本機的 [local.conf 遮蔽副本](../project/openstack/local.conf.redacted)
-沒有指定外部橋名稱，但這仍不足以證明執行中的 OVN 網路
-實際對應到哪個橋。
+使用 `br-ex` 作為預設外部橋名稱，但名稱並非 OpenStack 強制固定值。
+這次先在宿主機啟用已存在的 `br-ex`；指令只改介面管理狀態，
+不配置 IP 或開放入站埠。實際橋接對應在啟用後才核對。
 
-**已執行指令｜控制節點，透過 SSH 在 `openstack-lab01` 啟用介面：**
+**已執行指令｜控制節點經 SSH 在 `openstack-lab01` 執行：**
 
 ```bash
 sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'sudo ip link set dev br-ex up'
 ```
 
-**實際結果與判讀：** 指令沒有終端輸出並返回控制節點提示字元，
-沒有回報錯誤。這表示宿主機接受了啟用 `br-ex` 介面的操作；
-尚不能由此確認它對應哪個 OpenStack 外部網路，
-也不能證明客體到 GCP 的通路已接通。
-此操作沒有配置 IP、NAT 或更動客體；如需撤銷，
-在確認介面沒有其他用途後可於宿主機執行 `sudo ip link set dev br-ex down`。
+**實際結果與判讀：** 沒有終端輸出，返回控制節點提示字元；
+宿主機接受了啟用介面的操作，單靠這一步還不能知道 `br-ex` 接哪個網路。
 
-**查詢目的與影響：** 在宿主機唯讀查詢 Open vSwitch 的
-`ovn-bridge-mappings`；這個欄位把 OVN 使用的網路名稱對應到
-宿主機橋接介面。這項查詢實際在啟用 `br-ex` **之後**執行；
-單有橋名仍不代表整條客體回程已可用。
-查詢不修改介面、VM 或雲端資源。
-
-**已執行指令｜控制節點：**
+**已執行指令｜控制節點查宿主機的 OVN 橋接對應：**
 
 ```bash
 sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'sudo ovs-vsctl get Open_vSwitch . external_ids:ovn-bridge-mappings'
 ```
 
-**實際輸出：**
+**實際輸出：** `"public:br-ex"`。
 
-```text
-"public:br-ex"
-```
+**判讀：** OVN 把名為 `public` 的實體網路標籤對應到 `br-ex`。
+標籤名稱還要與 Neutron 網路物件核對。
 
-**判讀：** 執行中的 OVN 橋接對應把 `public` 這個實體網路標籤
-映射到宿主機的 `br-ex`。這比 DevStack 預設名稱更直接；
-仍須核對 Neutron 的 `public` 網路物件是否使用同一實體網路標籤。
-本次查詢沒有配置位址或轉址，尚不能證明客體到控制節點可達。
-
-**下一步目的與影響：** 在已載入 `admin demo` 憑證的
-`openstack-lab01` shell，唯讀查詢 `public` 網路的
-`router:external` 與 `provider:physical_network`。
-若後者為 `public`，才能把上面的 `public:br-ex` 對應
-連到該 Neutron 網路。查詢不修改 VM、網路或宿主機設定。
-
-**已執行指令｜`openstack-lab01`，唯讀查詢網路欄位：**
+**已執行指令｜`openstack-lab01`，讀 Neutron 網路：**
 
 ```bash
 openstack network show public -f yaml
 ```
 
-**實際輸出（保留判讀所需欄位）：**
+**實際輸出重點：**
 
 ```yaml
 name: public
@@ -1540,66 +1541,38 @@ provider:network_type: flat
 provider:physical_network: public
 router:external: true
 status: ACTIVE
-subnets:
-- 79f11020-9d7a-47f4-8caf-6892163c4c6c
-- de327bb2-f5a7-4d6b-9117-27ef41070574
 ```
 
 **判讀：** Neutron 的 `public` 是啟用中的外部 `flat` 網路，
-使用實體網路標籤 `public`；宿主機 OVN 對應 `public:br-ex`
-因此把這個標籤接到 `br-ex`。這確認橋接對應，
-仍不證明宿主機有合適的 IPv4 位址或客體能連到 GCP。
+使用同一個實體網路標籤 `public`，因此這套環境確實透過
+OVN 的 `public:br-ex` 對應接到宿主機橋。
 
-**下一步目的與影響：** `public` 網路連著兩個子網 ID，
-先列出各子網名稱與 CIDR，找出 IPv4 範圍，避免直接套用
-DevStack 文件的預設位址。這是 Neutron API 唯讀查詢，
-不修改網路或 VM；輸出將用來選擇下一條子網詳查指令。
-
-**已執行指令｜`openstack-lab01`：**
-
-```bash
-openstack subnet list --network public -f table
-```
-
-**實際輸出重點：** `public-subnet` 的 ID 是
-`de327bb2-f5a7-4d6b-9117-27ef41070574`，CIDR 為
-`172.24.4.0/24`；另一個 `ipv6-public-subnet` 是
-`2001:db8::/64`。
-
-**判讀：** 找到 `public` 外部網路的 IPv4 子網；
-這個清單還沒有顯示閘道或分配池，因此不據此指派宿主機位址。
-
-**下一步目的與影響：** 唯讀查詢 `public-subnet` 的
-`gateway_ip`、CIDR 和位址分配池，確認 Neutron 為這個子網
-宣告的閘道及保留給浮動 IP 的範圍。查詢不修改網路或 VM；
-結果仍需與宿主機介面狀態分開核對。
-
-**已執行指令｜`openstack-lab01`：**
+**已執行指令｜`openstack-lab01`，讀 `public` 的 IPv4 子網：**
 
 ```bash
 openstack subnet show public-subnet -f yaml
 ```
 
-**實際輸出（保留判讀所需欄位）：**
+**實際輸出重點：**
 
 ```yaml
-allocation_pools:
-- end: 172.24.4.254
-  start: 172.24.4.2
 cidr: 172.24.4.0/24
 gateway_ip: 172.24.4.1
-enable_dhcp: false
-router:external: true
+allocation_pools:
+- start: 172.24.4.2
+  end: 172.24.4.254
 ```
 
-**判讀：** Neutron 宣告 `172.24.4.1` 為外部 IPv4 子網的閘道，
-浮動位址的分配池從 `.2` 起；這是 Neutron 設定值，
-尚不能證明宿主機 `br-ex` 目前持有 `.1`。
+**判讀：** `public` 的 IPv4 子網是 `172.24.4.0/24`，
+宣告的閘道是 `172.24.4.1`，分配池從 `.2` 開始；
+這個設定值本身不等於宿主機已持有 `.1`。
+先前的子網清單也辨認出另一個子網是 IPv6 `2001:db8::/64`。
 
-**查詢目的與影響：** 在 `openstack-lab01` 唯讀查看 `br-ex`
-是否已有 `172.24.4.1/24`，避免重複設定。
-`-4` 只列 IPv4；若介面沒有 IPv4，整條指令可能完全沒有輸出，
-不能用空白輸出判定介面的 `UP` 旗標。查詢不修改網路。
+#### 2. 讓宿主機接上 `public` 子網
+
+宿主機的 `br-ex` 需要持有上述 `public` 閘道位址，
+才能在本機與 Neutron 路由器的外側 `172.24.4.9` 交換 IPv4 封包。
+先避免重複指派，再核對加上位址後的核心路由。
 
 **已執行指令｜`openstack-lab01`：**
 
@@ -1607,19 +1580,9 @@ router:external: true
 ip -4 addr show dev br-ex
 ```
 
-**實際結果與判讀：** 沒有終端輸出並返回提示字元；
-`br-ex` 目前沒有列出的 IPv4 位址，因此尚未持有 `172.24.4.1/24`。
-這份輸出不能判定管理狀態，也不證明客體網路可達。
-
-**下一步目的與影響：** Neutron 的 `public-subnet` 宣告
-`172.24.4.1` 為閘道，分配池從 `.2` 起；宿主機 `br-ex`
-目前沒有 IPv4。下列指令在宿主機為 `br-ex` 加上
-`172.24.4.1/24`，Linux 會建立到 `172.24.4.0/24` 的本機連接路由。
-這只改宿主機執行中的位址與路由，不改 GCP 網卡、Neutron 子網、
-客體或防火牆，也不建立付費資源；重開宿主機後不會自動保留。
-若需撤銷，在確認沒有其他用途後，以
-`sudo ip addr del 172.24.4.1/24 dev br-ex` 移除。
-成功時通常沒有終端輸出，尚須核對實際位址與路由。
+**實際結果與判讀：** 沒有終端輸出；`-4` 只顯示 IPv4，
+表示當時 `br-ex` 沒有列出的 IPv4 位址。
+空白輸出不能拿來判斷介面是否為 `UP`。
 
 **已執行指令｜`openstack-lab01`：**
 
@@ -1627,16 +1590,11 @@ ip -4 addr show dev br-ex
 sudo ip addr add 172.24.4.1/24 dev br-ex
 ```
 
-**實際結果與判讀：** 沒有終端輸出並返回提示字元，
-宿主機接受了新增 `br-ex` 位址的操作；下一條仍須從核心路由表
-確認連接路由及來源位址。
+**實際結果與判讀：** 沒有終端輸出並返回提示字元；
+宿主機接受了新增位址的操作。這只改宿主機執行中的設定，
+不改 Neutron 子網或 GCP 網卡。
 
-**下一步目的與影響：** 唯讀查詢宿主機對 `172.24.4.0/24`
-的路由；預期 `dev br-ex` 且 `src 172.24.4.1`。
-這兩欄分別核對出口介面和來源位址，
-只能證明宿主機本地路由，不等於客體已能連 GCP。
-
-**已執行指令｜`openstack-lab01`：**
+**已執行指令｜`openstack-lab01`，核對本機路由：**
 
 ```bash
 ip -4 route show 172.24.4.0/24
@@ -1648,34 +1606,14 @@ ip -4 route show 172.24.4.0/24
 172.24.4.0/24 dev br-ex proto kernel scope link src 172.24.4.1
 ```
 
-**判讀：** 宿主機對外部子網的本地路由使用 `br-ex`，
-來源位址為 `172.24.4.1`。`proto kernel` 表示這條連接路由
-由剛才新增的介面位址自動建立；這還不證明 CPU 客體能連到控制節點。
+**判讀：** Linux 因 `br-ex` 的位址建立了連接路由，
+往 `172.24.4.0/24` 使用 `br-ex`，來源為 `172.24.4.1`。
+這仍只證明宿主機到該子網的本地路由。
 
-**下一步目的與影響：** 客體 `10.0.0.62` 位於 Neutron `private`
-網路；要走到 `public` 外部網路，須先經 Neutron 路由器。
-先以目前的 OpenStack 憑證列出可見路由器名稱及狀態，
-找出要核對的物件；
-這條只讀 API 查詢不改路由器、VM 或宿主機。
+#### 3. 確認 Neutron 的第一段轉址
 
-**已執行指令｜`openstack-lab01`：**
-
-```bash
-openstack router list -f table
-```
-
-**實際輸出重點：** 唯一列出的路由器為 `router1`，
-ID `8f73c572-0cdc-4606-844c-a2b9579fef1e`，
-`Status=ACTIVE`、`State=UP`、`HA=True`。
-
-**判讀：** 找到可供進一步核對的路由器；
-清單尚未顯示它接了哪些內外網路，也未顯示來源轉址狀態。
-
-**下一步目的與影響：** 唯讀查看 `router1` 的內側介面、
-外部閘道與 `enable_snat`。內側位址需對應 `private-subnet`
-宣告的 `10.0.0.1`，外部網路 ID 需對應前述 `public`；
-`enable_snat` 決定客體來源位址是否先由 Neutron 轉換。
-此查詢不改路由器或客體。
+路由器清單找到 `router1`，狀態為 `ACTIVE`、`UP`；
+下面用它的實際介面和外部閘道判斷客體封包如何走到 `public`。
 
 **已執行指令｜`openstack-lab01`：**
 
@@ -1683,12 +1621,11 @@ ID `8f73c572-0cdc-4606-844c-a2b9579fef1e`，
 openstack router show router1 -f yaml
 ```
 
-**實際輸出（保留判讀所需欄位）：**
+**實際輸出重點：**
 
 ```yaml
 enable_snat: true
 external_gateway_info:
-  enable_snat: true
   external_fixed_ips:
   - ip_address: 172.24.4.9
     subnet_id: de327bb2-f5a7-4d6b-9117-27ef41070574
@@ -1696,19 +1633,18 @@ external_gateway_info:
 interfaces_info:
 - ip_address: 10.0.0.1
   subnet_id: c5eaf368-96f1-4c2c-aa82-1de2dd011270
-status: ACTIVE
 ```
 
-**判讀：** `interfaces_info` 的 IPv4 `10.0.0.1` 對應前述
-`private-subnet`；外部網路 ID 與 `public` 相同，
-路由器的外側 IPv4 是 `172.24.4.9`。
-`enable_snat: true` 表示 Neutron 設定為客體流量做第一段來源轉址；
-封包能否從宿主機進入 GCP，仍須確認宿主機的路由、轉送與轉址。
+**判讀：** 內側 `10.0.0.1` 接客體所在的 `private-subnet`；
+外側 `172.24.4.9` 接剛核對的 `public` 網路。
+`enable_snat: true` 表示 Neutron 設定為把客體的來源位址
+轉成路由器的外側位址。這是第一段轉址設定，還不是 GCP 通路實測。
 
-**下一步目的與影響：** 在 `openstack-lab01` 唯讀查詢到
-控制節點 `10.140.0.2` 的宿主機路由。
-輸出的 `dev` 和 `src` 將指出應使用的 GCP 出口介面及來源位址；
-此查詢不發送測試工作，也不更改路由或防火牆。
+#### 4. 宿主機轉到 GCP 並做第二段轉址
+
+宿主機需要知道往控制節點用哪張網卡，並允許 IPv4 轉送。
+本次讓 GCP 看到宿主機自己的私有 IP，
+無須要求 GCP VPC 直接識別 DevStack 的 `172.24.4.0/24`。
 
 **已執行指令｜`openstack-lab01`：**
 
@@ -1716,20 +1652,14 @@ status: ACTIVE
 ip -4 route get 10.140.0.2
 ```
 
-**實際輸出：**
+**實際輸出重點：**
 
 ```text
 10.140.0.2 via 10.146.0.1 dev ens4 src 10.146.0.4 uid 1001
-    cache
 ```
 
-**判讀：** 宿主機往控制節點使用 `ens4`，GCP 私有來源位址為
-`10.146.0.4`；這是宿主機自己的路由，不能代表客體封包已能通過。
-
-**下一步目的與影響：** 要讓來自 `br-ex` 的封包經 `ens4`
-離開宿主機，Linux 必須允許 IPv4 轉送。
-唯讀查看 `net.ipv4.ip_forward`：`1` 表示已允許，
-`0` 表示未允許。查詢不修改核心設定或網路規則。
+**判讀：** 宿主機往控制節點走 GCP 網卡 `ens4`，
+宿主機自己的來源 IP 是 `10.146.0.4`。
 
 **已執行指令｜`openstack-lab01`：**
 
@@ -1739,21 +1669,8 @@ sysctl -n net.ipv4.ip_forward
 
 **實際輸出：** `1`。
 
-**判讀：** 宿主機核心已允許 IPv4 轉送；
-這不會自動把 Neutron 外側來源 `172.24.4.9` 轉成 GCP 可回覆的位址。
-
-**下一步目的與影響：** `router1` 已設定 SNAT，外側位址是
-`172.24.4.9`；宿主機往 GCP 的出口是 `ens4`，來源是 `10.146.0.4`。
-在宿主機的 `nat` 表 `POSTROUTING` 鏈加入一條規則：
-只匹配來源 `172.24.4.9/32`、經 `ens4` 離開的封包，
-以 `MASQUERADE` 把來源改成 `ens4` 當前的位址。
-`-w` 等待 iptables 鎖，`-A` 在鏈尾新增規則；
-回覆封包由連線追蹤按原轉址返回。
-這會影響經同一個 `router1` 外側位址出站的客體流量，
-不只 `compute-cpu01`；不開放新的入站埠、不建立 VM 或額外費用。
-這條規則只存在於宿主機執行中的防火牆，重開後需另行管理；
-撤銷時以相同條件改用 `-D POSTROUTING` 刪除。
-成功時通常沒有終端輸出，還須用實際通路驗證效果。
+**判讀：** 宿主機允許 IPv4 封包在介面間轉送；
+這個開關不會自行改寫來源 IP。
 
 **已執行指令｜`openstack-lab01`：**
 
@@ -1761,19 +1678,15 @@ sysctl -n net.ipv4.ip_forward
 sudo iptables -w -t nat -A POSTROUTING -s 172.24.4.9/32 -o ens4 -j MASQUERADE
 ```
 
-**實際結果與判讀：** 沒有終端輸出並返回提示字元；
-宿主機接受了這條來源轉址規則。尚須從 CPU 客體發起連線，
-才能驗證 Neutron、宿主機與 GCP 的整條出站路徑。
+**實際結果與判讀：** 沒有終端輸出並返回提示字元。
+這條 `nat` 表規則只匹配來源 `172.24.4.9/32`、
+從 `ens4` 離開的封包；`MASQUERADE` 使 GCP 看到的來源成為
+`ens4` 的 `10.146.0.4`。`-w` 等待 iptables 鎖，
+`-A POSTROUTING` 在路由決定後的鏈尾新增規則。
+由於 `router1` 可能服務其他客體，這條規則的影響範圍
+是共用該路由器外側位址的出站流量。
 
-**下一步目的與影響：** 沿用上文已驗證的 SSH 路徑進入
-`compute-cpu01`，由客體對控制節點 `10.140.0.2:22`
-建立一次 TCP 連線。這個連接埠已有控制節點 SSH 服務，
-可直接驗證客體主動連入控制節點的網路通路，
-不需要客體擁有控制節點的登入金鑰；
-它不安裝套件、不修改檔案，也不驗證 Slurm 或 NFS。
-Python 的 `socket.create_connection` 以五秒為連線逾時，
-成功時印出 `TCP 22 connected`；若失敗，只在對話處理錯誤，
-不把試錯輸出寫入本模組。
+#### 5. 從客體驗證整條出站路徑
 
 **已執行指令｜`compute-cpu01`：**
 
@@ -1787,19 +1700,31 @@ python3 -c 'import socket; s = socket.create_connection(("10.140.0.2", 22), 5); 
 TCP 22 connected
 ```
 
-**判讀：** CPU 客體已主動與控制節點 `10.140.0.2:22`
-完成 TCP 連線，證明此方向的網路通路可用；
-這不代表已完成 SSH 身分驗證，也不代表 NFS 或 Slurm 可用。
+**判讀：** 客體 `10.0.0.62` 成功主動建立到控制節點
+`10.140.0.2:22` 的 TCP 連線。這驗證此方向的整條網路通路；
+測試沒有登入控制節點，也沒有驗證 NFS、Slurm 或其他連接埠。
+TCP 交握成功證明回覆可返回客體；結合上述設定，
+結果與兩段轉址的設計一致。本次沒有逐段擷取封包或量測規則命中數。
+
+**目前限制與恢復：** `br-ex` 位址和 iptables 規則目前只在宿主機
+執行中的狀態；重開宿主機不保證保留。
+撤銷時，先以相同 iptables 條件將 `-A POSTROUTING` 改成
+`-D POSTROUTING` 刪除規則，再以
+`sudo ip addr del 172.24.4.1/24 dev br-ex` 移除位址；
+確定橋沒有其他用途後才以 `sudo ip link set dev br-ex down` 關閉。
+`ip addr add` 和 `iptables -A` 也不能無條件重跑，
+否則可能報位址已存在或重複加入規則；持久化與可重跑管理尚未完成。
 
 ### 由 Ansible 管理 CPU 客體
 
 **現有能力與缺口：** 控制節點對 GPU VM 的 NFS、MUNGE 與 Slurm
 已有 Ansible 管理成果；CPU 客體的雙向網路基礎已驗證，
-但還沒有列入 Ansible 管理清單。先讓 Ansible 沿用上文成功的
-SSH 金鑰與 OVN 命名空間通路，再處理客體服務。
+也已列入 Ansible 管理清單，但尚未實際驗證 Ansible 連線。
+接下來沿用上文成功的 SSH 金鑰與 OVN 命名空間通路，
+再處理客體服務。
 
 **設定來源與影響：** 控制節點工作樹的
-[hosts.yml](../project/ansible/inventory/hosts.yml) 將新增
+[hosts.yml](../project/ansible/inventory/hosts.yml) 已新增
 `cpu_compute` 群組與 `compute-cpu01` 主機：連線目標是
 `10.0.0.62`、登入帳號是 `ubuntu`，使用控制節點既有私鑰。
 `ProxyCommand` 先連 `openstack-lab01`，在其 OVN 命名空間

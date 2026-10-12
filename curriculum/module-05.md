@@ -10,9 +10,9 @@
 本模組把節點設定寫成可重跑的 Ansible playbook，
 讓控制端能管理 GPU VM 的身分驗證、Slurm 設定和運算服務。
 另由現有 DevStack 的 OpenStack 服務供給一台乾淨 CPU VM，
-驗證資源建立、網路與控制節點登入；本次擴充要繼續把這台 VM
-納入 Slurm，交付獨立 CPU 運算節點及可核對的工作結果。
-既有 GCP VM 的叢集與 GPU 工作結果和 OpenStack CPU VM 的新驗收分開列示。
+驗證資源建立、網路與控制節點登入，再把這台 VM 納入 Slurm，
+交付獨立 CPU 運算節點及可核對的工作結果。
+既有 GCP VM 的叢集與 GPU 工作結果和 OpenStack CPU VM 的驗收分開列示。
 
 **已完成成果：** 已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
 控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
@@ -22,11 +22,9 @@ OpenStack 已建立 `compute-cpu01`，Nova 回報 `ACTIVE`，
 `ubuntu@compute-cpu01`。這條已驗證的管理通路可作為後續
 Ansible 納管該 VM 的連線基礎，也可供部署 Slurm 運算節點時使用。
 
-**本次擴充尚未完成：** 已依後續叢集維運需求恢復本模組實作，
-目標是把 `compute-cpu01` 從「控制節點可 SSH 登入」推進到
-「由 Ansible 管理、可接受 Slurm CPU 工作的獨立運算節點」。
-先前的兩節點部署與 OpenStack VM 供給結果保留為已完成證據；
-新節點尚未加入 inventory、部署服務或接受 Slurm 工作。
+**目前狀態：** `compute-cpu01` 已建立，控制節點已透過 SSH 登入。
+尚未把這台客體列入 Ansible inventory，也未部署 NFS、MUNGE 或 Slurm；
+獨立 CPU 工作尚未驗證。
 
 ## 管理位置與本次部署範圍
 
@@ -646,11 +644,12 @@ cpu_ms=504.605 gpu_kernel_ms=1.894 validation=PASS
 **結果與判讀：** 工作在 `compute-gpu01` 使用 NVIDIA L4 完成 200 輪計算；CPU 與 GPU
 結果逐格比對通過，輸出後返回控制節點提示字元。
 
-## 7. 在現有 OpenStack 建立 CPU VM
+## 7. 建立 OpenStack CPU VM 並納入叢集
 
 **目標與架構：** GCP 的 `openstack-lab01` 承載 DevStack；
 DevStack 的 OpenStack 在這台主機內建立一台乾淨 CPU VM，
-驗證 VM 供給與管理連線。Nova 建 VM，Glance 提供映像，
+先驗證 VM 供給與管理連線，再接通與 GCP 控制節點的工作通路，
+由 Ansible 配置 Slurm 運算服務。Nova 建 VM，Glance 提供映像，
 Neutron 提供網路；Ansible 不負責建立 VM。
 
 **為何不能建 GPU VM：** `openstack-lab01` 沒有 GPU，
@@ -1466,53 +1465,3 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 \
 `10.0.0.2`，因此命中安全群組允許 `10.0.0.2/32` 連 TCP 22 的規則；
 VM 內啟動的 `ssh.service` 接受連線，再用已登錄的公鑰核對控制節點私鑰。
 本次管理連線使用 VM 的私有 IP。
-
-## 成果範圍
-
-- GCP 兩節點：Ansible 管理 NFS、MUNGE 與 Slurm，並由 Slurm 排程 L4 工作。
-- OpenStack：DevStack 供給 `compute-cpu01`，控制節點已透過 SSH 金鑰登入；
-  這條管理通路可供後續 Ansible 納管與 Slurm 節點部署使用。
-
-## 擴充：將 `compute-cpu01` 加入 Slurm（待實作）
-
-**目的與影響：** 目前的控制節點能為自己及 GPU VM 排程，
-OpenStack 的 `compute-cpu01` 則只有管理 SSH 通路。
-新增的 CPU 運算節點會讓控制端把 CPU 工作派到另一台獨立 VM，
-也為模組 06 比較故障前後的排程能力提供實際目標。
-此 VM 位於 DevStack 的私有網路，現有 ProxyCommand 只證明
-控制端能連進客體；尚未證明客體能連回 `slurmctld` 或 NFS。
-
-**先確認再選實作方式：** `compute-cpu01` 是 Ubuntu 客體，
-前面 GPU 節點使用的 AlmaLinux RPM 不能直接拿來安裝。
-先核對客體版本、Slurm 與 MUNGE 的相容來源、CPU／記憶體、
-兩方向的網路通路、帳號 UID／GID 及共享資料路徑。
-確認後才決定是否調整 OpenStack 安全群組、路由或服務，
-並分別說明對控制節點、OpenStack 宿主機和客體 VM 的影響與復原方式。
-不因 SSH 能登入就假定 Slurm 工作通路可用。
-
-**擬交付的設定與驗收：** 從控制節點的 `project/ansible/` 管理
-`compute-cpu01` 的 inventory、身分、共享資料、Slurm 設定與服務；
-工作樹中的檔案是來源，每台 VM `/etc/` 下服務讀到的是各自的目標檔。
-實際來源、目標、檔案建立與複製順序，待環境核對後逐步記錄。
-Ansible 預演與正式執行分開記錄；正式部署及重跑後，
-要在控制端看到獨立 CPU 節點可排程，並以已知答案 CPU 工作
-核對執行主機名、退出狀態和結果。若要驗證 CPU 工作在兩台獨立
-運算節點之間轉移，須先證明兩台都有相容資源並可接同一類工作；
-一張 GPU 不能證明 GPU 工作故障轉移。
-
-### 核對 CPU 客體到控制節點的通路（待執行）
-
-**目的與影響：** 控制節點已能 SSH 登入 `compute-cpu01`，但這是
-控制端發起的連線。Slurm 的 `slurmd` 在 CPU 客體上運作時，還需要
-能連向控制節點 `10.140.0.2`。先從客體送出三個 ICMP 封包，
-直接測回程網路是否可達；這不修改檔案、防火牆或服務。
-若沒有回應，仍須區分路由不通與 ICMP 被阻擋，不能直接宣稱
-Slurm 所需的 TCP 通路失敗。
-
-**待執行指令｜`compute-cpu01` 的 `ubuntu` shell：**
-
-```bash
-ping -c 3 -W 2 10.140.0.2
-```
-
-**結果狀態：** 尚未執行；收到完整輸出後再記實際結果與判讀。

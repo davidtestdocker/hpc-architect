@@ -1510,9 +1510,10 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 
 **實際輸出：** `"public:br-ex"`。
 
-**判讀：** OVN 設定把 `public` 網路接到宿主機的 `br-ex`。
-路由器從 `public` 送出的封包，預定由宿主機的這座橋接收；
-下一條核對 Neutron 網路是否也使用 `public` 標籤。
+**判讀：** `public:br-ex` 的意思是「實體網路標籤 `public`
+對應宿主機橋 `br-ex`」。這裡的 `public` 是標籤，
+不是 Neutron 網路物件的名稱；下一條查 Neutron 網路物件
+`public` 的 `provider:physical_network` 欄位是否填了這個標籤。
 
 **已執行指令｜`openstack-lab01`，讀 Neutron 網路：**
 
@@ -1530,11 +1531,13 @@ router:external: true
 status: ACTIVE
 ```
 
-**判讀：** `provider:network_type: flat` 表示這個 Neutron 網路
-不使用 VLAN 標籤；單靠 `flat` 無法知道它接哪一座橋。
-真正用來對照的是 `provider:physical_network: public`：
-這個值與宿主機 OVN 橋接設定 `public:br-ex` 冒號左邊的 `public`
-相同；冒號右邊的 `br-ex` 才是設定要接的宿主機橋。
+**判讀：** `name: public` 是這個 Neutron 網路物件的名稱；
+`provider:physical_network: public` 才是它使用的實體網路標籤。
+名稱與標籤剛好同字，但可以不同。
+此處要對照的是**實體網路標籤**與宿主機 OVN 設定
+`public:br-ex` 冒號左邊的 `public`；冒號右邊的 `br-ex`
+是對應的宿主機橋。`provider:network_type: flat` 表示不使用 VLAN 標籤，
+不負責指定橋。
 `router:external: true` 表示此網路可作路由器外部網路，
 `status: ACTIVE` 是 Neutron 網路物件狀態；這兩欄也不能單獨證明橋接。
 以上證明**設定上的對應**是 Neutron `public` → OVN 實體網路標籤

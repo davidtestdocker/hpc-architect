@@ -1520,14 +1520,43 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 仍須核對 Neutron 的 `public` 網路物件是否使用同一實體網路標籤。
 本次查詢沒有配置位址或轉址，尚不能證明客體到控制節點可達。
 
-**下一步目的與影響：** 在 `openstack-lab01` 載入 `admin demo`
-的 OpenStack API 憑證，唯讀查詢 `public` 網路的外部網路屬性
-及 `provider:physical_network`。這個欄位若是 `public`，
-才能把上面的 `public:br-ex` 對應連到該 Neutron 網路；
-查詢不變更 VM、網路或宿主機設定。
+**下一步目的與影響：** 在已載入 `admin demo` 憑證的
+`openstack-lab01` shell，唯讀查詢 `public` 網路的
+`router:external` 與 `provider:physical_network`。
+若後者為 `public`，才能把上面的 `public:br-ex` 對應
+連到該 Neutron 網路。查詢不修改 VM、網路或宿主機設定。
 
-**待執行指令｜控制節點：**
+**已執行指令｜`openstack-lab01`，唯讀查詢網路欄位：**
 
 ```bash
-sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'source /home/a2264/devstack/openrc admin demo && openstack network show public -f yaml -c name -c router:external -c provider:physical_network'
+openstack network show public -f yaml
+```
+
+**實際輸出（保留判讀所需欄位）：**
+
+```yaml
+name: public
+provider:network_type: flat
+provider:physical_network: public
+router:external: true
+status: ACTIVE
+subnets:
+- 79f11020-9d7a-47f4-8caf-6892163c4c6c
+- de327bb2-f5a7-4d6b-9117-27ef41070574
+```
+
+**判讀：** Neutron 的 `public` 是啟用中的外部 `flat` 網路，
+使用實體網路標籤 `public`；宿主機 OVN 對應 `public:br-ex`
+因此把這個標籤接到 `br-ex`。這確認橋接對應，
+仍不證明宿主機有合適的 IPv4 位址或客體能連到 GCP。
+
+**下一步目的與影響：** `public` 網路連著兩個子網 ID，
+先列出各子網名稱與 CIDR，找出 IPv4 範圍，避免直接套用
+DevStack 文件的預設位址。這是 Neutron API 唯讀查詢，
+不修改網路或 VM；輸出將用來選擇下一條子網詳查指令。
+
+**待執行指令｜`openstack-lab01`：**
+
+```bash
+openstack subnet list --network public -f table
 ```

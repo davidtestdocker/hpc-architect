@@ -10,8 +10,9 @@
 本模組把節點設定寫成可重跑的 Ansible playbook，
 讓控制端能管理 GPU VM 的身分驗證、Slurm 設定和運算服務。
 另由現有 DevStack 的 OpenStack 服務供給一台乾淨 CPU VM，
-驗證資源建立、網路與控制節點登入。
-既有 GCP VM 的叢集與 GPU 工作結果和 OpenStack 單台 CPU VM 分開列示。
+驗證資源建立、網路與控制節點登入；本次擴充要繼續把這台 VM
+納入 Slurm，交付獨立 CPU 運算節點及可核對的工作結果。
+既有 GCP VM 的叢集與 GPU 工作結果和 OpenStack CPU VM 的新驗收分開列示。
 
 **已完成成果：** 已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
 控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
@@ -20,6 +21,12 @@ OpenStack 已建立 `compute-cpu01`，Nova 回報 `ACTIVE`，
 控制節點已透過 `openstack-lab01` 的私有網路通路，以 SSH 金鑰登入
 `ubuntu@compute-cpu01`。這條已驗證的管理通路可作為後續
 Ansible 納管該 VM 的連線基礎，也可供部署 Slurm 運算節點時使用。
+
+**本次擴充尚未完成：** 已依後續叢集維運需求恢復本模組實作，
+目標是把 `compute-cpu01` 從「控制節點可 SSH 登入」推進到
+「由 Ansible 管理、可接受 Slurm CPU 工作的獨立運算節點」。
+先前的兩節點部署與 OpenStack VM 供給結果保留為已完成證據；
+新節點尚未加入 inventory、部署服務或接受 Slurm 工作。
 
 ## 管理位置與本次部署範圍
 
@@ -888,9 +895,27 @@ openstack network list -f table -c Name -c Status
 **判讀：** 輸出只有 `Name` 欄，列出 `public`、`shared`、`private`。
 Neutron API 回傳三個網路物件；後續讀取 `private` 的實際設定。
 
-**Horizon 畫面：** [實際截圖](../project/openstack/openstack.png)
-也列出 `public`、`shared`、`private`；`private` 顯示 `10.0.0.0/26`。
+**從自己電腦開啟 Horizon：** `10.146.0.4` 是 GCP 私有 IP，
+外部瀏覽器無法直接連入。從自己電腦的終端建立 SSH 轉接後，
+在瀏覽器開啟 `http://127.0.0.1:18080/dashboard`。
+`-L` 讓自己電腦的 `127.0.0.1:18080` 經 SSH 連到
+`openstack-lab01` 的 `127.0.0.1:80`；`-N` 不開遠端 shell，
+終端保持執行時轉接才會持續。`--tunnel-through-iap` 用於連接
+沒有公網 IP 的 GCP VM。這不會新增 VM 或公開 HTTP 入站規則；
+若本機尚無 gcloud SSH 金鑰，工具可能建立金鑰並更新登入資訊。
+
+**歷史紀錄中的待執行指令｜自己電腦的終端：**
+
+```bash
+gcloud compute ssh a2264@openstack-lab01 --project=project-78b8a95c-a2c0-461f-a08 --zone=asia-northeast1-c --tunnel-through-iap --ssh-flag="-N" --ssh-flag="-L 127.0.0.1:18080:127.0.0.1:80"
+```
+
+**Horizon 畫面與判讀：** [實際截圖](../project/openstack/openstack.png)
+顯示瀏覽器曾開啟 `127.0.0.1:18080` 上的頁面，列出
+`public`、`shared`、`private`；`private` 顯示 `10.0.0.0/26`。
 Horizon 是操作同一套 OpenStack 資源的網頁介面。
+沒有保留上方完整轉接指令的終端輸出，因此指令仍標為待執行，
+不把截圖當作其執行證據。
 
 ![Horizon 網路清單](../project/openstack/openstack.png)
 
@@ -1447,3 +1472,30 @@ VM 內啟動的 `ssh.service` 接受連線，再用已登錄的公鑰核對控�
 - GCP 兩節點：Ansible 管理 NFS、MUNGE 與 Slurm，並由 Slurm 排程 L4 工作。
 - OpenStack：DevStack 供給 `compute-cpu01`，控制節點已透過 SSH 金鑰登入；
   這條管理通路可供後續 Ansible 納管與 Slurm 節點部署使用。
+
+## 擴充：將 `compute-cpu01` 加入 Slurm（待實作）
+
+**目的與影響：** 目前的控制節點能為自己及 GPU VM 排程，
+OpenStack 的 `compute-cpu01` 則只有管理 SSH 通路。
+新增的 CPU 運算節點會讓控制端把 CPU 工作派到另一台獨立 VM，
+也為模組 06 比較故障前後的排程能力提供實際目標。
+此 VM 位於 DevStack 的私有網路，現有 ProxyCommand 只證明
+控制端能連進客體；尚未證明客體能連回 `slurmctld` 或 NFS。
+
+**先確認再選實作方式：** `compute-cpu01` 是 Ubuntu 客體，
+前面 GPU 節點使用的 AlmaLinux RPM 不能直接拿來安裝。
+先核對客體版本、Slurm 與 MUNGE 的相容來源、CPU／記憶體、
+兩方向的網路通路、帳號 UID／GID 及共享資料路徑。
+確認後才決定是否調整 OpenStack 安全群組、路由或服務，
+並分別說明對控制節點、OpenStack 宿主機和客體 VM 的影響與復原方式。
+不因 SSH 能登入就假定 Slurm 工作通路可用。
+
+**擬交付的設定與驗收：** 從控制節點的 `project/ansible/` 管理
+`compute-cpu01` 的 inventory、身分、共享資料、Slurm 設定與服務；
+工作樹中的檔案是來源，每台 VM `/etc/` 下服務讀到的是各自的目標檔。
+實際來源、目標、檔案建立與複製順序，待環境核對後逐步記錄。
+Ansible 預演與正式執行分開記錄；正式部署及重跑後，
+要在控制端看到獨立 CPU 節點可排程，並以已知答案 CPU 工作
+核對執行主機名、退出狀態和結果。若要驗證 CPU 工作在兩台獨立
+運算節點之間轉移，須先證明兩台都有相容資源並可接同一類工作；
+一張 GPU 不能證明 GPU 工作故障轉移。

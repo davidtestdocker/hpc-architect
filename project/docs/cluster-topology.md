@@ -1,8 +1,8 @@
-# 教學叢集拓撲與最終規格
+# 教學叢集拓撲與目標規格
 
-這份文件記錄已部署的 VM 與約定的最終規模；實際指令和輸出見
+這份文件區分已驗證的叢集、已供給但未納管的 VM 與目標拓撲；實際指令和輸出見
 [模組 04](../../curriculum/module-04.md)與[模組 05](../../curriculum/module-05.md)。
-**最終維持一台 CPU VM 加一台 GPU VM。**
+**目標是 GCP 控制節點、獨立 GPU 運算節點及 OpenStack CPU 運算客體。**
 新 GPU 節點的替換步驟與回復方式見
 [模組 05 的替換紀錄](../../curriculum/module-05.md#8-單-gpu-配額下替換乾淨節點)。
 
@@ -20,23 +20,32 @@ CPU VM：instance-20260923-104239（台灣）
        ▼
 GPU VM：compute-gpu01（東京，已停止）
   └─ 保留開機磁碟與設定；目前不能接工作
+
+DevStack 宿主機：openstack-lab01
+  └─ OpenStack 客體：compute-cpu01
+       └─ 已供給且控制節點可透過宿主機 SSH 登入；尚不能宣稱接 Slurm 工作
 ```
 
 | 角色 | 已確認的 VM 與硬體 | 排程與資料路徑 |
 |---|---|---|
 | CPU 控制／提交／運算／NFS | `instance-20260923-104239`；`asia-east1-b`；`e2-custom-2-4096`，2 vCPU、4 GiB；10 GiB 開機磁碟、100 GiB 附加磁碟；私有 IP `10.140.0.2` | `debug` 分區宣告 2 CPU、3000 MiB；提供 `/srv/hpc-share`；執行 Ansible |
 | GPU 運算（已停止） | `compute-gpu01`；`asia-northeast1-c`；`g2-standard-4`，4 vCPU、16 GiB、一張 NVIDIA L4；40 GiB `pd-balanced` 開機磁碟；私有 IP `10.146.0.3`，沒有 VM 外部 IP | 設定仍指向舊節點；停止期間不能接工作 |
+| OpenStack CPU 客體（待納管） | `compute-cpu01`；由 `openstack-lab01` 的 DevStack 供給；`m1.small`，1 vCPU、2 GiB；OpenStack 私有 IP `10.0.0.62` | 控制端已透過宿主機網路命名空間以 SSH 登入；客體回連、NFS、MUNGE 與 Slurm 工作尚未驗證 |
 
-兩台 VM 的 `/etc/slurm/slurm.conf` 各存在自己的本機磁碟；
+原有兩台 GCP VM 的 `/etc/slurm/slurm.conf` 各存在自己的本機磁碟；
 內容由[同一份工作樹來源](../slurm/two-node-slurm.conf)部署。
 控制節點的 `/srv/hpc-share` 是 NFS 分享來源，GPU VM 上的同名路徑是掛載點。
 模組 05 曾透過 Slurm 在 `compute-gpu01` 的 L4 執行二維熱擴散工作，
 CPU 與 GPU 結果比較為 `validation=PASS`。
 模組 04 的跨 VM MPI 工作由 SSH 啟動，未驗證跨節點 Slurm 排程。
 
-## 約定的最終規格與替換範圍
+## 目標規格與替換範圍
 
 CPU VM 保持上述規格與角色，不在 GPU 節點替換時重建。
+`compute-cpu01` 的目標是由 Ansible 管理的獨立 Slurm CPU 運算節點；
+其客體系統是 Ubuntu，不能直接使用原 GPU 節點的 AlmaLinux RPM。
+加入之前須核對客體到控制節點的通路、身分、共享資料及可用的相容套件。
+實際完成後才更新本表的排程與資料路徑證據。
 最終 GPU VM 規劃為 `compute-gpu02`：同在東京 `asia-northeast1-c`，
 使用 `g2-standard-4`、4 vCPU、16 GiB、一張具 24 GiB 顯示記憶體的 L4、40 GiB `pd-balanced`
 開機磁碟、AlmaLinux 10、既有 VPC／subnet，沒有 VM 外部 IP 或服務帳戶。
@@ -52,5 +61,7 @@ Slurm 套件已保存在[專案套件目錄](../packages/slurm/README.md)。
 驗收的範圍是乾淨 GPU 節點加入**既有** CPU 控制節點，
 不能寫成整個叢集從零重建。
 
-這是教學規模叢集：控制、CPU 工作與 NFS 共用一台 VM，沒有高可用控制端；
+這是教學規模叢集：控制端仍兼任 CPU 工作與 NFS，沒有高可用控制端；
+即使 `compute-cpu01` 成為獨立 CPU 運算節點，也不能單憑其存在
+宣稱故障時工作能轉移；要先證明另一台獨立運算節點可接同類工作。
 一張 L4 不能證明多卡隔離、跨 GPU RDMA 或大型生產叢集經驗。

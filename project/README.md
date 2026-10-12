@@ -5,7 +5,11 @@
 乾淨 GPU 節點首次部署及整合展示仍待交付。
 依[能力路線](../curriculum/ROADMAP.md)逐步完成作品。
 
-目標：在 GCP 私有網路內，以 Ansible 部署 Slurm 叢集，執行 C/MPI 工作，配合 Python 健檢、共享儲存與 Zabbix，展示部署、排程、觀測、除錯和復原能力。再用 K8s／GKE 執行適合容器的可核對工作，與 Slurm 比較工作及資源管理；對照 OpenStack 與目前 VM 供給流程。
+目標：在 GCP 私有網路內，以 Ansible 部署 Slurm 叢集，執行 C/MPI 工作，
+配合 Python 健檢、共享儲存與 Zabbix，展示部署、排程、觀測、除錯和
+復原能力。再以可重跑設定建立、變更及清除 GKE 叢集，在其上執行
+可核對工作與故障演練，和 Slurm 比較工作、資源與恢復責任；
+OpenStack 依已完成的單台 VM 供給證據如實對照。
 
 ```mermaid
 flowchart LR
@@ -13,10 +17,13 @@ flowchart LR
   C <--> G[GPU VM：slurmd／NVIDIA L4]
   Z[Zabbix：規劃中] --> C
   Z --> G
+  Z --> E[共同事件入口：規劃中]
+  K[GKE 叢集：規劃中] --> E
 ```
 
-圖中的 CPU VM 正在運行，原 GPU VM 目前已停止；Zabbix 仍是規劃中的監控元件。
-最終規模維持[一台 CPU VM 加一台 GPU VM](docs/cluster-topology.md)；
+圖中的 CPU VM 正在運行，原 GPU VM 目前已停止；
+Zabbix、GKE 與共同事件入口仍在規劃中，箭頭表示預定訊號路徑。
+Slurm 教學叢集的規模維持[一台 CPU VM 加一台 GPU VM](docs/cluster-topology.md)；
 GPU VM 將在乾淨節點驗證後替換，測試期間舊 VM 先停止保留。
 運算節點所需的[Slurm 套件與原始碼](packages/slurm/README.md)已保存在專案中，
 尚未於新 VM 安裝。
@@ -32,7 +39,7 @@ CPU VM 兼任多項角色是降低實驗成本的取捨，沒有生產高可用�
 | 叢集建置自動化 | inventory、playbook、乾淨 GPU 節點加入既有控制節點的首次部署證據 |
 | Linux 與程式能力 | Python 健檢工具及測試、C/MPI 程式與正確性驗證 |
 | 開源維運經驗 | Slurm 運算節點故障定位、Zabbix 告警與恢復事件、工作復測紀錄 |
-| K8s／GKE | 工作定義、實際執行結果、Pod 狀態與日誌、資源清除及 Slurm 對照 |
+| K8s／GKE | 叢集建立、重跑、可控變更、工作與故障結果、監控及清除證據 |
 | OpenStack | DevStack 的映像、網路及 CPU VM 供給，控制節點 SSH 登入的實際證據；另與現有 VM 供給流程對照 |
 
 ## 必做驗收
@@ -43,15 +50,19 @@ CPU VM 兼任多項角色是降低實驗成本的取捨，沒有生產高可用�
 - [ ] C/MPI 程式正確處理不可整除工作量，結果與序列版本一致。
 - [ ] MPI 工作跨 CPU VM 與 GPU VM 執行，保存 rank／主機名與工作輸出。
 - [ ] Python 工具有 help、結構化輸出、逾時及部分失敗處理，保留測試結果。
-- [ ] 量測至少三次，保留原始 CSV、資源配置、版本與圖表生成方式；不要求一定加速。
+- [ ] 只做能支持架構決策的量測；保留原始數據、輸入、資源配置、版本與波動，不要求一定加速。
 - [ ] Zabbix 持續更新運算節點或 Slurm 服務狀態；同一次故障有 Problem 與 OK 事件，並有 Slurm 定位、修復及已知答案工作的復測結果。
-- [ ] GKE 上的 K8s 工作有可核對結果、狀態、日誌與資源清除證據；事先確認預算。
+- [ ] 事先確認預算與配額；由保存的設定建立 GKE 叢集與節點集區，重跑無非預期變更，完成可控變更及恢復。
+- [ ] GKE 工作有可核對結果、狀態與日誌；一次故障有監控、處理、重試與最終結果，清除本次資源有證據。
+- [ ] Slurm 與 GKE 的實際告警進入共同事件入口，能對照時間、影響、處理與工作驗收。
 - [ ] 以已完成的 DevStack CPU VM 供給與 SSH 登入證據，對照現有 GCP VM 供給流程。
 - [ ] 一份完整的跨節點故障紀錄，串起監控、告警、原因、修復、恢復事件與工作結果。
-- [ ] README、部署手冊、操作／復原手冊與十分鐘展示完整，沒有將規劃寫成完成。
+- [ ] 在新環境按文件重建並核對工作；README、部署手冊、操作／復原手冊、技術追問與十分鐘展示完整，沒有將規劃寫成完成。
 
 目前 GPU 配額僅允許一張卡；替換節點時先停止舊 GPU VM，並保留回復方式。
-OpenStack 已有單機 DevStack 實作證據。RDMA、Lustre、Slurm accounting 資料庫需有需求與相應環境才展開；Zabbix 和 GKE 仍屬後續模組目標。
+OpenStack 已有單台 VM 供給證據，沒有 OpenStack 叢集建置證據。
+RDMA、Lustre、Slurm accounting 資料庫需有需求與相應環境才展開；
+Zabbix 和 GKE 仍屬後續模組目標。
 
 ## 建議實作目錄
 
@@ -61,6 +72,7 @@ project/
   ansible/              # inventory 範例、playbooks、roles
   healthcheck/          # Python 原始碼、測試、使用說明
   workloads/            # C/MPI、編譯方法、sbatch 腳本
+  gke/                  # 叢集生命週期與 Kubernetes 工作設定，排除憑證
   monitoring/           # 模板與告警定義，排除憑證
   benchmarks/           # 原始 CSV、分析程式、圖表
   docs/                 # 架構、部署、操作手冊、版本紀錄
@@ -72,11 +84,11 @@ project/
 
 ## 十分鐘展示順序
 
-1. 0–2 分鐘：需求、架構、GCP VM 規模與限制。
-2. 2–4 分鐘：Ansible 設定與乾淨 GPU 節點加入既有控制節點的真實證據。
-3. 4–6 分鐘：提交 Slurm MPI 工作，核對節點分布與計算結果。
-4. 6–8 分鐘：展示告警及可恢復故障，說明取證與復原；過長流程以真實錄影補充。
-5. 8–10 分鐘：量測結論、設計取捨、擴大至實體叢集還需哪些驗證。
+1. 交代職缺需求、Slurm 與 GKE 的角色、現有規模及限制。
+2. 展示 Ansible 與 GKE 的設定來源、真實建立、重跑及可控變更證據。
+3. 核對跨節點工作、單 GPU 工作與 GKE 工作的輸入、節點及答案。
+4. 用真實事件說明告警、故障定位、恢復與工作驗收。
+5. 用必要量測說明架構取捨，指出企業實體叢集仍需驗證的部分。
 
 履歷完成後應依實際證據描述兩台 VM 的角色、工作與驗證範圍；
 不能把控制 VM 兼任 CPU 運算節點說成另有獨立 CPU 運算 VM，

@@ -10,8 +10,8 @@
 | [4 多節點網路與共享資料路徑](curriculum/module-04.md) | 已完成：兩台 VM 私有 IP 可互通，控制節點能 SSH 遠端執行；GPU VM 透過 NAT 連 GitHub 回報 HTTP `200`，並辨認出一張 NVIDIA L4；NFS 已驗證雙向讀寫；兩台 VM 各執行一個 MPI rank，主機名不同，部分總和 `15+40=55` |
 | [5 HPC 叢集建置與管理自動化](curriculum/module-05.md) | 已完成並依學員決定收尾：GCP 兩節點的 NFS、MUNGE、Slurm 設定已由 Ansible 正式部署與重跑；Slurm 已排程 L4 二維熱擴散工作，結果與 CPU 一致。DevStack 另建立 CPU VM `compute-cpu01`，控制節點已透過 SSH 金鑰登入；此管理通路可供後續 Ansible 納管與 Slurm 節點部署使用。 |
 | [6 叢集維運、Zabbix 監控與故障復原](curriculum/module-06.md) | 未開始；預定驗證 Slurm 運算節點故障的告警、隔離、修復與工作結果，區分自動及人工動作 |
-| [7 效能證據、GKE 維運與架構取捨](curriculum/module-07.md) | 未開始；預定驗證 GKE 工作與故障恢復、兩平台共同告警入口、量測及架構取捨 |
-| [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始 |
+| [7 GKE 叢集自動化、維運與架構取捨](curriculum/module-07.md) | 未開始；預定用可重跑設定建立、變更與清除 GKE 叢集，驗證工作、故障恢復、共同告警入口及架構取捨 |
+| [8 面試作品與職缺能力證據](curriculum/module-08.md) | 未開始；預定用新環境重建、工作與故障證據及技術追問驗收作品 |
 
 依模組順序推進；模組 05 已依實際成果收尾，模組 06 尚未開始。
 模組 04 的跨節點 MPI 由 `mpirun` 透過 SSH 啟動，只用 CPU；

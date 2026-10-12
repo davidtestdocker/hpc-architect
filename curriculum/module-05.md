@@ -1472,26 +1472,15 @@ VM 內啟動的 `ssh.service` 接受連線，再用已登錄的公鑰核對控�
 SSH 登入 `compute-cpu01`。這條連線由控制節點發起；
 CPU 客體要掛載控制節點的 NFS、連到 Slurm 控制服務時，
 則需要從客體 `10.0.0.62` 向控制節點 `10.140.0.2` 發起連線。
-客體的預設閘道是 Neutron 路由器 `10.0.0.1`，
-路由器外側位於 DevStack 的 `172.24.4.0/24` 網段。
-這個 OpenStack 網段沒有直接接上 GCP VPC；因此須先讓
-`openstack-lab01` 宿主機的外部橋 `br-ex` 可用，
-再配置其位址與送往 GCP 的轉址。不同網段本身可以互通，
-關鍵是兩端有完整的轉送和回程路徑。
+上文已記錄 `openstack subnet show private-subnet -f yaml` 的結果：
+`gateway_ip: 10.0.0.1`。這證明 Neutron 子網宣告的閘道位址，
+不能單憑它判定客體目前的預設路由，或判定閘道屬於哪個路由器。
 
-**第一步目的與影響：** 從控制節點以既有 SSH 金鑰登入
-`openstack-lab01`（`10.146.0.4`），在宿主機以 `sudo`
-啟用 `br-ex` 網路介面。`br-ex` 是 DevStack 的外部橋；
-這一步只改宿主機介面狀態，不配置 IP、不新增 NAT，
-不改客體或 GCP 防火牆，也不建立付費資源。
-服務運作期間介面會保持啟用；若在尚未配置其他用途時撤銷，
-可在宿主機以 `sudo ip link set dev br-ex down` 恢復原狀。
-成功時命令沒有終端輸出，並返回控制節點提示字元。
-
-**待執行指令｜控制節點：**
-
-```bash
-sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'sudo ip link set dev br-ex up'
-```
-
-實際結果待執行後記錄；僅啟用介面尚不能證明客體可連到控制節點。
+**外部橋名稱的依據與限制：**
+[DevStack 官方網路文件](https://docs.openstack.org/devstack/latest/networking.html)
+把 `br-ex` 列為預設環境的外部橋，並說明預設不接實體網卡；
+`br-ex` 不是 OpenStack 強制固定的名稱。
+本機的 [local.conf 遮蔽副本](../project/openstack/local.conf.redacted)
+沒有指定外部橋名稱，但這仍不足以證明執行中的 OVN 網路
+實際對應到哪個橋。先核對本機執行中的橋接對應及路由器外側網段，
+再決定是否需要變更宿主機介面、位址或轉址；目前不執行橋接變更。

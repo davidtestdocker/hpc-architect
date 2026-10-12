@@ -1522,9 +1522,15 @@ router:external: true
 status: ACTIVE
 ```
 
-**判讀：** Neutron 的 `public` 是啟用中的外部 `flat` 網路，
-使用同一個實體網路標籤 `public`，因此這套環境確實透過
-OVN 的 `public:br-ex` 對應接到宿主機橋。
+**判讀：** `provider:network_type: flat` 表示這個 Neutron 網路
+不使用 VLAN 標籤；單靠 `flat` 無法知道它接哪一座橋。
+真正用來對照的是 `provider:physical_network: public`：
+這個值與宿主機 OVN 橋接設定 `public:br-ex` 冒號左邊的 `public`
+相同；冒號右邊的 `br-ex` 才是設定要接的宿主機橋。
+`router:external: true` 表示此網路可作路由器外部網路，
+`status: ACTIVE` 是 Neutron 網路物件狀態；這兩欄也不能單獨證明橋接。
+以上證明**設定上的對應**是 Neutron `public` → OVN 實體網路標籤
+`public` → 宿主機 `br-ex`，尚未逐段驗證實際封包經過這座橋。
 
 **已執行指令｜`openstack-lab01`，讀 `public` 的 IPv4 子網：**
 

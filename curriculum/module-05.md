@@ -4,32 +4,27 @@
 
 ## 要解決的問題與交付物
 
-**問題與目標：** 模組 04 已讓控制節點透過 SSH 在 GPU VM 執行 MPI 工作，
-兩台 VM 也能讀寫 NFS 共享目錄。計算與資料通路已可用，
-但當時 GPU VM 並未接受 Slurm 排程。
-本模組把節點設定寫成可重跑的 Ansible playbook，
-讓控制端能管理 GPU VM 的身分驗證、Slurm 設定和運算服務。
-另由現有 DevStack 的 OpenStack 服務供給一台乾淨 CPU VM，
-驗證資源建立、網路與控制節點登入，再把這台 VM 納入 Slurm，
-交付獨立 CPU 運算節點及可核對的工作結果。
-既有 GCP VM 的叢集與 GPU 工作結果和 OpenStack CPU VM 的驗收分開列示。
+**目標：** 用 Ansible 管理原有的 GPU 運算節點，並將 OpenStack 建立的
+`compute-cpu01` 加入 Slurm，供模組 06 使用兩台獨立運算節點。
+本模組的 CPU 節點驗收範圍是能註冊並接到基本 Slurm 工作；
+模組 06 再驗證監控、故障復原和工作結果。
 
-**已完成成果：** 已完成既有兩台 VM 的 NFS、MUNGE、Slurm 服務帳號及兩節點設定部署。
-控制端已看到 GPU 節點；一般帳號透過 Slurm 請求一張 GPU，
-並在該分區執行二維熱擴散工作，使用 L4 算出與 CPU 一致的結果。
-OpenStack 已建立 AlmaLinux 10.2 `compute-cpu01`，IP 為 `10.0.0.32`。
-控制節點透過 `openstack-lab01` 的私有網路通路，以 SSH 金鑰登入
-`almalinux@compute-cpu01`，Ansible `ping` 已收到 `pong`。
-CPU 客體已註冊到 Slurm 的 `cpu` 分區，`srun hostname` 已在該客體成功執行。
+## 模組 05 成果與目前資源狀態
 
-**目前狀態：** 舊 Ubuntu 客體已刪除，Ubuntu Glance 映像仍保留；
-AlmaLinux 10.2 映像與宿主機上的 QCOW2 也保留。
-CPU 客體已安裝 MUNGE `0.5.15-11.el10_1`、Slurm 與
-`slurm-slurmd` `26.05.4-1.el10`，沒有在客體編譯。
-MUNGE 金鑰、節點設定與服務已部署，基本 Slurm 工作已驗證。
-GPU 運算節點目前關機；兩台獨立運算節點尚未同時在線。
-宿主機的 `br-ex` 位址、出站 NAT、轉送與 swap 已恢復，
-但這些手動設定重啟後不會自動保留。
+| 項目 | 成果與狀態 | 實測證據 |
+|---|---|---|
+| `compute-cpu01` | AlmaLinux 10.2；1 vCPU、2 GiB RAM、20 GiB 磁碟；私有 IP `10.0.0.32` | MUNGE 與 Slurm 已用套件安裝，客體沒有編譯 |
+| CPU 排程 | 已納入 Slurm `cpu` 分區 | 最後一次核對為 `IDLE`、1 CPU、1400 MiB；`srun hostname` 回報 `compute-cpu01.novalocal` |
+| GPU 節點 | 已完成 Slurm L4 工作；目前關機 | L4 熱擴散結果與 CPU 參考一致 |
+| 兩台運算節點 | GPU 與 CPU 節點均已納入 Slurm | CPU 節點基本工作與 GPU 節點 L4 工作分別有實測結果 |
+| OpenStack | 浮動 IP `172.24.4.121` 已關聯 CPU 客體 | Ubuntu 客體已刪除；Ubuntu 與 AlmaLinux 映像保留 |
+| OpenStack 宿主機 | 網路與 4 GiB swap 曾手動恢復 | `br-ex`、NAT、轉送與 swap 的設定未持久化 |
+
+**完成範圍：** 模組 05 的節點建置、部署與各節點工作驗證已完成。
+表內 `IDLE` 是最後一次實測，並非即時查詢；GPU 節點目前關機。
+
+下文依序保留原有 GCP 節點的 Ansible 部署與 GPU 工作結果、
+OpenStack CPU VM 的建立，以及 CPU 節點加入 Slurm 的實際指令與輸出。
 
 ## 管理位置與本次部署範圍
 

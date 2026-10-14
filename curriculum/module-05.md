@@ -76,7 +76,9 @@ Inventory 只列出已存在的 VM，不會建立雲端資源。
 `--syntax-check` 只解析 playbook，`--check --diff` 只預演，
 都不能當成檔案已複製或服務已啟動。
 
-**目的與影響：** 在控制節點執行下列指令。它先讀取目前目錄的
+### 核對 Ansible 管理清單
+
+在控制節點執行下列指令。它先讀取目前目錄的
 [ansible.cfg](../project/ansible/ansible.cfg)，再依設定讀取
 [hosts.yml](../project/ansible/inventory/hosts.yml) 並列出群組與主機；
 這裡沒有執行 playbook，也不連線或修改任何 VM：
@@ -147,7 +149,9 @@ PLAY RECAP
 instance-20260923-104239 : ok=5 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-**目的與影響：** [nfs-gpu-client.yml](../project/ansible/nfs-gpu-client.yml)
+### 部署 GPU 節點的 NFS 掛載
+
+[nfs-gpu-client.yml](../project/ansible/nfs-gpu-client.yml)
 由下一條指令執行。它在 **GPU VM** 先確認 `nfs-utils`，
 再把控制節點 `10.140.0.2:/srv/hpc-share` 接到**GPU VM 自己的**
 `/srv/hpc-share`，同時核對 GPU VM 的 `/etc/fstab` 項目與掛載狀態。
@@ -191,7 +195,9 @@ compute-gpu01 : ok=3 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignore
 同一筆安裝交易另帶入 `bash-completion`、`mariadb-connector-c`、
 `mariadb-connector-c-config`；套件準備不是本模組的操作重點。
 
-**目的與影響：** 下列指令執行 [munge-gpu.yml](../project/ansible/munge-gpu.yml)。
+### 部署 GPU 節點的 MUNGE
+
+下列指令執行 [munge-gpu.yml](../project/ansible/munge-gpu.yml)。
 該檔在 **GPU VM** 依序核對 MUNGE 目錄權限、
 從**控制節點的** `/etc/munge/munge.key` 複製金鑰到
 **GPU VM 自己的**同名路徑、設為 `munge:munge` 與 `0600`，
@@ -242,7 +248,9 @@ GID:             a2264 (1005)
 
 ## 1. 核對 GPU VM 資源與帳號空間
 
-**目的：** Slurm 按節點宣告的 CPU、記憶體和 **GRES**（通用資源）分配工作；
+### 量測 GPU 節點資源
+
+Slurm 按節點宣告的 CPU、記憶體和 **GRES**（通用資源）分配工作；
 GPU 是本叢集的 GRES。先在 GPU VM 以 `a2264` 執行 `slurmd -C`，
 直接讀取本機硬體並列出建議節點設定；
 這條指令不執行 playbook，也不啟動服務：
@@ -483,7 +491,9 @@ GPU VM 的 `slurmd` 已啟動並設為開機啟動。
 
 ## 4. 從控制節點查 GPU 節點是否註冊
 
-**目的：** 上一步已啟動 GPU VM 的 `slurmd`；這一步查控制端看到的節點狀態。
+### 確認 GPU 節點已註冊
+
+上一步已啟動 GPU VM 的 `slurmd`；這一步查控制端看到的節點狀態。
 在**控制節點**以 root 執行下列只讀命令。
 `scontrol` 向正在運行的 `slurmctld` 查詢名為 `compute-gpu01` 的節點；
 這條指令不執行 playbook，不提交工作，也不改動檔案或服務。
@@ -519,7 +529,9 @@ NodeName=compute-gpu01 Arch=x86_64 CoresPerSocket=2
 
 ## 5. 用 Slurm 請求一張 GPU 的通路驗證
 
-**目的：** 控制端已將 `compute-gpu01` 列為 `IDLE`，接著要確認一般帳號能透過
+### 提交 GPU 分區工作
+
+控制端已將 `compute-gpu01` 列為 `IDLE`，接著要確認一般帳號能透過
 Slurm 的 `gpu` 分區請求一張 GPU，並在該分區唯一的 GPU VM 啟動程序。
 此處先用驅動提供的 `nvidia-smi -L` 讀取裝置清單，
 核對排程請求和 GPU 裝置通路；代表性計算工作在下一節執行。
@@ -549,7 +561,9 @@ GPU 0: NVIDIA L4 (UUID: GPU-60db0aa8-3f64-a75a-bd6f-cf44fe764b36)
 
 ## GPU 計算工具準備
 
-**目的：** 下一步要用有已知答案的 GPU 計算工作，核對 Slurm 分配的裝置能否真的執行計算。
+### 準備 GPU 計算工具
+
+下一步要用有已知答案的 GPU 計算工作，核對 Slurm 分配的裝置能否真的執行計算。
 GPU VM 原有的 NVIDIA 驅動能執行 `nvidia-smi`，但尚缺編譯 CUDA 程式的工具。
 從 GPU VM 已啟用的 AlmaLinux NVIDIA 套件庫安裝 CUDA 13.4 編譯器與
 CUDA 執行階段開發檔；安裝交易新增下列套件，沒有升級 NVIDIA 驅動或 Slurm：
@@ -588,7 +602,9 @@ Cuda compilation tools, release 13.4, V13.4.59
 
 ## 6. 用熱擴散工作核對 GPU 計算
 
-**目的：** 驅動可見與 GPU 分配已驗證，下一步要確認分配到的 L4 真的完成計算。
+### 執行 L4 熱擴散工作
+
+驅動可見與 GPU 分配已驗證，下一步要確認分配到的 L4 真的完成計算。
 [heat2d.cu](../project/workloads/heat2d.cu) 實作二維熱擴散：
 在 `1024 × 1024` 網格中心放一個熱源，每輪用上下左右格點更新溫度，
 共執行 200 輪。CPU 與 GPU 使用相同初始條件和更新式，
@@ -687,9 +703,9 @@ Neutron 提供網路；Ansible 不負責建立 VM。
 單機開發／練習環境；它不是 OpenStack 的另一個服務，也不代表生產部署。
 做法依[官方單機 VM 指南](https://docs.openstack.org/devstack/latest/guides/single-vm.html)。
 
-#### 1. 建立練習主機
+#### 建立 OpenStack 宿主機
 
-**目的與影響：** 下列指令由控制節點向 GCP 建立專用
+下列指令由控制節點向 GCP 建立專用
 `openstack-lab01`，將控制節點 `/tmp/compute-gpu01-a2264-ssh-keys-20261003`
 中的 `a2264` 公鑰送入新 VM 的 SSH 中繼資料；該檔案不是私鑰。
 VM 不設定自動停止時間，之後由使用者決定何時停止；開機磁碟仍會持續計費。
@@ -724,7 +740,9 @@ gcloud compute instances create openstack-lab01 \
 `apt-get update` 從東京 Ubuntu 鏡像站與安全更新站成功下載 `37.8 MB`
 套件索引，退出碼 0。套件來源可用。
 
-**目的：** 確認這台 GCP E2 宿主機是否提供 KVM 裝置，決定 DevStack
+#### 確認宿主機的虛擬化能力
+
+確認這台 GCP E2 宿主機是否提供 KVM 裝置，決定 DevStack
 內層 VM 使用的虛擬化方式。指令只查裝置，不修改主機。
 
 **已執行指令｜在 `openstack-lab01`：**
@@ -742,9 +760,9 @@ ls: cannot access '/dev/kvm': No such file or directory
 **判讀：** 這台宿主機沒有 KVM 裝置，因此 `local.conf` 選用 QEMU
 執行內層 CPU VM。
 
-#### 2. 取得 DevStack 並完成安裝
+#### 準備 DevStack 安裝來源
 
-**目的與影響：** GCP 提供練習用主機，OpenStack API 由 DevStack 安裝。
+GCP 提供練習用主機，OpenStack API 由 DevStack 安裝。
 DevStack 會在這台專用 VM 安裝並啟動 Keystone、Nova、Neutron 等服務，
 讓後續能用 OpenStack 建立與管理 VM；首次下載先用 VM 已有的 Git
 從 OpenStack 官方程式庫取得安裝腳本。下列指令由控制節點連到新 VM，
@@ -761,7 +779,9 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 
 **安裝檔案：** 下載的 [stack.sh（官方版本）](https://opendev.org/openstack/devstack/src/commit/64d59574473c148c3d855124ae5f79681854cd0a/stack.sh)
 在新 VM 的 `/home/a2264/devstack/stack.sh`，執行時讀取同目錄的 `local.conf`。
-**目的與影響：** 控制節點把
+#### 產生 DevStack 設定
+
+控制節點把
 [設定產生程式](../project/openstack/write_local_conf.py) 經 SSH 傳給新 VM 的 Python；
 程式在**新 VM**建立 `/home/a2264/devstack/local.conf`，設定服務 IP
 `10.146.0.4`、QEMU 虛擬化與隨機服務密碼。`python3 -` 從標準輸入讀程式，
@@ -779,7 +799,9 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 [遮蔽副本](../project/openstack/local.conf.redacted)保留非機密設定供核對。
 `ADMIN_PASSWORD` 用於管理登入，另外三個密碼欄位供 OpenStack 內部服務驗證。
 
-**目的與影響：** 接著由新 VM 的一般使用者執行 `/home/a2264/devstack/stack.sh`。
+#### 安裝 DevStack 服務
+
+接著由新 VM 的一般使用者執行 `/home/a2264/devstack/stack.sh`。
 它會從官方來源下載並安裝 OpenStack 與相依套件，修改這台專用 VM 的
 `/opt/stack`、`/etc` 服務設定並啟動服務；安裝輸出保存在 VM 上權限受限的
 `stack-install.log`。
@@ -794,7 +816,7 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 `/home/a2264/devstack/stack-install.log`；`stack.sh` 退出碼 0。
 安裝程序完成；後續接著操作 OpenStack API 建立 VM。
 
-#### 3. 載入憑證並查詢 API
+#### 進入 OpenStack 宿主機
 
 **進入操作主機：** 後續從控制節點 `instance-20260923-104239`
 開啟互動 shell 時，使用下列已實測的 SSH 指令進入 `openstack-lab01`。
@@ -811,7 +833,9 @@ gcloud compute ssh a2264@openstack-lab01 --project=project-78b8a95c-a2c0-461f-a0
 **實際結果與判讀：** 出現 `a2264@openstack-lab01:~$` 提示字元，
 表示已進入目標 VM；尚未載入這個 shell 的 OpenStack 登入環境。
 
-**目的與影響：** 在 `openstack-lab01` 使用 DevStack 附的 `openrc`。
+#### 載入 OpenStack 管理環境
+
+在 `openstack-lab01` 使用 DevStack 附的 `openrc`。
 它把 OpenStack API 位址與管理員登入資訊載入目前的 shell，
 讓稍後的 `openstack` 指令能向 API 驗證；`admin admin` 分別是使用者
 與專案名稱。每次開新的 SSH shell 都要重新執行；`source` 只影響目前的 shell，
@@ -855,7 +879,9 @@ openstack service list -f table -c Name -c Type
 
 **判讀：** 管理員憑證可查詢 Keystone API 的服務目錄。
 
-**目的：** 查 Glance 的映像名稱與狀態，確認是否已有可供建立 VM 的映像。
+#### 查看可用開機映像
+
+查 Glance 的映像名稱與狀態，確認是否已有可供建立 VM 的映像。
 `image list` 是唯讀查詢；`-c` 只保留本次要核對的兩欄。
 
 **已執行指令：**
@@ -891,7 +917,9 @@ openstack image list -f table -c Name -c Status
 [Neutron 官方網路概念](https://docs.openstack.org/neutron/latest/admin/intro-os-networking.html)
 說明了這些資源的關係。
 
-**目的：** 先找出目前有哪些網路物件。
+#### 盤點 Neutron 網路
+
+先找出目前有哪些網路物件。
 `-f table` 使用表格；
 `-c Name -c Status` 原本想只看名稱與狀態，但這個清單輸出
 沒有提供 `Status` 欄。指令是唯讀查詢，不建立網路或 VM。
@@ -941,7 +969,9 @@ Horizon 是操作同一套 OpenStack 資源的網頁介面。
 
 ![Horizon 網路清單](../project/openstack/openstack.png)
 
-**目的：** 查 `private` 的屬性，是要知道這個網路是否啟用、
+#### 核對 private 網路
+
+查 `private` 的屬性，是要知道這個網路是否啟用、
 是否只供目前專案使用，以及它連著哪些子網；建立 VM 時會指定網路，
 而子網決定 VM 可能拿到哪段 IP。
 `network show` 只向 Neutron 讀取設定；`-f yaml` 讓欄位逐行顯示。
@@ -972,7 +1002,9 @@ subnets:
 `router:external: false` 表示它不是外部網路，`shared: false` 表示未共享給其他專案。
 `subnets` 列出兩個關聯子網 ID；下一條查詢讀取子網範圍。
 
-**目的：** 列出 `private` 的子網，辨認 CPU VM 可使用的 IPv4 範圍。
+#### 核對 private 子網
+
+列出 `private` 的子網，辨認 CPU VM 可使用的 IPv4 範圍。
 這是 `openstack-lab01` 上的唯讀查詢，不建立或修改網路。
 
 **已執行指令：**
@@ -1009,7 +1041,9 @@ openstack subnet show private-subnet -f yaml
 
 ### 準備 AlmaLinux 10 VM 開機映像
 
-**目的與影響：** Glance 是 OpenStack 保存 VM 開機映像的服務。
+#### 下載 AlmaLinux 開機映像
+
+Glance 是 OpenStack 保存 VM 開機映像的服務。
 目前 `openstack-lab01` 的 `/home/a2264/` 已保留一份
 AlmaLinux 10.2 x86_64 Generic Cloud QCOW2 檔案；
 匯入前 Glance 尚無這份 AlmaLinux 映像，目前沒有 OpenStack CPU 客體。
@@ -1025,7 +1059,9 @@ curl -fL --output /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.q
 **實際結果與判讀：** 終端回報 `100 473M`、退出碼 0；
 QCOW2 檔案已留在 `openstack-lab01`，尚未匯入 Glance。
 
-**下一步目的與影響：** 在 `openstack-lab01` 載入 DevStack
+#### 匯入 AlmaLinux 映像
+
+在 `openstack-lab01` 載入 DevStack
 `admin` 使用者與 `admin` 專案的 API 登入環境，
 再讓 Glance 從本機 QCOW2 讀取資料，新增約 497 MB 映像。
 `--file` 只讀取原檔，不刪除或搬走它；
@@ -1049,7 +1085,9 @@ openstack image create almalinux-10.2-genericcloud-20260817 --file /home/a2264/A
 `43ccad43-f0cd-433a-9e5e-2370682f58ee`，狀態 `active`，
 虛擬磁碟容量 10 GiB。宿主機的 QCOW2 仍是另一份檔案；本步沒有建立 VM。
 
-**目的與影響：** 查 Nova 目前提供的 VM 規格（flavor）：
+#### 選擇 VM 規格
+
+查 Nova 目前提供的 VM 規格（flavor）：
 每種規格決定 vCPU、RAM 與開機磁碟容量。
 剛匯入的 AlmaLinux 映像虛擬容量為 10 GiB；
 先找能容納它、又適合 2 vCPU／8 GiB DevStack 宿主機的規格。
@@ -1079,7 +1117,9 @@ openstack flavor list -f table -c Name -c VCPUs -c RAM -c Disk
 `m1.small` 的 1 vCPU、2 GiB RAM 與 20 GiB 磁碟是 CPU VM 的候選規格。
 規格可選不代表資源足夠、客體能開機或能接受 Slurm 工作。
 
-**目的與影響：** `flavor list` 只列出可選的 VM 規格；
+#### 核對宿主機資源
+
+`flavor list` 只列出可選的 VM 規格；
 建立 `m1.small` 前，向 Nova 查目前運算主機回報的 vCPU、記憶體和本機磁碟總量及已用量。
 這些是 OpenStack 的資源統計，不等於 VM 一定能排進主機，
 但可先判斷是否明顯沒有餘量。這是唯讀 API 查詢，不修改 VM 或服務。
@@ -1099,7 +1139,9 @@ openstack hypervisor stats show
 20 GiB，vCPU 與 RAM 也有餘量；仍須由建機實際結果確認可否排入。
 舊命令雖有停用警告，本次仍成功返回資料。
 
-**下一步目的與影響：** AlmaLinux 映像是 `admin` 專案的私有映像；
+#### 開放映像給 demo 專案
+
+AlmaLinux 映像是 `admin` 專案的私有映像；
 已核對的 `private` 網路屬於 `demo` 專案，且 `shared: false`。
 CPU VM 要接上這個網路，需在 `demo` 專案建機，
 因此先讓這份 AlmaLinux 映像對本套 OpenStack 的其他專案可見。
@@ -1126,7 +1168,9 @@ VM 用已安裝的公鑰核對控制節點持有的私鑰。
 Ansible 將沿用這條 SSH 通路；
 能否實際登入仍須等 VM 建立後驗證。
 
-**下一步目的與影響：** 切換同一個 shell 到 `admin` 使用者的
+#### 切換到 demo 專案並查金鑰
+
+切換同一個 shell 到 `admin` 使用者的
 `demo` 專案環境，讓後續 key pair、安全群組與 VM 操作都屬於
 已有 `private` 網路的專案。用 `openstack keypair list` 查已有的
 金鑰名稱，避免重複登錄；查詢不顯示私鑰，也不修改 VM。
@@ -1141,7 +1185,9 @@ openstack keypair list
 **實際結果與判讀：** 沒有列出任何 key pair，
 目前需先向 OpenStack 登錄公鑰，之後才能指定它供新 VM 開機時使用。
 
-**下一步目的與影響：** 控制節點已用 `/home/a2264/.ssh/hpc_gpu_ed25519`
+#### 核對控制節點公鑰
+
+控制節點已用 `/home/a2264/.ssh/hpc_gpu_ed25519`
 登入其他叢集節點。
 在 `openstack-lab01` 查看 `a2264` 帳號允許登入的公鑰指紋，
 確認其中是否正是控制節點這把金鑰；若相同，後續只需將該公鑰登錄到
@@ -1162,7 +1208,9 @@ ssh-keygen -lf /home/a2264/.ssh/authorized_keys
 **判讀：** 這把公鑰可供新 VM 登錄，對應私鑰仍只留在控制節點。
 另外兩把屬於其他登入來源，不一併匯入 OpenStack。
 
-**下一步目的與影響：** 從 `openstack-lab01` 自己的
+#### 擷取要登錄的公鑰
+
+從 `openstack-lab01` 自己的
 `/home/a2264/.ssh/authorized_keys` 擷取含控制節點註記的那一行，
 寫成同一台主機的 `/home/a2264/.ssh/openstack-cpu-controller.pub`。
 `grep -F` 以固定字串比對註記，`>` 將匹配的公鑰寫入目標檔；
@@ -1177,7 +1225,9 @@ grep -F 'a2264@instance-20260923-104239' /home/a2264/.ssh/authorized_keys > /hom
 **實際結果與判讀：** 指令沒有終端輸出並返回提示字元；
 符合已找到匹配公鑰並寫入新檔的情況。OpenStack 尚未登錄這把金鑰。
 
-**下一步目的與影響：** 在目前 `admin` 使用者、`demo` 專案的 shell，
+#### 登錄 OpenStack key pair
+
+在目前 `admin` 使用者、`demo` 專案的 shell，
 由 Nova 讀取 `openstack-lab01` 上的
 `/home/a2264/.ssh/openstack-cpu-controller.pub`，
 登錄名為 `openstack-cpu-controller` 的 key pair。
@@ -1199,7 +1249,9 @@ openstack keypair create --public-key /home/a2264/.ssh/openstack-cpu-controller.
 `ssh-keygen` 的 SHA-256 格式不同，兩者來自同一份已核對的公鑰檔。
 目前尚未將 key pair 指定給任何新 VM。
 
-**下一步目的與影響：** 新 VM 即使有登入金鑰，若網卡的安全群組
+#### 找出 demo 專案安全群組
+
+新 VM 即使有登入金鑰，若網卡的安全群組
 沒有允許 SSH 入站，控制節點仍無法登入。安全群組是套用在 VM 網卡上的
 封包規則集合。不同專案可以各有一個同名 `default` 群組，
 先用 `--project demo` 找出這次應使用的群組 ID，
@@ -1218,7 +1270,9 @@ openstack security group list --project demo
 **判讀：** 已辨認這次 VM 要用的群組，後續用 ID 指定，
 避免和其他專案的同名群組混淆；目前還沒確認群組內的規則。
 
-**下一步目的與影響：** 讀取這個 `demo` 專案群組的規則，
+#### 核對安全群組入站規則
+
+讀取這個 `demo` 專案群組的規則，
 核對 TCP 22 入站設定。
 這是唯讀 API 查詢，不建立或修改規則。
 
@@ -1235,7 +1289,9 @@ openstack security group rule list 859e6514-e673-47df-aacc-7f10e3ee13b5
 
 **判讀：** 既有 IPv4 入站規則只讓同群組的 VM 互通。
 
-**目的與影響：** `cpu_models` 決定 Nova 透過 QEMU 呈現給 VM 的虛擬 CPU
+#### 確認 Nova compute 實際讀取的設定
+
+`cpu_models` 決定 Nova 透過 QEMU 呈現給 VM 的虛擬 CPU
 指令集。標準 AlmaLinux 10 `x86_64` 映像需要 `x86-64-v3`；
 原本的 `Nehalem` 缺少 AVX2，改用支援 AVX2 的 `Haswell`。
 先確認 `devstack@n-cpu.service` 實際讀哪份設定檔，避免改到未使用的檔案。
@@ -1254,7 +1310,9 @@ sudo awk '/^\[libvirt\]/{p=1;next} /^\[/{p=0} p && /^(cpu_models|cpu_mode|virt_t
 `cpu_mode = custom`、`virt_type = qemu`。
 因此要修改的是 Nova compute 真正讀取的 `nova-cpu.conf`。
 
-**目的與影響：** 將宿主機 `/etc/nova/nova-cpu.conf` 的 CPU 模型改為
+#### 設定 Haswell 虛擬 CPU
+
+將宿主機 `/etc/nova/nova-cpu.conf` 的 CPU 模型改為
 `Haswell`。這會修改設定檔，重啟 `devstack@n-cpu.service` 後才影響新建 VM；
 既有 VM 的 CPU 模型不會隨服務重啟改變。復原可把該行改回原值並重啟服務。
 
@@ -1267,7 +1325,9 @@ sudo sed -i 's/^cpu_models = Nehalem$/cpu_models = Haswell/' /etc/nova/nova-cpu.
 **實際結果與判讀：** 沒有終端輸出，退出碼為 0；
 實際讀取的設定檔已改為 `cpu_models = Haswell`。
 
-**目的與影響：** 重啟 Nova compute 讓它重讀設定；重啟期間這台宿主機
+#### 重啟 Nova compute
+
+重啟 Nova compute 讓它重讀設定；重啟期間這台宿主機
 暫時無法接受建機工作，不影響已存在 VM 的 CPU 模型。
 
 **已執行指令｜在 `openstack-lab01`：**
@@ -1286,7 +1346,9 @@ systemctl is-active devstack@n-cpu.service
 
 **實際輸出與判讀：** `active`；Nova compute 服務已恢復。
 
-**目的與影響：** 在 `demo` 專案以 AlmaLinux 10.2 映像建立
+#### 建立 compute-cpu01
+
+在 `demo` 專案以 AlmaLinux 10.2 映像建立
 `compute-cpu01`，使用 `m1.small`（1 vCPU、2 GiB RAM、20 GiB 磁碟）、
 `private` 網路、已登錄公鑰與既有安全群組。VM 由
 `openstack-lab01` 承載，佔用宿主機資源；刪除 VM 會失去其本機磁碟。
@@ -1346,7 +1408,9 @@ tapfb5be63d-71@if8 UP 169.254.169.254/32 10.0.0.2/26
 連線來源是 `10.0.0.2`。下一步為這個來源新增 TCP 22 入站規則。
 若 `private` 網路重建，須重新查詢命名空間名稱及 IP。
 
-**下一步目的與影響：** 在 `demo` 專案的 `default` 安全群組
+#### 允許管理通路的 SSH 入站
+
+在 `demo` 專案的 `default` 安全群組
 `859e6514-e673-47df-aacc-7f10e3ee13b5` 新增 IPv4 入站規則，
 只允許來源 `10.0.0.2/32` 連到 TCP 22。這是 `ovnmeta` 命名空間
 目前的私有 IP；規則會影響使用此安全群組的 VM 網卡，
@@ -1371,7 +1435,9 @@ openstack security group rule create --ingress --ethertype IPv4 --protocol tcp -
 **判讀：** `demo` 的 `default` 安全群組已加入限定來源的 SSH 入站規則；
 若要撤銷，可依上面的規則 ID 刪除。
 
-**目的與影響：** 從 libvirt 的新 VM 定義核對
+#### 核對 VM 的虛擬 CPU 模型
+
+從 libvirt 的新 VM 定義核對
 `instance-00000004` 實際使用的 CPU 模型，確認這次建機
 有讀取更正後的 Nova compute 設定。唯讀，不修改客體。
 
@@ -1386,7 +1452,9 @@ sudo virsh dumpxml instance-00000004 | grep -E -A 4 '<cpu '
 這台重建後的 VM 已取得預定 CPU 模型。
 這仍不能單獨證明客體內已開機。
 
-**目的與影響：** SSH 尚未回應；按原流程接上
+#### 查看 AlmaLinux 客體開機畫面
+
+SSH 尚未回應；按原流程接上
 `instance-00000004` 的序列主控台，看目前是否有客體畫面。
 連線本身不重啟或修改 VM；按 Enter 只要求畫面更新，
 用 `Ctrl+]` 退出。
@@ -1406,7 +1474,9 @@ sudo virsh console instance-00000004
 此前 SSH 逾時發生在首次開機尚未完成時。
 按 `Ctrl+]` 已退出主控台，沒有在客體內修改設定。
 
-**目的與影響：** 從既有 `ovnmeta` 命名空間
+#### 驗證客體 SSH 埠
+
+從既有 `ovnmeta` 命名空間
 （來源 `10.0.0.2`）測試新 VM 的 `10.0.0.32:22`。
 這次不嘗試用金鑰登入，只核對 TCP 連線及 SSH 握手；
 不修改 VM。
@@ -1422,7 +1492,9 @@ sudo ip netns exec ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c ssh -o BatchMode
 這是刻意不提供登入認證的測試結果：TCP 22 已連通，
 客體的 SSH 服務已完成握手；正式金鑰登入仍須另行驗證。
 
-**目的與影響：** 從控制節點以既有私鑰登入 `compute-cpu01`，
+#### 從控制節點登入 CPU 客體
+
+從控制節點以既有私鑰登入 `compute-cpu01`，
 驗證管理端到 OpenStack 客體的完整 SSH 通路。
 私鑰留在控制節點；`ProxyCommand` 讓 SSH 先連到
 `openstack-lab01`，在其 `ovnmeta` 命名空間用 `nc` 將連線送到
@@ -1582,7 +1654,9 @@ ip -4 addr show dev br-ex
 表示目前宿主機的 `br-ex` 沒有 IPv4 位址；
 路由器要交給宿主機 `.1` 的封包，還缺宿主機這個收件位址。
 
-**目的與影響：** 依已驗證的原流程，
+#### 恢復 OpenStack 宿主機出口
+
+依已驗證的原流程，
 在 `openstack-lab01` 的 `br-ex` 加回 `172.24.4.1/24`，
 讓 Neutron 路由器可把客體的出站封包交給宿主機。
 這只改宿主機目前的網卡位址，不修改 VM 或 GCP 網路；
@@ -1649,7 +1723,9 @@ interfaces_info:
 `.1` 是**宿主機在這段網路的 IP／路由器的下一站**。
 封包的目的 IP 此時仍是控制節點 `10.140.0.2`。
 
-**目的與影響：** 既有 Neutron 路由器與宿主機轉送設定
+#### 確認客體出站路由
+
+既有 Neutron 路由器與宿主機轉送設定
 仍服務同一個 `private` 網路；現在從新 AlmaLinux 客體查
 送往控制節點 `10.140.0.2` 的下一跳與來源 IP。
 控制節點沿已驗證的 SSH 路徑執行客體內的 `ip route get`；
@@ -1768,7 +1844,9 @@ sudo iptables -w -t nat -S POSTROUTING
 
 #### 5. 從客體驗證整條出站路徑
 
-**目的與影響：** 由已驗證的管理 SSH 在新 AlmaLinux 客體
+#### 測試客體到控制節點的 SSH 通路
+
+由已驗證的管理 SSH 在新 AlmaLinux 客體
 執行 Python TCP 連線測試，連向控制節點 `10.140.0.2:22`。
 這會建立一條短暫 TCP 連線，不修改 VM、服務或設定檔；
 輸出用來確認請求與回覆已能完成握手。
@@ -1833,7 +1911,9 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 [ansible.cfg](../project/ansible/ansible.cfg) 仍指向這份 inventory。
 若需撤銷，只移除新增的 `cpu_compute` 群組；既有 GPU 群組不變。
 
-**目的與影響：** 在控制節點以 root 執行 Ansible 的
+#### 驗證 Ansible 可管理 CPU 客體
+
+在控制節點以 root 執行 Ansible 的
 `ping` 模組，實際透過上述 SSH 通路在 CPU 客體執行 Python。
 這不是 ICMP；輸出若有 `SUCCESS`、`ping: pong`、`changed: false`，
 表示 inventory 連線及遠端模組可用。
@@ -1886,7 +1966,9 @@ AlmaLinux 10 的 AppStream、BaseOS、CRB、Extras 已在客體啟用；
 客體到官方 AlmaLinux 網站的 HTTPS 查詢回報 `200`，
 可用 DNF 從套件庫取得相依套件。
 
-**目的與影響：** 從控制節點執行
+#### 安裝 CPU 客體的 MUNGE 與 Slurm
+
+從控制節點執行
 [slurm-cpu-packages.yml](../project/ansible/slurm-cpu-packages.yml)，
 只針對 inventory 的 `cpu_compute`，依序在客體建立
 `/var/tmp/hpc-slurm-rpms`、從工作樹複製上述兩個 RPM，
@@ -1939,7 +2021,9 @@ compute-cpu01 : ok=3 changed=1 unreachable=0 failed=0
 
 ### CPU 客體安裝前的宿主機記憶體緩衝
 
-**目的與影響：** `openstack-lab01` 是 2 vCPU、8 GiB 記憶體的 DevStack
+#### 補足宿主機記憶體緩衝
+
+`openstack-lab01` 是 2 vCPU、8 GiB 記憶體的 DevStack
 宿主機，同時執行 `compute-cpu01`。安裝前查得宿主機僅約 395 MiB
 可用記憶體、沒有 swap；根檔案系統是 ext4，尚無 `/swapfile`，
 根檔案系統尚有 26 GiB 可用。先在**宿主機**建立 4 GiB 暫時 swap，
@@ -2002,7 +2086,9 @@ NAME      TYPE       SIZE USED PRIO
 
 ### CPU 客體的 MUNGE 金鑰與服務
 
-**目的與影響：** CPU 客體已安裝 MUNGE 與 Slurm 套件，但尚無叢集金鑰，
+#### 部署 CPU 客體的 MUNGE
+
+CPU 客體已安裝 MUNGE 與 Slurm 套件，但尚無叢集金鑰，
 `munge` 服務也未啟動，因此不能驗證控制節點送來的憑證。
 控制節點的 `/etc/munge/munge.key` 已存在，權限為 `munge:munge 0600`；
 CPU 客體的 `/etc/munge`、`/var/lib/munge`、`/var/log/munge`
@@ -2070,7 +2156,9 @@ UID `1000`、GID `1005`，客體把 UID `1000` 顯示為本機帳號
 
 ### CPU 客體的 Slurm 服務帳號
 
-**目的與影響：** `slurmd -C` 讀取 CPU 客體的硬體，供後續
+#### 量測 CPU 客體資源
+
+`slurmd -C` 讀取 CPU 客體的硬體，供後續
 `slurm.conf` 的節點資源宣告使用；它不啟動服務或改動設定。
 控制節點已有 `slurm` 服務帳號 UID/GID `800:800`，
 CPU 客體尚無同名帳號，數字 `800:800` 也未被其他帳號占用。
@@ -2126,7 +2214,9 @@ UID/GID `800:800` 一致；`slurmd` 尚未配置或啟動。
 
 ### CPU 客體與控制服務的 TCP 通路
 
-**目的與影響：** 控制節點的 `slurmctld` 已在 TCP `6817` 接聽，
+#### 驗證客體到 Slurm 控制埠
+
+控制節點的 `slurmctld` 已在 TCP `6817` 接聽，
 而 CPU 客體先前只驗證了到控制節點 TCP `22` 的通路。
 `slurmd` 註冊前，先從 CPU 客體直接測到 `10.140.0.2:6817`；
 這是唯讀的連線檢查，不安裝套件、不啟動 Slurm 服務。
@@ -2175,7 +2265,9 @@ openstack floating ip create public -f value -c id -c floating_ip_address
 **判讀：** 已從 DevStack `public` 網路分配 `172.24.4.121`，
 尚未綁定客體、開防火牆或修改宿主機 NAT。
 
-**下一步目的與影響：** 將這個已分配的位址關聯到
+#### 關聯 CPU 客體浮動 IP
+
+將這個已分配的位址關聯到
 `compute-cpu01` 的唯一 IPv4 網卡 `10.0.0.32`；
 OpenStack 會更新客體的浮動位址映射，但不改客體作業系統設定。
 解除關聯可用 `openstack server remove floating ip` 復原。
@@ -2199,7 +2291,9 @@ openstack floating ip show 0a8f438b-0e2f-4851-b50f-ebcabaa00ed0 -f value -c floa
 `10.0.0.32`，port ID 為 `4d7ecf89-6911-49a8-87ce-dc234c451e0b`。
 這確認 OpenStack 關聯已建立，不代表宿主機入站通路已打通。
 
-**下一步目的與影響：** 該 port 使用既有安全群組
+#### 允許 Slurm 運算埠入站
+
+該 port 使用既有安全群組
 `859e6514-e673-47df-aacc-7f10e3ee13b5`，目前只明確允許
 SSH 入站。新增一條僅允許控制節點 `10.140.0.2/32` 連到
 CPU 客體 TCP `6818` 的規則；這會修改 OpenStack 安全群組，
@@ -2216,7 +2310,9 @@ openstack security group rule create --ingress --protocol tcp --dst-port 6818 --
 得到 `ingress`、`tcp`、最小與最大埠皆為 `6818`、
 來源 `10.140.0.2/32`。規則限縮到控制節點；宿主機尚未轉送流量。
 
-**下一步目的與影響：** 控制節點會把 `compute-cpu01` 的
+#### 轉送控制節點到 CPU 客體的流量
+
+控制節點會把 `compute-cpu01` 的
 Slurm 節點位址指向宿主機 `10.146.0.4`；宿主機須把來自
 `10.140.0.2`、目的為自己 TCP `6818` 的封包轉到
 客體浮動 IP `172.24.4.121:6818`，再由 OpenStack 映射到
@@ -2294,7 +2390,9 @@ CPU 客體再次執行前述 Python TCP `6817` 檢查，輸出
 
 ### 將 CPU 客體加入 Slurm 設定
 
-**目的與影響：** CPU 客體的 MUNGE 已跨節點驗證，`slurm` 服務帳號
+#### 部署三節點 Slurm 設定
+
+CPU 客體的 MUNGE 已跨節點驗證，`slurm` 服務帳號
 UID/GID 是 `800:800`，到控制端 TCP `6817` 已連通，控制端到客體
 TCP `6818` 的安全群組與宿主機轉送也已設定；但 `slurmd` 尚未啟動，
 所以該入站通路仍待實際驗證。現有控制節點設定只宣告控制節點

@@ -1458,26 +1458,6 @@ sudo virsh console instance-00000004
 此前 SSH 逾時發生在首次開機尚未完成時。
 按 `Ctrl+]` 已退出主控台，沒有在客體內修改設定。
 
-#### 確認客體 SSH 服務有回應
-
-從既有 `ovnmeta` 命名空間
-（來源 `10.0.0.2`）測試新 VM 的 `10.0.0.32:22`。
-這次不嘗試用金鑰登入，只核對 TCP 連線及 SSH 握手；
-不修改 VM。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo ip netns exec ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c ssh -o BatchMode=yes -o ConnectTimeout=5 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PreferredAuthentications=none almalinux@10.0.0.32 true
-```
-
-**實際結果與判讀：** SSH 回覆
-`Permission denied (publickey,gssapi-keyex,gssapi-with-mic)`，指令沒有登入成功，
-客體內的 `true` 也沒有執行。這次刻意指定
-`PreferredAuthentications=none`，不提供金鑰；伺服器能回覆可用的認證方式，
-表示從 `ovnmeta` 命名空間到客體 TCP 22 的網路通路可達，且客體的
-`sshd` 有回應。是否能用控制節點的私鑰登入，由下一步單獨驗證。
-
 #### 從控制節點登入 CPU 客體
 
 從控制節點以既有私鑰登入 `compute-cpu01`，
@@ -1542,8 +1522,13 @@ NFS 掛載與 Slurm 節點服務都需要後一個方向。
 sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'sudo ip link set dev br-ex up'
 ```
 
-**實際結果與判讀：** 沒有終端輸出，退出碼為 0；
-接著唯讀核對 `br-ex` 與 `172.24.4.0/24` 連接路由。
+**實際結果與判讀：** 指令沒有終端輸出並返回控制節點提示字元，
+沒有回報錯誤。這表示宿主機接受了啟用 `br-ex` 介面的操作；
+尚不能由此確認它對應哪個 OpenStack 外部網路，
+也不能證明客體到 GCP 的通路已接通。
+此操作沒有配置 IP、NAT 或更動客體；如需撤銷，
+在確認介面沒有其他用途後可於宿主機執行 `sudo ip link set dev br-ex down`。
+接著唯讀核對介面位址與 `172.24.4.0/24` 連接路由。
 
 **已執行驗證指令｜在 `openstack-lab01`：**
 
@@ -1554,9 +1539,10 @@ ip -4 route show 172.24.4.0/24
 
 **實際輸出與判讀：** 第一條回報
 `br-ex UNKNOWN 172.24.4.1/24`；`UNKNOWN` 是此橋的操作狀態顯示，
-第二條已回報
+不是指令失敗。第二條回報
 `172.24.4.0/24 dev br-ex proto kernel scope link src 172.24.4.1`。
-介面已持有位址，核心也已建立連接路由。
+介面已持有位址，核心也已建立連接路由；這兩條輸出仍不能單獨證明
+OVN 對應或客體到控制節點的完整通路，後面分別核對。
 
 **已執行指令｜控制節點查宿主機的 OVN 橋接對應：**
 
@@ -1741,49 +1727,22 @@ sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -
 能經宿主機返回客體。TCP 連線需要請求與回覆都能抵達，
 只有去程送出、回程不通，連線仍無法建立。
 
-**已執行現況核對｜在 `openstack-lab01`：**
-新客體的出站 TCP 尚未通；確認宿主機是否仍允許 IPv4 轉送，
-以及原流程的 `172.24.4.9/32` 到 `ens4` 的 SNAT 規則是否存在。
-這兩條都是唯讀查詢，不新增規則。
+**已執行唯讀核對｜在 `openstack-lab01`：** 核對到控制節點的出口、
+IPv4 轉送開關與現有來源轉址規則；查詢不修改宿主機。
 
 ```bash
+ip -4 route get 10.140.0.2
 sysctl -n net.ipv4.ip_forward
 sudo iptables -w -t nat -S POSTROUTING
 ```
 
-**實際輸出與判讀：** `ip_forward=1`；NAT 鏈只有
-`-P POSTROUTING ACCEPT` 和 `-A POSTROUTING -j LIBVIRT_PRT`。
-原流程的 `172.24.4.9/32` 到 `ens4` 的 MASQUERADE 規則
-目前不在，須加回後才能驗證客體到控制節點的回程。
-
-**已執行指令｜`openstack-lab01`：**
-
-```bash
-ip -4 route get 10.140.0.2
-```
-
-**實際輸出重點：**
-
-```text
-10.140.0.2 via 10.146.0.1 dev ens4 src 10.146.0.4 uid 1001
-```
-
-**判讀：** 宿主機要把收到的封包送往控制節點 `10.140.0.2`，
-會從 `ens4` 交給 GCP 下一跳 `10.146.0.1`；
-宿主機在這張網卡上的位址是 `10.146.0.4`。
-這是宿主機選擇出口與下一站的路由結果；
-`10.146.0.4` 是宿主機自己的位址，不是下一站。
-
-**已執行指令｜`openstack-lab01`：**
-
-```bash
-sysctl -n net.ipv4.ip_forward
-```
-
-**實際輸出：** `1`。
-
-**判讀：** 宿主機允許把從 `br-ex` 收到、目的地是控制節點的
-IPv4 封包，轉交給 `ens4` 送往 GCP；這個開關不會改寫來源 IP。
+**實際結果與判讀：** 路由回報
+`10.140.0.2 via 10.146.0.1 dev ens4 src 10.146.0.4 uid 1001`：
+宿主機從 `ens4` 經 GCP 下一跳 `10.146.0.1` 送往控制節點；
+`10.146.0.4` 是宿主機自己的位址。`ip_forward=1`，
+表示允許 IPv4 轉送，但此開關不改寫來源 IP。
+NAT 鏈只有預設策略與 `LIBVIRT_PRT`，沒有
+`172.24.4.9/32` 從 `ens4` 出口的 MASQUERADE 規則。
 
 **已執行指令｜`openstack-lab01`：**
 
@@ -1792,19 +1751,9 @@ sudo iptables -w -t nat -A POSTROUTING -s 172.24.4.9/32 -o ens4 -j MASQUERADE
 ```
 
 **實際結果與判讀：** 沒有終端輸出，退出碼為 0；
-接著核對規則清單，再由客體重新測 TCP 通路。
+後續從客體測 TCP 通路，核對這條來源轉址在完整路徑中的效果。
 若需復原，將同一條規則的 `-A` 換成 `-D` 刪除；
 此規則未持久化。
-
-**已執行驗證指令｜`openstack-lab01`：**
-
-```bash
-sudo iptables -w -t nat -S POSTROUTING
-```
-
-**實際輸出與判讀：** 除預設策略與 libvirt 鏈外，
-已出現 `-A POSTROUTING -s 172.24.4.9/32 -o ens4 -j MASQUERADE`。
-指定的來源轉址規則目前存在；仍須由客體 TCP 連線驗證整條路徑。
 
 **判讀：** 這條規則**不選擇出口或下一站**。
 封包已到宿主機 `172.24.4.1`；宿主機先依目的 IP

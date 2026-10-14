@@ -9,19 +9,37 @@
 本模組的 CPU 節點驗收範圍是能註冊並接到基本 Slurm 工作；
 模組 06 再驗證監控、故障復原和工作結果。
 
-## 模組 05 成果與目前資源狀態
+## 目前叢集架構
 
-| 項目 | 成果與狀態 | 實測證據 |
+```mermaid
+flowchart LR
+    C["GCP 控制節點<br/>10.140.0.2<br/>slurmctld / MUNGE / NFS"]
+    G["GCP compute-gpu01<br/>10.146.0.3<br/>slurmd / NVIDIA L4<br/>目前關機"]
+    H["GCP openstack-lab01<br/>10.146.0.4<br/>DevStack / NAT 轉送"]
+    F["DevStack 浮動 IP<br/>172.24.4.121"]
+    V["OpenStack compute-cpu01<br/>10.0.0.32<br/>AlmaLinux 10.2 / slurmd"]
+    C -->|"Slurm、MUNGE、NFS"| G
+    C -->|"Slurm TCP 6818"| H
+    H -->|"轉到浮動 IP"| F
+    F -->|"OVN 映射"| V
+    V -->|"Slurm TCP 6817，經宿主機 NAT"| C
+```
+
+| 節點 | 角色與資源 | 模組 05 的實際結果 |
 |---|---|---|
-| `compute-cpu01` | AlmaLinux 10.2；1 vCPU、2 GiB RAM、20 GiB 磁碟；私有 IP `10.0.0.32` | MUNGE 與 Slurm 已用套件安裝，客體沒有編譯 |
-| CPU 排程 | 已納入 Slurm `cpu` 分區 | 最後一次核對為 `IDLE`、1 CPU、1400 MiB；`srun hostname` 回報 `compute-cpu01.novalocal` |
-| GPU 節點 | 已完成 Slurm L4 工作；目前關機 | L4 熱擴散結果與 CPU 參考一致 |
-| 兩台運算節點 | GPU 與 CPU 節點均已納入 Slurm | CPU 節點基本工作與 GPU 節點 L4 工作分別有實測結果 |
-| OpenStack | 浮動 IP `172.24.4.121` 已關聯 CPU 客體 | Ubuntu 客體已刪除；Ubuntu 與 AlmaLinux 映像保留 |
-| OpenStack 宿主機 | 網路與 4 GiB swap 曾手動恢復 | `br-ex`、NAT、轉送與 swap 的設定未持久化 |
+| 控制節點 `10.140.0.2` | `slurmctld`、MUNGE、NFS 伺服器；`debug` 分區 | 管理兩個運算節點的 Slurm 設定與工作提交 |
+| `compute-gpu01` `10.146.0.3` | GCP 運算 VM；4 邏輯 CPU、1 張 NVIDIA L4；`gpu` 分區 | 曾透過 Slurm 完成 L4 熱擴散工作；目前關機 |
+| `openstack-lab01` `10.146.0.4` | GCP VM，執行 DevStack 與 CPU 客體；提供 NAT 轉送 | 將控制節點連向 `10.146.0.4:6818` 的流量轉入 CPU 客體 |
+| `compute-cpu01` `10.0.0.32` | OpenStack VM；AlmaLinux 10.2、1 vCPU、2 GiB RAM、20 GiB 磁碟；`cpu` 分區 | MUNGE 與 Slurm 以套件安裝；最後一次 Slurm 核對為 `IDLE`、1 CPU、1400 MiB；`srun hostname` 回報 `compute-cpu01.novalocal` |
 
-**完成範圍：** 模組 05 的節點建置、部署與各節點工作驗證已完成。
-表內 `IDLE` 是最後一次實測，並非即時查詢；GPU 節點目前關機。
+**網路關係：** `172.24.4.121` 是 DevStack 分配給 CPU 客體的浮動 IP，
+不是另一台 VM。控制節點到 CPU 客體的 Slurm TCP `6818`
+先到 OpenStack 宿主機，再經浮動 IP 映射到客體 `10.0.0.32`；
+客體連回控制節點 TCP `6817` 則經宿主機 NAT。
+控制節點對 GPU 節點提供 NFS 共享路徑；本次 CPU 客體沒有掛載 NFS。
+
+**目前狀態：** CPU 客體的 Slurm 工作已驗證；GPU 節點目前關機。
+表中的 `IDLE` 是最後一次實測，並非即時狀態。
 
 下文依序保留原有 GCP 節點的 Ansible 部署與 GPU 工作結果、
 OpenStack CPU VM 的建立，以及 CPU 節點加入 Slurm 的實際指令與輸出。

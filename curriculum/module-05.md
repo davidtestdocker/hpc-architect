@@ -1233,8 +1233,12 @@ openstack security group rule list 859e6514-e673-47df-aacc-7f10e3ee13b5
 
 **判讀：** 既有 IPv4 入站規則只讓同群組的 VM 互通。
 
-**目的與影響：** 在 `openstack-lab01` 將
-`/etc/nova/nova.conf` 的 `cpu_models` 從 `Nehalem` 改成 `Haswell`。
+**目的與影響：** `cpu_models` 決定 Nova 透過 QEMU 呈現給 VM 的虛擬 CPU
+指令集。這次使用的是標準 AlmaLinux 10 `x86_64` 映像，
+其系統程式需要 `x86-64-v3` 指令集；原設定 `Nehalem` 缺少其中的
+AVX2，客體可能無法正常開機。`Haswell` 支援 AVX2，
+因此在 `openstack-lab01` 將 `/etc/nova/nova.conf` 的
+`cpu_models` 從 `Nehalem` 改成 `Haswell`，讓 VM 看見所需指令。
 這會修改 Nova compute 設定檔；目前沒有 CPU VM。
 改完還須重啟 `devstack@n-cpu.service` 才會套用；
 重啟期間這台宿主機暫時無法接受建機工作。

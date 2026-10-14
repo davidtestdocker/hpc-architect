@@ -1,0 +1,47 @@
+---
+# 在控制節點執行，只管理 OpenStack CPU 客體的 MUNGE。
+# 金鑰從控制節點 /etc/munge/munge.key 送到客體同名路徑；內容不進工作樹或終端輸出。
+- name: 設定 CPU 客體的 MUNGE 身分驗證
+  hosts: cpu_compute
+  become: true
+  gather_facts: false
+  tasks:
+    # loop 依序設定套件已建立的三個目錄；權限錯誤會阻止 munged 讀取金鑰或寫入狀態。
+    - name: 確保 CPU 客體的 MUNGE 目錄權限
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: munge
+        group: munge
+        mode: "0700"
+      loop:
+        - /etc/munge
+        - /var/lib/munge
+        - /var/log/munge
+
+    # copy 的 src 在控制節點，dest 在 CPU 客體；no_log 與 diff: false 避免洩露金鑰。
+    # notify 只在金鑰真的改變時於 play 結尾觸發 handler，讓 munged 重新讀取金鑰。
+    - name: 部署 CPU 客體的叢集 MUNGE 金鑰
+      ansible.builtin.copy:
+        src: /etc/munge/munge.key
+        dest: /etc/munge/munge.key
+        owner: munge
+        group: munge
+        mode: "0600"
+      no_log: true
+      diff: false
+      notify: 重新啟動 CPU 客體的 MUNGE
+
+    # started 啟動現在的服務，enabled 設定客體下次開機自動啟動。
+    - name: 確保 CPU 客體的 MUNGE 已啟動
+      ansible.builtin.service:
+        name: munge
+        state: started
+        enabled: true
+
+  handlers:
+    # 金鑰變動後重啟 CPU 客體的 munged，與只重載 systemd 清單不同。
+    - name: 重新啟動 CPU 客體的 MUNGE
+      ansible.builtin.service:
+        name: munge
+        state: restarted

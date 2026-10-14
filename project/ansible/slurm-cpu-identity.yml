@@ -1,0 +1,40 @@
+---
+# 在控制節點執行，只建立 CPU 客體的 Slurm 服務身分；不碰控制節點與 GPU VM。
+# 控制節點既有 slurm 為 800:800，客體的 800 UID/GID 已核對未占用。
+- name: 建立 CPU 客體的 Slurm 服務帳號
+  hosts: cpu_compute
+  become: true
+  gather_facts: false
+  tasks:
+    # group 先寫入 /etc/group；固定 GID 讓服務在各節點有相同數字身分。
+    - name: 備妥 CPU 客體的 slurm 群組
+      ansible.builtin.group:
+        name: slurm
+        gid: 800
+        system: true
+        state: present
+
+    # user 接著寫入 /etc/passwd；服務帳號不建立家目錄，也不可互動登入。
+    - name: 備妥 CPU 客體的 slurm 使用者
+      ansible.builtin.user:
+        name: slurm
+        uid: 800
+        group: slurm
+        system: true
+        create_home: false
+        shell: /sbin/nologin
+        state: present
+
+    # id 的數字是驗收依據；changed_when 避免把唯讀查詢記成系統變更。
+    - name: 核對 CPU 客體的 slurm 身分數字
+      ansible.builtin.command: id slurm
+      register: cpu_slurm_id
+      changed_when: false
+      failed_when: >-
+        cpu_slurm_id.rc != 0 or
+        'uid=800(slurm)' not in cpu_slurm_id.stdout or
+        'gid=800(slurm)' not in cpu_slurm_id.stdout
+
+    - name: 顯示 CPU 客體的 slurm 身分
+      ansible.builtin.debug:
+        var: cpu_slurm_id.stdout

@@ -20,12 +20,15 @@
 OpenStack 已建立 AlmaLinux 10.2 `compute-cpu01`，IP 為 `10.0.0.32`。
 控制節點透過 `openstack-lab01` 的私有網路通路，以 SSH 金鑰登入
 `almalinux@compute-cpu01`，Ansible `ping` 已收到 `pong`。
+CPU 客體已註冊到 Slurm 的 `cpu` 分區，`srun hostname` 已在該客體成功執行。
 
 **目前狀態：** 舊 Ubuntu 客體已刪除，Ubuntu Glance 映像仍保留；
 AlmaLinux 10.2 映像與宿主機上的 QCOW2 也保留。
 CPU 客體已安裝 MUNGE `0.5.15-11.el10_1`、Slurm 與
-`slurm-slurmd` `26.05.4-1.el10`。MUNGE 金鑰、節點設定與服務尚未部署，
-CPU 工作未驗證。宿主機的 `br-ex` 位址、出站 NAT 與 swap 已恢復，
+`slurm-slurmd` `26.05.4-1.el10`，沒有在客體編譯。
+MUNGE 金鑰、節點設定與服務已部署，基本 Slurm 工作已驗證。
+GPU 運算節點目前關機；兩台獨立運算節點尚未同時在線。
+宿主機的 `br-ex` 位址、出站 NAT、轉送與 swap 已恢復，
 但這些手動設定重啟後不會自動保留。
 
 ## 管理位置與本次部署範圍
@@ -2260,3 +2263,416 @@ NAME      TYPE       SIZE USED PRIO
 
 **判讀：** `/swapfile` 已啟用，容量約 4 GiB，目前尚未使用。
 這不代表記憶體不足已消失，也不代表客體套件已安裝。
+
+### CPU 客體的 MUNGE 金鑰與服務
+
+**目的與影響：** CPU 客體已安裝 MUNGE 與 Slurm 套件，但尚無叢集金鑰，
+`munge` 服務也未啟動，因此不能驗證控制節點送來的憑證。
+控制節點的 `/etc/munge/munge.key` 已存在，權限為 `munge:munge 0600`；
+CPU 客體的 `/etc/munge`、`/var/lib/munge`、`/var/log/munge`
+已存在且屬於 `munge`，客體自己的 `/etc/munge/munge.key` 尚不存在。
+兩台機器上的同名路徑是各自的檔案。
+
+[munge-cpu.yml](../project/ansible/munge-cpu.yml) 只管理 inventory 的
+`cpu_compute`：依序核對 CPU 客體三個 MUNGE 目錄的擁有者與權限，
+從**控制節點**複製金鑰到 **CPU 客體**的同名路徑並設為 `0600`，
+最後啟動並設定客體 `munge` 開機自啟。
+只有複製任務真的改變金鑰時，handler 才在 play 結尾重啟客體的服務，
+讓它重新讀取金鑰。金鑰內容不存入專案，也不顯示在 Ansible 輸出。
+這一步不修改控制節點或 GPU VM 的金鑰與服務；若需復原，
+在 CPU 客體停止 `munge` 並移除該金鑰即可。
+
+**已執行語法檢查｜在控制節點工作樹：**
+
+```bash
+ansible-playbook -i project/ansible/inventory/hosts.yml project/ansible/munge-cpu.yml --syntax-check
+```
+
+**實際輸出與判讀：** `playbook: project/ansible/munge-cpu.yml`，
+退出碼為 0。這只確認語法，尚未複製金鑰或啟動服務。
+
+**已執行正式指令｜在控制節點工作樹：**
+
+```bash
+ansible-playbook -i project/ansible/inventory/hosts.yml project/ansible/munge-cpu.yml
+```
+
+**實際輸出：** 三個目錄任務皆為 `ok`；金鑰複製、服務啟動與
+金鑰變更觸發的重啟 handler 皆為 `changed`。
+
+```text
+compute-cpu01 : ok=4 changed=3 unreachable=0 failed=0
+```
+
+**判讀：** CPU 客體已收到控制節點現有金鑰，`munge` 已啟動並設為
+開機自啟。這還不能單靠 Ansible 結果證明兩端憑證可互認；
+下一條驗證會實際送短效憑證到客體解碼。
+
+**已執行驗證指令｜在控制節點：**
+
+```bash
+sudo -u a2264 -- munge -n | sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 -o 'ProxyCommand=ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 sudo ip netns exec ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c nc %h %p' almalinux@10.0.0.32 unmunge
+```
+
+左側在控制節點以 `a2264` 產生短效憑證；管線把憑證送到
+CPU 客體的 `unmunge`，不顯示金鑰。SSH 經宿主機 OVN 命名空間轉接到客體。
+**實際輸出重點：**
+
+```text
+STATUS:          Success (0)
+ENCODE_HOST:     ??? (10.140.0.2)
+UID:             almalinux (1000)
+GID:             ??? (1005)
+```
+
+**判讀：** 命令退出碼為 0、`STATUS` 為 `Success (0)`，
+CPU 客體成功用共用金鑰解碼控制節點憑證。`ENCODE_HOST` 的 IP
+是控制節點 `10.140.0.2`；主機名在客體未解析，因此顯示 `???`。
+MUNGE 憑證攜帶數字 UID/GID；控制節點的 `a2264` 為
+UID `1000`、GID `1005`，客體把 UID `1000` 顯示為本機帳號
+`almalinux`，GID `1005` 無本機名稱。驗證成功不表示兩端帳號名稱一致。
+
+### CPU 客體的 Slurm 服務帳號
+
+**目的與影響：** `slurmd -C` 讀取 CPU 客體的硬體，供後續
+`slurm.conf` 的節點資源宣告使用；它不啟動服務或改動設定。
+控制節點已有 `slurm` 服務帳號 UID/GID `800:800`，
+CPU 客體尚無同名帳號，數字 `800:800` 也未被其他帳號占用。
+先建立服務身分，避免之後 `slurmd` 解析 `SlurmUser=slurm` 時失敗。
+
+**已執行硬體查詢｜在 CPU 客體，經控制節點 SSH 執行：**
+
+```bash
+slurmd -C
+```
+
+**實際輸出：**
+
+```text
+NodeName=compute-cpu01 CPUs=1 Boards=1 SocketsPerBoard=1 CoresPerSocket=1 ThreadsPerCore=1 RealMemory=1961
+```
+
+**判讀：** 客體有 1 個邏輯 CPU、1961 MiB 實體記憶體。
+後續設定的 `RealMemory` 應低於實測值，保留部分給作業系統；
+此查詢不表示控制節點已認得這台 VM。
+
+[slurm-cpu-identity.yml](../project/ansible/slurm-cpu-identity.yml)
+只修改 CPU 客體的 `/etc/group` 與 `/etc/passwd`：先建立 GID `800`
+的 `slurm` 群組，再建立 UID `800`、不可登入的 `slurm` 使用者，
+最後用 `id slurm` 自動核對兩個數字並顯示結果。
+控制節點與 GPU VM 不會被此 playbook 修改；若尚未啟動 Slurm
+服務且需復原，可從客體移除新建的服務使用者與群組。
+
+**已執行語法檢查｜在控制節點工作樹：**
+
+```bash
+ansible-playbook -i project/ansible/inventory/hosts.yml project/ansible/slurm-cpu-identity.yml --syntax-check
+```
+
+**實際輸出與判讀：** `playbook: project/ansible/slurm-cpu-identity.yml`，
+退出碼為 0；尚未建立帳號。
+
+**已執行正式指令｜在控制節點工作樹：**
+
+```bash
+ansible-playbook -i project/ansible/inventory/hosts.yml project/ansible/slurm-cpu-identity.yml
+```
+
+**實際輸出：** 群組與使用者任務皆為 `changed`；身分查詢為 `ok`。
+
+```text
+uid=800(slurm) gid=800(slurm) groups=800(slurm)
+compute-cpu01 : ok=4 changed=2 unreachable=0 failed=0
+```
+
+**判讀：** CPU 客體的 `slurm` 服務身分已與控制節點的
+UID/GID `800:800` 一致；`slurmd` 尚未配置或啟動。
+
+### CPU 客體與控制服務的 TCP 通路
+
+**目的與影響：** 控制節點的 `slurmctld` 已在 TCP `6817` 接聽，
+而 CPU 客體先前只驗證了到控制節點 TCP `22` 的通路。
+`slurmd` 註冊前，先從 CPU 客體直接測到 `10.140.0.2:6817`；
+這是唯讀的連線檢查，不安裝套件、不啟動 Slurm 服務。
+成功只代表控制端的埠可達，尚不代表客體可被控制端反向連接。
+
+**已執行指令｜在 CPU 客體，經控制節點 SSH 執行：**
+
+```bash
+python3 -c "import socket; socket.create_connection(('10.140.0.2', 6817), 5); print('TCP 6817 connected')"
+```
+
+Python 的 `socket.create_connection` 只測試 TCP 握手，`5` 是五秒逾時；
+成功時印出 `TCP 6817 connected`，用來核對客體能否抵達控制埠。
+
+**實際輸出與判讀：** `TCP 6817 connected`，退出碼為 0。
+CPU 客體到控制節點的 Slurm 控制埠可達；仍須核對控制節點到客體
+`slurmd` 的反向通路。
+
+### 控制節點連到 CPU 客體的運算服務
+
+**現有通路與缺口：** `slurmctld` 在控制節點 `10.140.0.2:6817`
+接聽，CPU 客體已能連到該埠。客體只有 OpenStack 私有位址
+`10.0.0.32`，控制節點無法直接路由到它；目前沒有客體浮動 IP，
+安全群組沒有 TCP `6818` 規則，宿主機也沒有入站轉送規則。
+Slurm 需要控制節點能連到客體的 `slurmd` TCP `6818`，
+才能向它派送工作。先從現有 DevStack `public` 網路分配一個浮動 IP，
+再依取得的實際位址建立最小的入站通路。
+
+浮動 IP 是 `openstack-lab01` 內 DevStack 的網路資源，
+不建立新 GCP VM；它占用一個本地 `172.24.4.0/24` 位址。
+若要復原，先解除客體關聯，再刪除該浮動 IP。
+
+**已執行指令｜在 `openstack-lab01` 的 admin 專案 shell：**
+
+```bash
+openstack floating ip create public -f value -c id -c floating_ip_address
+```
+
+**實際輸出：** 第一行是浮動 IP，第二行是資源 ID。
+
+```text
+172.24.4.121
+0a8f438b-0e2f-4851-b50f-ebcabaa00ed0
+```
+
+**判讀：** 已從 DevStack `public` 網路分配 `172.24.4.121`，
+尚未綁定客體、開防火牆或修改宿主機 NAT。
+
+**下一步目的與影響：** 將這個已分配的位址關聯到
+`compute-cpu01` 的唯一 IPv4 網卡 `10.0.0.32`；
+OpenStack 會更新客體的浮動位址映射，但不改客體作業系統設定。
+解除關聯可用 `openstack server remove floating ip` 復原。
+
+**已執行指令｜在 `openstack-lab01` 的 admin 專案 shell：**
+
+```bash
+openstack server add floating ip compute-cpu01 172.24.4.121
+```
+
+**實際結果與判讀：** 沒有終端輸出，退出碼為 0；接著用
+`openstack floating ip show` 核對關聯是否真的生效。
+
+**已執行驗證指令｜在同一個 shell：**
+
+```bash
+openstack floating ip show 0a8f438b-0e2f-4851-b50f-ebcabaa00ed0 -f value -c floating_ip_address -c fixed_ip_address -c port_id
+```
+
+**實際輸出重點：** 浮動 IP `172.24.4.121` 已指向固定 IP
+`10.0.0.32`，port ID 為 `4d7ecf89-6911-49a8-87ce-dc234c451e0b`。
+這確認 OpenStack 關聯已建立，不代表宿主機入站通路已打通。
+
+**下一步目的與影響：** 該 port 使用既有安全群組
+`859e6514-e673-47df-aacc-7f10e3ee13b5`，目前只明確允許
+SSH 入站。新增一條僅允許控制節點 `10.140.0.2/32` 連到
+CPU 客體 TCP `6818` 的規則；這會修改 OpenStack 安全群組，
+不修改客體內服務。復原可依建立後取得的規則 ID 刪除該條規則。
+
+**已執行指令｜在 `openstack-lab01` 的 admin 專案 shell：**
+
+```bash
+openstack security group rule create --ingress --protocol tcp --dst-port 6818 --remote-ip 10.140.0.2/32 859e6514-e673-47df-aacc-7f10e3ee13b5 -f value -c id
+```
+
+**實際輸出與判讀：** 新規則 ID 為
+`41828a50-90ab-4e6f-bf85-b8ef5676e04a`。隨後查詢該規則，
+得到 `ingress`、`tcp`、最小與最大埠皆為 `6818`、
+來源 `10.140.0.2/32`。規則限縮到控制節點；宿主機尚未轉送流量。
+
+**下一步目的與影響：** 控制節點會把 `compute-cpu01` 的
+Slurm 節點位址指向宿主機 `10.146.0.4`；宿主機須把來自
+`10.140.0.2`、目的為自己 TCP `6818` 的封包轉到
+客體浮動 IP `172.24.4.121:6818`，再由 OpenStack 映射到
+`10.0.0.32`。先查宿主機的 IPv4 轉送、FORWARD 規則和到浮動 IP 的路由，
+再加一條精確匹配的 DNAT；此規則不持久化，宿主機重啟後須恢復。
+復原時把同一條規則的 `-A` 改成 `-D` 刪除。
+
+**已執行核對｜在 `openstack-lab01`：**
+
+```bash
+sysctl -n net.ipv4.ip_forward
+ip -4 route get 172.24.4.121
+sudo iptables -w -S FORWARD
+sudo iptables -w -t nat -S PREROUTING
+```
+
+**實際輸出與判讀：** `ip_forward=1`；到 `172.24.4.121`
+的路由走 `br-ex`、來源 `172.24.4.1`；FORWARD 預設策略為
+`ACCEPT`，PREROUTING 只有預設 `ACCEPT`，尚無 TCP `6818` DNAT。
+宿主機具備轉送條件，下一條只加入需要的入站轉址。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+sudo iptables -w -t nat -A PREROUTING -i ens4 -s 10.140.0.2/32 -d 10.146.0.4/32 -p tcp --dport 6818 -j DNAT --to-destination 172.24.4.121:6818
+```
+
+`-i ens4` 限定宿主機 GCP 網卡入站，`-s` 與 `-d` 限定控制節點
+和宿主機位址，`--dport` 只處理 Slurm 運算服務埠；DNAT 改的是
+封包目的位址，回覆由連線追蹤反向處理。這條不啟動客體服務，
+也不修改其他埠的轉送。
+
+**實際結果與判讀：** 指令沒有終端輸出，退出碼為 0；
+`iptables -w -t nat -S PREROUTING` 顯示一條來源
+`10.140.0.2/32`、目的 `10.146.0.4/32`、`ens4`、TCP `6818`
+轉向 `172.24.4.121:6818` 的規則。這只確認宿主機規則存在，
+尚未證明浮動 IP 映射或 `slurmd` 服務可用。
+
+**已執行映射核對｜在 `openstack-lab01`：**
+
+```bash
+sudo ovn-nbctl find NAT external_ip=172.24.4.121
+```
+
+**實際輸出重點：** `external_ip="172.24.4.121"`、
+`logical_ip="10.0.0.32"`、`type=dnat_and_snat`，
+`logical_port` 是 CPU 客體的 port ID
+`4d7ecf89-6911-49a8-87ce-dc234c451e0b`。
+
+**判讀：** OVN 已建立浮動位址到 CPU 客體私有位址的轉址項目。
+這仍是控制面設定證據；完整 TCP 通路須待 `slurmd` 啟動後，
+從規則允許的控制節點來源實際連到 `6818` 才能驗證。
+
+**浮動 IP 的出站來源：** 上述 `dnat_and_snat` 也會使客體往
+控制節點的出站流量以 `172.24.4.121` 為來源抵達宿主機。
+宿主機原本的 MASQUERADE 只涵蓋 OpenStack 路由器外側
+`172.24.4.9/32`；要讓控制節點回覆新來源，需再將浮動 IP
+在 `ens4` 出口轉為宿主機的 GCP 私有位址。
+這不改入站 `6818` 規則；復原時可把同一條規則的 `-A` 改成 `-D`。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+sudo iptables -w -t nat -A POSTROUTING -s 172.24.4.121/32 -o ens4 -j MASQUERADE
+```
+
+這條只處理來源為 CPU 客體浮動 IP、從宿主機 GCP 網卡出站的封包；
+完成後須從 CPU 客體重測控制端 TCP `6817`，才算驗證回程。
+
+**實際結果與判讀：** 規則加入時沒有終端輸出，退出碼為 0；
+`iptables -w -t nat -S POSTROUTING` 顯示來源
+`172.24.4.121/32`、出口 `ens4` 的 MASQUERADE。
+CPU 客體再次執行前述 Python TCP `6817` 檢查，輸出
+`TCP 6817 connected`、退出碼為 0；浮動 IP 關聯後的出站回程已通。
+
+### 將 CPU 客體加入 Slurm 設定
+
+**目的與影響：** CPU 客體的 MUNGE 已跨節點驗證，`slurm` 服務帳號
+UID/GID 是 `800:800`，到控制端 TCP `6817` 已連通，控制端到客體
+TCP `6818` 的安全群組與宿主機轉送也已設定；但 `slurmd` 尚未啟動，
+所以該入站通路仍待實際驗證。現有控制節點設定只宣告控制節點
+與 GPU VM；要讓排程器辨識 CPU 客體，兩端須使用同一份新增節點的設定。
+
+[three-node-slurm.conf](../project/slurm/three-node-slurm.conf)
+從原兩節點設定延伸：保留既有控制節點與 GPU 節點、`debug` 與 `gpu`
+分區，新增 `compute-cpu01` 的 1 CPU、1400 MiB 可排程記憶體，
+以及須明確選用的 `cpu` 分區。1400 MiB 低於客體 `slurmd -C`
+實測的 1961 MiB，留 561 MiB 給作業系統與服務。
+CPU 節點 `NodeAddr=10.146.0.4` 是宿主機入站轉送入口，
+經 `172.24.4.121` 映射到客體 `10.0.0.32`。
+
+[slurm-cpu-node.yml](../project/ansible/slurm-cpu-node.yml)
+由控制節點執行，依序處理：
+
+1. 在 CPU 客體建立或核對 `/etc/slurm` 與本機 `/var/spool/slurmd`，
+   從控制節點工作樹複製三節點設定到**客體自己的**
+   `/etc/slurm/slurm.conf`，再以 `slurmd -G -f` 讀取該檔；
+   指令須退出 0 且沒有 `error:`，才進入控制端操作。
+2. 把同一份來源設定複製到**控制節點自己的**
+   `/etc/slurm/slurm.conf`；檔案真有變更時，handler 執行
+   `scontrol reconfigure`，使執行中的 `slurmctld` 重讀設定，
+   不重啟服務或清除排程狀態。兩台的同名路徑是各自的檔案。
+3. 若 CPU 客體設定有變更，重啟它的 `slurmd` 以讀取新檔；
+   最後確認服務正在執行並設為開機自啟。
+
+複製任務在檔案變更時會於目標 VM 留下舊版備份；復原可把
+兩端舊版設定還原並讓服務重讀。GPU VM 目前關機，這個 playbook
+不連它；其原有兩節點設定副本須在恢復上線前更新。
+
+**已執行語法檢查｜在控制節點工作樹：**
+
+```bash
+ansible-playbook -i project/ansible/inventory/hosts.yml project/ansible/slurm-cpu-node.yml --syntax-check
+```
+
+**實際輸出與判讀：** `playbook: project/ansible/slurm-cpu-node.yml`，
+退出碼為 0；尚未複製設定或啟動服務。
+
+**已執行正式指令｜在控制節點工作樹：**
+
+```bash
+ansible-playbook -i project/ansible/inventory/hosts.yml project/ansible/slurm-cpu-node.yml
+```
+
+**實際輸出重點：** CPU 客體的目錄建立與設定複製為 `changed`；
+`slurmd -G -f /etc/slurm/slurm.conf` 回報 `rc=0`、沒有 `error:`，
+未找到 CPU 客體不使用的 `gres.conf`，`cgroup.conf` 採預設值。
+控制節點設定複製與 `scontrol reconfigure` handler 為 `changed`；
+CPU 客體 `slurmd` 重啟及開機自啟任務也為 `changed`。
+
+```text
+compute-cpu01            : ok=7 changed=5 unreachable=0 failed=0
+instance-20260923-104239 : ok=2 changed=2 unreachable=0 failed=0
+```
+
+**判讀：** 設定已複製到 CPU 客體與控制節點各自的
+`/etc/slurm/slurm.conf`，控制服務已重讀，客體運算服務已啟動。
+playbook 成功不等於節點已在排程器註冊，也不等於入站 TCP `6818`
+與工作執行已通過；下一步從控制節點實測。
+
+**已執行驗證｜在控制節點：**
+
+```bash
+sinfo -N -o '%N %T %c %m %P'
+scontrol show node compute-cpu01
+python3 -c "import socket; socket.create_connection(('10.146.0.4', 6818), 5); print('TCP 6818 connected')"
+```
+
+`sinfo` 列出各節點的名稱、狀態、CPU、可排程記憶體與分區，
+用來核對新 CPU 分區是否出現；`scontrol show node` 讀取
+`NodeAddr`、資源數與狀態或故障原因，判斷客體是否註冊。
+Python 只從控制節點做 TCP 握手，五秒逾時，成功輸出
+`TCP 6818 connected`；這會驗證宿主機 DNAT、浮動 IP、
+安全群組及客體服務的整條入站通路。
+
+**實際輸出重點：**
+
+```text
+compute-cpu01 idle 1 1400 cpu
+NodeAddr=10.146.0.4 NodeHostName=compute-cpu01 Version=26.05.4
+State=IDLE ThreadsPerCore=1
+Partitions=cpu
+BootTime=2026-10-14T04:31:09 SlurmdStartTime=2026-10-14T05:53:16
+TCP 6818 connected
+```
+
+**判讀：** 控制端已看到 CPU 客體的 1 CPU、1400 MiB、`cpu`
+分區、Slurm 版本與服務啟動時間，節點狀態為 `IDLE`；
+宿主機轉送、浮動 IP、安全群組到客體 TCP `6818` 的握手也成功。
+這證明客體服務已註冊，仍須以實際工作確認派送與執行。
+
+**已執行控制服務驗證｜在 CPU 客體，經控制節點 SSH 執行：**
+
+```bash
+scontrol ping
+```
+
+**實際輸出與判讀：**
+`Slurmctld(primary) at instance-20260923-104239 is UP`，退出碼為 0；
+CPU 客體可用 Slurm 協定連到控制服務，不只是 TCP 握手。
+
+**已執行初步工作驗證｜在控制節點：**
+
+```bash
+sudo -iu a2264 srun --partition=cpu --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=256M --time=00:05:00 --chdir=/tmp /usr/bin/hostname
+```
+
+`srun` 會在 `cpu` 分區請求 1 個節點、1 個 task、1 CPU、256 MiB，
+最長五分鐘；工作在 CPU 客體執行 `/usr/bin/hostname`，
+輸出直接回控制節點。`--chdir=/tmp` 避免使用客體沒有的控制節點家目錄。
+這核對工作派送與執行位置；模組 06 的故障恢復驗收仍須核對實際工作結果。
+
+**實際輸出與判讀：** `compute-cpu01.novalocal`，退出碼為 0。
+工作由控制節點排入 `cpu` 分區，並在 CPU 客體執行；
+節點派送、MUNGE 驗證與基本工作啟動通路已通過。

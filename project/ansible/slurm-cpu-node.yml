@@ -1,0 +1,98 @@
+---
+# 從控制節點執行：先準備 CPU 客體，再更新控制服務，最後啟動 CPU 客體 slurmd。
+# 來源是 project/slurm/three-node-slurm.conf；兩台各持有 /etc/slurm/slurm.conf。
+# 不連線到目前關機的 GPU VM；--syntax-check 與 --check 不會部署設定或啟動服務。
+- name: 備妥 CPU 客體的 Slurm 設定
+  hosts: cpu_compute
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # 服務讀取 /etc/slurm/slurm.conf；目錄缺少時建立，已存在時核對權限。
+    - name: 建立或核對 CPU 客體的 Slurm 設定目錄
+      ansible.builtin.file:
+        path: /etc/slurm
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # slurmd 在客體本機寫入工作暫存檔，不使用控制節點的同名目錄。
+    - name: 建立或核對 CPU 客體的工作暫存目錄
+      ansible.builtin.file:
+        path: /var/spool/slurmd
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # src 位於控制節點工作樹，dest 是 CPU 客體自己的服務設定；改動時保留舊檔。
+    - name: 部署 CPU 客體的三節點 Slurm 設定
+      ansible.builtin.copy:
+        src: ../slurm/three-node-slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: cpu_slurm_config_result
+
+    # -G 讀取客體本機 Slurm/GRES 設定並退出；CPU 客體沒有 GPU，預期不列出裝置。
+    # 非零退出或 error: 表示設定不能安全交給服務使用，會阻止控制端更新。
+    - name: 核對 CPU 客體可解析 Slurm 設定
+      ansible.builtin.command:
+        argv:
+          - slurmd
+          - -G
+          - -f
+          - /etc/slurm/slurm.conf
+      register: cpu_slurm_probe
+      changed_when: false
+      failed_when: >-
+        cpu_slurm_probe.rc != 0 or
+        'error:' in ((cpu_slurm_probe.stdout ~ cpu_slurm_probe.stderr) | lower)
+
+    - name: 顯示 CPU 客體的 Slurm 設定檢查結果
+      ansible.builtin.debug:
+        var: cpu_slurm_probe
+
+- name: 讓控制節點認得 CPU 客體
+  hosts: controller
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # CPU 客體驗證通過後才取代控制節點自己的設定；變更時觸發同 play 的 handler。
+    - name: 部署控制節點的三節點 Slurm 設定
+      ansible.builtin.copy:
+        src: ../slurm/three-node-slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: 重新讀取控制節點的 Slurm 設定
+
+  handlers:
+    # reconfigure 讓執行中的 slurmctld 重新讀檔，不重啟服務或清除排程狀態。
+    - name: 重新讀取控制節點的 Slurm 設定
+      ansible.builtin.command: scontrol reconfigure
+
+- name: 啟動 CPU 客體的 Slurm 運算服務
+  hosts: cpu_compute
+  become: true
+  gather_facts: false
+  tasks:
+    # 設定真有變更才重啟，確保已運行的 slurmd 也會重新讀取；首次執行會啟動。
+    - name: 設定變更時重啟 CPU 客體的 slurmd
+      ansible.builtin.service:
+        name: slurmd
+        state: restarted
+      when: cpu_slurm_config_result.changed
+
+    # 重跑且設定未變時只確認服務運行；enabled 設定客體下次開機自啟。
+    - name: 確保 CPU 客體的 slurmd 已啟動
+      ansible.builtin.service:
+        name: slurmd
+        state: started
+        enabled: true

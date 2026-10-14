@@ -1962,3 +1962,28 @@ bc59485c4828861a15887e30ff1bb913f0f16202fd7286208518f4814da1e10a  /home/a2264/Al
 **目前狀態：** 舊 Ubuntu 客體、新建的 AlmaLinux 客體與新建的
 AlmaLinux Glance 映像均已刪除。Ubuntu Glance 映像仍保留；
 目前沒有 OpenStack CPU 客體。inventory 的舊 IP 與帳號已失效。
+
+### 下一步：把已保留的 AlmaLinux 映像檔匯入 Glance
+
+**目的與影響：** 前一節已核對宿主機下載檔的 SHA-256；
+目前 Glance 尚無這份 AlmaLinux 映像。
+在 `openstack-lab01` 使用 DevStack 的 `admin` 使用者與 `admin` 專案，
+讓 Glance 從本機 `/home/a2264/` 的 QCOW2 讀取檔案並建立映像紀錄。
+`--file` 只讀取原檔，不會刪除或搬走它；
+`--disk-format qcow2` 指明磁碟格式，`--container-format bare`
+表示沒有外層容器，`--private` 限定映像先由所屬專案使用。
+本步會新增約 497 MB 的 Glance 資料，不建立或更動 VM。
+若要撤銷，須先核對沒有 VM 使用，再依新映像 ID 刪除 Glance 紀錄；
+宿主機原檔仍會保留。
+
+**待執行指令｜在 `openstack-lab01`：**
+
+```bash
+bash -lc 'source /home/a2264/devstack/openrc admin admin && openstack image create almalinux-10.2-genericcloud-20260817 --file /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2 --disk-format qcow2 --container-format bare --private'
+```
+
+`bash -lc` 讓兩個動作在同一個 shell 順序執行：
+先以 `source` 載入 API 登入環境；只有成功時才由 `openstack image create`
+把本機檔上傳到 Glance。回傳的 `id`、`status`、`size`、
+`disk_format` 與 `visibility` 用來確認映像是否可用；
+取得實際輸出後才記錄結果。

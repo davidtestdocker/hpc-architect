@@ -41,6 +41,46 @@ flowchart LR
 **目前狀態：** CPU 客體的 Slurm 工作已驗證；GPU 節點目前關機。
 表中的 `IDLE` 是最後一次實測，並非即時狀態。
 
+### 每次開機後恢復模組 05 網路
+
+每天啟動 GCP 控制節點與 `openstack-lab01` 後，可以請 Codex：
+「依模組 05 的開機恢復流程，核對現況、恢復網路並驗證 CPU Slurm 工作。」
+這是**待執行流程**，下面的恢復腳本尚未在重啟後實測。
+
+1. 先核對 `openstack-lab01` 的 DevStack 服務、`compute-cpu01` 的
+   `ACTIVE` 狀態，以及浮動 IP `172.24.4.121` 是否仍關聯
+   客體 `10.0.0.32`；如有變動，先依實際位址修正流程，
+   不把舊 IP 規則套到其他 VM。
+2. 在控制節點工作樹執行下列**待執行指令**。新增的
+   [restore-module05-network.sh](../project/openstack/restore-module05-network.sh)
+   透過 SSH 傳給 `openstack-lab01` 的 root shell，沒有複製到宿主機；
+   它只在缺少時補上 `br-ex` 的 `172.24.4.1/24`、IPv4 轉送、
+   `172.24.4.9` 和 `172.24.4.121` 出站來源轉址，以及控制節點
+   TCP `6818` 到浮動 IP 的入站轉址。腳本先核對宿主機
+   `ens4=10.146.0.4` 與 `br-ex` 存在，再修改宿主機網路；
+   重跑不會重複新增同一條規則。這些宿主機設定沒有持久化，
+   下次重啟仍須重跑。
+
+   ```bash
+   sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'sudo bash -s' < project/openstack/restore-module05-network.sh
+   ```
+
+3. 從控制節點核對 Ansible 能登入 CPU 客體，再核對 `sinfo`
+   是否顯示 `compute-cpu01` 可接工作，最後提交下列已在模組 05
+   成功過的基本工作。預期輸出 `compute-cpu01.novalocal`；
+   若節點狀態或工作結果不符，先查實際狀態，不把腳本的成功訊息
+   當成完整通路已恢復。
+
+   ```bash
+   ansible -i project/ansible/inventory/hosts.yml cpu_compute -m ping
+   sinfo -N -o '%N %T %c %m %P'
+   sudo -iu a2264 srun --partition=cpu --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=256M --time=00:05:00 --chdir=/tmp /usr/bin/hostname
+   ```
+
+這份流程恢復 CPU 客體的宿主機網路。GPU VM 若也開機，
+先核對它是否仍持有舊版 Slurm 設定，再依當時狀態更新並驗證；
+不能把 CPU 工作成功當成 GPU 節點也已恢復。
+
 下文依序保留原有 GCP 節點的 Ansible 部署與 GPU 工作結果、
 OpenStack CPU VM 的建立，以及 CPU 節點加入 Slurm 的實際指令與輸出。
 

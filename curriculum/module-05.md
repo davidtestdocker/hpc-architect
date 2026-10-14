@@ -1038,12 +1038,12 @@ QCOW2 檔案已留在 `openstack-lab01`，尚未匯入 Glance。
 **已執行指令｜在 `openstack-lab01`：**
 
 ```bash
-source /home/a2264/devstack/openrc admin admin && openstack image create almalinux-10.2-genericcloud-20260817 --file /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2 --disk-format qcow2 --container-format bare --private
+source /home/a2264/devstack/openrc admin admin
+openstack image create almalinux-10.2-genericcloud-20260817 --file /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2 --disk-format qcow2 --container-format bare --private
 ```
 
-同一個遠端 shell 先由 `source` 載入 API 登入環境；
-`&&` 使第二部分只在載入成功後執行，
-再由 `openstack image create` 上傳檔案。
+在同一個 `openstack-lab01` shell 先載入 `admin` 專案環境；
+後續在此專案的 OpenStack 指令沿用該環境。`image create` 上傳映像。
 
 **實際結果與判讀：** Glance 建立映像
 `43ccad43-f0cd-433a-9e5e-2370682f58ee`，狀態 `active`，
@@ -1058,7 +1058,7 @@ source /home/a2264/devstack/openrc admin admin && openstack image create almalin
 **已執行指令｜在 `openstack-lab01`：**
 
 ```bash
-source /home/a2264/devstack/openrc admin admin && openstack flavor list -f table -c Name -c VCPUs -c RAM -c Disk
+openstack flavor list -f table -c Name -c VCPUs -c RAM -c Disk
 ```
 
 **實際輸出重點：** `RAM` 單位為 MiB，`Disk` 單位為 GiB；
@@ -1087,7 +1087,7 @@ source /home/a2264/devstack/openrc admin admin && openstack flavor list -f table
 **已執行指令｜在 `openstack-lab01`：**
 
 ```bash
-source /home/a2264/devstack/openrc admin admin && openstack hypervisor stats show
+openstack hypervisor stats show
 ```
 
 **實際輸出重點：** 命令先提示 `This command is deprecated.`，
@@ -1110,7 +1110,7 @@ CPU VM 要接上這個網路，需在 `demo` 專案建機，
 **已執行指令｜在 `openstack-lab01` 的 admin 專案 shell：**
 
 ```bash
-source /home/a2264/devstack/openrc admin admin && openstack image set --public 43ccad43-f0cd-433a-9e5e-2370682f58ee
+openstack image set --public 43ccad43-f0cd-433a-9e5e-2370682f58ee
 ```
 
 **實際結果與判讀：** 沒有終端輸出，退出碼為 0；
@@ -1126,13 +1126,15 @@ VM 用已安裝的公鑰核對控制節點持有的私鑰。
 Ansible 將沿用這條 SSH 通路；
 能否實際登入仍須等 VM 建立後驗證。
 
-**下一步目的與影響：** 此時 shell 已載入 `admin` 使用者在
-`demo` 專案的 OpenStack API 環境。用 `openstack keypair list`
-查已有的金鑰名稱，避免重複登錄。查詢不顯示私鑰，也不修改 VM。
+**下一步目的與影響：** 切換同一個 shell 到 `admin` 使用者的
+`demo` 專案環境，讓後續 key pair、安全群組與 VM 操作都屬於
+已有 `private` 網路的專案。用 `openstack keypair list` 查已有的
+金鑰名稱，避免重複登錄；查詢不顯示私鑰，也不修改 VM。
 
 **已執行指令｜在 `openstack-lab01`：**
 
 ```bash
+source /home/a2264/devstack/openrc admin demo
 openstack keypair list
 ```
 
@@ -1234,42 +1236,39 @@ openstack security group rule list 859e6514-e673-47df-aacc-7f10e3ee13b5
 **判讀：** 既有 IPv4 入站規則只讓同群組的 VM 互通。
 
 **目的與影響：** `cpu_models` 決定 Nova 透過 QEMU 呈現給 VM 的虛擬 CPU
-指令集。這次使用的是標準 AlmaLinux 10 `x86_64` 映像，
-其系統程式需要 `x86-64-v3` 指令集；原設定 `Nehalem` 缺少其中的
-AVX2，客體可能無法正常開機。`Haswell` 支援 AVX2，
-因此在 `openstack-lab01` 將 `/etc/nova/nova.conf` 的
-`cpu_models` 從 `Nehalem` 改成 `Haswell`，讓 VM 看見所需指令。
-這會修改 Nova compute 設定檔；目前沒有 CPU VM。
-改完還須重啟 `devstack@n-cpu.service` 才會套用；
-重啟期間這台宿主機暫時無法接受建機工作。
-若需復原，將同一行改回 `Nehalem` 並重啟該服務。
+指令集。標準 AlmaLinux 10 `x86_64` 映像需要 `x86-64-v3`；
+原本的 `Nehalem` 缺少 AVX2，改用支援 AVX2 的 `Haswell`。
+先確認 `devstack@n-cpu.service` 實際讀哪份設定檔，避免改到未使用的檔案。
+以下查詢不修改服務或 VM。
+
+**已執行查詢｜在 `openstack-lab01`：**
+
+```bash
+systemctl show devstack@n-cpu.service -p ExecStart --value
+sudo awk '/^\[libvirt\]/{p=1;next} /^\[/{p=0} p && /^(cpu_models|cpu_mode|virt_type) ?=/{print}' /etc/nova/nova-cpu.conf
+```
+
+**實際結果與判讀：** `ExecStart` 指定
+`nova-compute --config-file /etc/nova/nova-cpu.conf`；
+該檔的 `[libvirt]` 區段是 `cpu_models = Nehalem`、
+`cpu_mode = custom`、`virt_type = qemu`。
+因此要修改的是 Nova compute 真正讀取的 `nova-cpu.conf`。
+
+**目的與影響：** 將宿主機 `/etc/nova/nova-cpu.conf` 的 CPU 模型改為
+`Haswell`。這會修改設定檔，重啟 `devstack@n-cpu.service` 後才影響新建 VM；
+既有 VM 的 CPU 模型不會隨服務重啟改變。復原可把該行改回原值並重啟服務。
 
 **已執行指令｜在 `openstack-lab01`：**
 
 ```bash
-sudo sed -i 's/^cpu_models = Nehalem$/cpu_models = Haswell/' /etc/nova/nova.conf
+sudo sed -i 's/^cpu_models = Nehalem$/cpu_models = Haswell/' /etc/nova/nova-cpu.conf
 ```
 
-`sed -i` 只改動符合原值的整行，避免碰到其他 Nova 設定。
+**實際結果與判讀：** 沒有終端輸出，退出碼為 0；
+實際讀取的設定檔已改為 `cpu_models = Haswell`。
 
-**實際結果與判讀：** 指令沒有終端輸出，退出碼為 0；
-接著讀取設定值，確認目標行確實已改動。
-
-**已執行驗證指令｜在 `openstack-lab01`：**
-
-```bash
-sudo grep -E '^cpu_models = ' /etc/nova/nova.conf
-```
-
-**實際輸出：** `cpu_models = Haswell`。
-
-**判讀：** 設定檔已改成預定模型；
-這還不能證明執行中的 Nova 服務已讀取新值。
-
-**目的與影響：** 重啟 `openstack-lab01` 的
-`devstack@n-cpu.service`，讓 Nova compute 重新讀取設定。
-目前沒有 CPU VM；重啟期間暫時無法在此宿主機建機。
-如需復原，將設定改回 `Nehalem` 後再重啟相同服務。
+**目的與影響：** 重啟 Nova compute 讓它重讀設定；重啟期間這台宿主機
+暫時無法接受建機工作，不影響已存在 VM 的 CPU 模型。
 
 **已執行指令｜在 `openstack-lab01`：**
 
@@ -1277,64 +1276,34 @@ sudo grep -E '^cpu_models = ' /etc/nova/nova.conf
 sudo systemctl restart devstack@n-cpu.service
 ```
 
-**實際結果與判讀：** 沒有終端輸出，退出碼為 0；
-接著核對 systemd 與 Nova 是否都回報 compute 服務可用。
+**實際結果與判讀：** 沒有終端輸出，退出碼為 0。
 
-**已執行驗證指令｜在 `openstack-lab01`：**
+**已執行服務核對｜在 `openstack-lab01`：**
 
 ```bash
 systemctl is-active devstack@n-cpu.service
-source /home/a2264/devstack/openrc admin admin && openstack compute service list --service nova-compute -f table -c Host -c Status -c State
 ```
 
-第一條讀取本機服務是否運行；第二條讀取 Nova 控制面
-是否看到運算主機為啟用、上線。兩條都不修改資源。
+**實際輸出與判讀：** `active`；Nova compute 服務已恢復。
 
-**實際輸出與判讀：** `systemctl` 回報 `active`；
-Nova 回報 `openstack-lab01` 的 `nova-compute` 為
-`Status=enabled`、`State=up`。服務重啟後可供建機；
-客體能否開機仍須由下一步實測。
+**目的與影響：** 在 `demo` 專案以 AlmaLinux 10.2 映像建立
+`compute-cpu01`，使用 `m1.small`（1 vCPU、2 GiB RAM、20 GiB 磁碟）、
+`private` 網路、已登錄公鑰與既有安全群組。VM 由
+`openstack-lab01` 承載，佔用宿主機資源；刪除 VM 會失去其本機磁碟。
 
-**後續建機目的與影響：** 以已匯入的 AlmaLinux 10.2 映像建立一台
-`compute-cpu01`，採用 `m1.small`（1 vCPU、2048 MiB RAM、20 GiB 磁碟）。
-它將接到 `demo` 專案既有的 `private` 網路，使用已登錄的
-`openstack-cpu-controller` 公鑰與 `demo` 專案的 `default` 安全群組。
-Nova 在 `openstack-lab01` 內配置虛擬磁碟、網卡與 QEMU VM，
-運作期間占用這台宿主機的 CPU、記憶體與磁碟容量。
-`--wait` 讓 CLI 等待建機結果；如要復原，可按 VM 名稱刪除該 OpenStack VM，
-刪除會失去其本機磁碟資料。選項依
-[OpenStack CLI server create 說明](https://docs.openstack.org/python-openstackclient/2025.1/cli/command-objects/server.html)。
-
-**已執行指令｜在 `openstack-lab01` 的 demo 專案 shell：**
+**已執行指令｜在 `openstack-lab01` 的 `demo` 專案 shell：**
 
 ```bash
-source /home/a2264/devstack/openrc admin demo && openstack server create --flavor m1.small --image 43ccad43-f0cd-433a-9e5e-2370682f58ee --network private --key-name openstack-cpu-controller --security-group 859e6514-e673-47df-aacc-7f10e3ee13b5 --wait compute-cpu01
+openstack server create --flavor m1.small --image 43ccad43-f0cd-433a-9e5e-2370682f58ee --network private --key-name openstack-cpu-controller --security-group 859e6514-e673-47df-aacc-7f10e3ee13b5 --wait compute-cpu01
 ```
 
-**實際結果與判讀：** 指令退出碼為 0；Nova 回報
-`name=compute-cpu01`、`status=ACTIVE`、`power_state=Running`、
-`host=openstack-lab01`，映像為
-`almalinux-10.2-genericcloud-20260817`，
-`key_name=openstack-cpu-controller`、`security_groups=default`、
-`project_id=4be84dab90684063847d60ee97acca4e`。
-VM 已由 Nova 建立；`ACTIVE` 不能證明客體內的 SSH 或 Slurm 可用。
-原始表格太寬，回傳時 ID 與 IP 欄位被截斷，接著定向讀取。
+**實際結果與判讀：** 新 VM ID 為
+`11a8ac4b-771a-441f-8d35-40c8a003fe9e`，libvirt 名稱
+`instance-00000004`，狀態 `ACTIVE`，位於 `openstack-lab01`，
+私有 IP `10.0.0.32`。這確認 VM 已建立；客體開機與 CPU 模型由後續
+主控台及 libvirt 輸出驗證。
 
-**已執行驗證指令｜在 `openstack-lab01` 的 demo 專案 shell：**
-
-```bash
-source /home/a2264/devstack/openrc admin demo && openstack server show compute-cpu01 -f value -c id -c addresses -c status
-```
-
-這條唯讀指令核對 VM ID、實際分配的網路位址與 Nova 狀態，
-讓後續主控台或網路驗證指向這一台 VM。
-
-**實際輸出與判讀：** `id=663bd84c-e710-4037-8f04-c80dcd040677`、
-`addresses=private=10.0.0.19`（另有 IPv6 位址）、
-`status=ACTIVE`。這台 AlmaLinux 客體的新 IP 是 `10.0.0.19`；
-後文舊 Ubuntu 客體的 `10.0.0.62` 不適用於這台 VM。
-
-**管理路徑：** `compute-cpu01` 的 `10.0.0.19` 位於 OpenStack 的
+**管理路徑：** `compute-cpu01` 的 `10.0.0.32` 位於 OpenStack 的
 `private` 網路。控制節點從承載 VM 的 `openstack-lab01` 進入這個網路。
 Linux 網路命名空間是在同一台主機上隔出獨立網卡、IP 與路由的環境；
 OVN metadata 服務會為 VM 網路建立 `ovnmeta-<網路 UUID>` 命名空間，
@@ -1373,7 +1342,7 @@ tapfb5be63d-71@if8 UP 169.254.169.254/32 10.0.0.2/26
 **判讀：** `tapfb5be63d-71@if8` 是該空間內已啟用的介面；
 `169.254.169.254/32` 是 metadata 服務位址，`10.0.0.2/26` 是
 這個空間在 `private` 子網 `10.0.0.0/26` 上實際持有的 IPv4。
-從這個空間連向同一子網的 `compute-cpu01`（`10.0.0.19`）時，
+從這個空間連向同一子網的 `compute-cpu01`（`10.0.0.32`）時，
 連線來源是 `10.0.0.2`。下一步為這個來源新增 TCP 22 入站規則。
 若 `private` 網路重建，須重新查詢命名空間名稱及 IP。
 
@@ -1401,190 +1370,6 @@ openstack security group rule create --ingress --ethertype IPv4 --protocol tcp -
 
 **判讀：** `demo` 的 `default` 安全群組已加入限定來源的 SSH 入站規則；
 若要撤銷，可依上面的規則 ID 刪除。
-
-**下一步目的：** `virsh` 在宿主機管理 QEMU VM。
-先列出 libvirt 的 VM 名稱，找出要接入序列主控台的實例；
-`list --all` 只讀取名稱與狀態，不修改 VM。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo virsh list --all
-```
-
-**實際輸出與判讀：** `instance-00000003` 的狀態是 `running`；
-libvirt 正在執行這台新 VM，但還不能據此確認客體內已開機。
-
-**下一步目的與影響：** 從 `openstack-lab01` 接上
-`instance-00000003` 的序列主控台，直接讀取 VM 當前顯示的畫面，
-判斷它是在開機、登入提示或錯誤狀態。`virsh console` 只建立互動
-主控台連線，不重啟 VM；按 Enter 只要求畫面更新，按 `Ctrl+]`
-離開連線。不要在主控台輸入修改系統的命令。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo virsh console instance-00000003
-```
-
-**實際結果與判讀：** 顯示
-`Connected to domain 'instance-00000003'`；
-按 Enter 後沒有客體文字，再按 `Ctrl+]` 退出。
-主控台連線成功，但目前無法從序列主控台判斷客體是否完成開機，
-也沒有進入客體 shell。
-
-**目的與影響：** 讀取 libvirt 對這台 VM 的定義，
-確認 Nova 實際配置的 CPU 模型、序列埠和顯示裝置。
-這是唯讀查詢，不修改 VM。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo virsh dumpxml instance-00000003 | grep -E -A 8 '<cpu |<serial |<console |<graphics '
-```
-
-`dumpxml` 輸出 VM 定義，`grep -A 8` 保留每個匹配元素後八行，
-供核對實際裝置；查詢不顯示私鑰。
-
-**實際輸出與判讀：** 這台 VM 的實際 CPU 是
-`<model fallback='forbid'>Nehalem</model>`；序列主控台接到
-`/dev/pts/1` 並配置 `console.log`，另有 VNC 顯示裝置。
-因此前面設定檔改成 `Haswell` 與服務重啟，沒有讓這台 VM
-取得預定的 CPU 模型。先核對服務實際載入的設定，
-不能把目前 VM 當成已通過 AlmaLinux 10 開機驗證。
-
-**目的與影響：** 核對重啟後設定檔中的 `cpu_models`，
-以及 systemd 啟動 Nova compute 時使用的設定檔參數。
-這兩個查詢不修改服務或 VM。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo grep -E '^cpu_models = ' /etc/nova/nova.conf
-systemctl show devstack@n-cpu.service -p ExecStart --value
-```
-
-**實際輸出與判讀：** `/etc/nova/nova.conf` 是
-`cpu_models = Haswell`；但 systemd 的 `ExecStart` 指定
-`nova-compute --config-file /etc/nova/nova-cpu.conf`。
-先前修改的是另一份設定檔，不能用它推論 Nova compute 的實際模型。
-
-**目的與影響：** 讀取 `/etc/nova/nova-cpu.conf`
-內的 `[libvirt]` 區段，確認服務目前載入的 CPU 模型。
-這是唯讀查詢，不修改設定檔。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo awk '/^\[libvirt\]/{p=1;next} /^\[/{p=0} p && /^(cpu_models|cpu_mode|virt_type) ?=/{print}' /etc/nova/nova-cpu.conf
-```
-
-**實際輸出與判讀：** `cpu_models = Nehalem`、
-`cpu_mode = custom`、`virt_type = qemu`，與目前 VM 的 libvirt
-定義一致。正確的變更目標是 `nova-cpu.conf`。
-
-**目的與影響：** 將 Nova compute 實際讀取的
-`/etc/nova/nova-cpu.conf` 內 `cpu_models` 改為 `Haswell`。
-這只改設定檔；目前已建立的 VM 不會因此改變 CPU 模型，
-重啟服務後的新建 VM 才會使用新值。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo sed -i 's/^cpu_models = Nehalem$/cpu_models = Haswell/' /etc/nova/nova-cpu.conf
-```
-
-**實際結果與判讀：** 沒有終端輸出，退出碼為 0；
-接著讀回目標行確認設定檔內容。
-
-**已執行驗證指令｜在 `openstack-lab01`：**
-
-```bash
-sudo grep -E '^cpu_models = ' /etc/nova/nova-cpu.conf
-```
-
-**實際輸出與判讀：** `cpu_models = Haswell`。
-這只核對檔案內容，尚不代表服務或既有 VM 已套用。
-
-**目的與影響：** 重啟 `devstack@n-cpu.service`，
-讓 Nova compute 重新讀取 `nova-cpu.conf`。
-已建立的 VM 持續運行，CPU 模型不會因這次服務重啟而改變；
-服務重啟期間暫時無法在此宿主機建機。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo systemctl restart devstack@n-cpu.service
-```
-
-**實際結果與判讀：** 沒有終端輸出，退出碼為 0；
-接著確認服務與 Nova 控制面是否恢復上線。
-
-**已執行驗證指令｜在 `openstack-lab01`：**
-
-```bash
-systemctl is-active devstack@n-cpu.service
-source /home/a2264/devstack/openrc admin admin && openstack compute service list --service nova-compute -f table -c Host -c Status -c State
-```
-
-第一條核對本機服務；第二條核對 Nova 對運算主機的狀態，
-兩條都不修改 VM。
-
-**實際輸出與判讀：** systemd 回報 `active`；Nova 回報
-`openstack-lab01` 的 `nova-compute` 為 `enabled/up`。
-服務已恢復，但先前建立的 `instance-00000003` 仍使用 `Nehalem`；
-須重建 VM 後核對新的 libvirt CPU 定義。
-
-**目的與影響：** 刪除更正前建立的
-`compute-cpu01`（ID `663bd84c-e710-4037-8f04-c80dcd040677`），
-釋放其 1 vCPU、2 GiB RAM 與 20 GiB 開機磁碟。
-這會永久移除該 VM 的本機磁碟；目前客體無法登入，
-沒有在其中部署 Slurm 或工作資料。
-Glance 的 AlmaLinux 與 Ubuntu 映像、宿主機保留的 QCOW2 均不刪除。
-刪除完成後可用既有映像與相同規格重建 VM，
-再核對新 VM 實際取得的 CPU 模型。
-
-**已執行指令｜在 `openstack-lab01` 的 demo 專案 shell：**
-
-```bash
-source /home/a2264/devstack/openrc admin demo && openstack server delete --wait 663bd84c-e710-4037-8f04-c80dcd040677
-```
-
-**實際結果與判讀：** 沒有終端輸出，退出碼為 0；
-`--wait` 已等待刪除操作完成。接著由 demo 專案清單核對名稱已消失。
-
-**已執行驗證指令｜在 `openstack-lab01` 的 demo 專案 shell：**
-
-```bash
-source /home/a2264/devstack/openrc admin demo && openstack server list --name compute-cpu01 -f value -c ID
-```
-
-**實際結果與判讀：** 沒有輸出，退出碼為 0；
-demo 專案目前沒有同名 VM，可以用原名稱重建。
-
-**目的與影響：** 沿用已公開的 AlmaLinux 10.2 映像，
-在 `demo` 專案重建 `compute-cpu01`，仍使用
-`m1.small`、`private` 網路、既有 key pair 與安全群組。
-它會重新佔用 1 vCPU、2 GiB RAM 與 20 GiB 開機磁碟；
-若建機成功，還須核對 libvirt 實際 CPU 模型，
-不能只憑 Nova 的 `ACTIVE` 判定客體可用。
-如需復原，可依新 VM ID 刪除它；Glance 映像不受影響。
-
-**已執行指令｜在 `openstack-lab01` 的 demo 專案 shell：**
-
-```bash
-source /home/a2264/devstack/openrc admin demo && openstack server create --flavor m1.small --image 43ccad43-f0cd-433a-9e5e-2370682f58ee --network private --key-name openstack-cpu-controller --security-group 859e6514-e673-47df-aacc-7f10e3ee13b5 --wait compute-cpu01
-```
-
-**實際輸出與判讀：** 指令退出碼為 0；新 VM
-`id=11a8ac4b-771a-441f-8d35-40c8a003fe9e`、
-libvirt 名稱 `instance-00000004`、`status=ACTIVE`、
-`power_state=Running`、`host=openstack-lab01`、
-`addresses=private=10.0.0.32`（另有 IPv6 位址）。
-映像仍是 `almalinux-10.2-genericcloud-20260817`，
-規格為 1 vCPU、2048 MiB RAM、20 GiB 磁碟，
-key pair 與安全群組均與先前相同。
-Nova 已建立 VM，但仍須核對它的實際 CPU 模型及客體可用性。
 
 **目的與影響：** 從 libvirt 的新 VM 定義核對
 `instance-00000004` 實際使用的 CPU 模型，確認這次建機

@@ -1435,29 +1435,13 @@ openstack security group rule create --ingress --ethertype IPv4 --protocol tcp -
 **判讀：** `demo` 的 `default` 安全群組已加入限定來源的 SSH 入站規則；
 若要撤銷，可依上面的規則 ID 刪除。
 
-#### 核對 VM 的虛擬 CPU 模型
-
-從 libvirt 的新 VM 定義核對
-`instance-00000004` 實際使用的 CPU 模型，確認這次建機
-有讀取更正後的 Nova compute 設定。唯讀，不修改客體。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-sudo virsh dumpxml instance-00000004 | grep -E -A 4 '<cpu '
-```
-
-**實際輸出與判讀：** libvirt 顯示
-`<model fallback='forbid'>Haswell</model>`；
-這台重建後的 VM 已取得預定 CPU 模型。
-這仍不能單獨證明客體內已開機。
-
 #### 查看 AlmaLinux 客體開機畫面
 
-SSH 尚未回應；按原流程接上
-`instance-00000004` 的序列主控台，看目前是否有客體畫面。
-連線本身不重啟或修改 VM；按 Enter 只要求畫面更新，
-用 `Ctrl+]` 退出。
+新 VM 首次開機時，SSH 連線尚未回應，無法從網路登入查看客體內的狀態。
+此時從承載 VM 的 `openstack-lab01` 接上 `instance-00000004` 的
+**序列主控台**，直接看開機訊息，判斷客體是否仍在啟動、卡在錯誤，
+以及網路和 SSH 服務是否啟動。接上主控台不會重啟或修改 VM；
+按 Enter 只要求畫面更新，用 `Ctrl+]` 退出。
 
 **已執行指令｜在 `openstack-lab01`：**
 
@@ -1474,7 +1458,7 @@ sudo virsh console instance-00000004
 此前 SSH 逾時發生在首次開機尚未完成時。
 按 `Ctrl+]` 已退出主控台，沒有在客體內修改設定。
 
-#### 驗證客體 SSH 埠
+#### 確認客體 SSH 服務有回應
 
 從既有 `ovnmeta` 命名空間
 （來源 `10.0.0.2`）測試新 VM 的 `10.0.0.32:22`。
@@ -1488,9 +1472,11 @@ sudo ip netns exec ovnmeta-fb5be63d-7658-453d-9c6d-66243bce244c ssh -o BatchMode
 ```
 
 **實際結果與判讀：** SSH 回覆
-`Permission denied (publickey,gssapi-keyex,gssapi-with-mic)`。
-這是刻意不提供登入認證的測試結果：TCP 22 已連通，
-客體的 SSH 服務已完成握手；正式金鑰登入仍須另行驗證。
+`Permission denied (publickey,gssapi-keyex,gssapi-with-mic)`，指令沒有登入成功，
+客體內的 `true` 也沒有執行。這次刻意指定
+`PreferredAuthentications=none`，不提供金鑰；伺服器能回覆可用的認證方式，
+表示從 `ovnmeta` 命名空間到客體 TCP 22 的網路通路可達，且客體的
+`sshd` 有回應。是否能用控制節點的私鑰登入，由下一步單獨驗證。
 
 #### 從控制節點登入 CPU 客體
 

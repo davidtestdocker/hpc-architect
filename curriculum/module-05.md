@@ -987,61 +987,67 @@ openstack subnet show private-subnet -f yaml
 | `enable_dhcp: true` | 啟用 DHCP，讓 VM 開機時取得網路設定。 |
 | `dns_nameservers: []` | 建立 VM 前，子網沒有指定 DNS 伺服器。 |
 
-### 準備 Ubuntu VM 開機映像
+### 準備 AlmaLinux 10 VM 開機映像
 
-**目的與影響：** Glance 目前只有 CirrOS；它是小型連線測試系統，
-本次改用 Ubuntu 映像建立可登入的 CPU VM。
-改用 [Ubuntu 官方 Ubuntu Minimal 24.04 x86_64 雲端映像](https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260905/)；
-固定 `20260905` 版本，讓日後可找到同一份來源。
-下載的 `.img` 是 VM 開機磁碟的 **QCOW2 映像檔**，先存於
-`openstack-lab01` 的 `/home/a2264/`，約 252 MB；
-這一步只新增主機上的檔案，尚未匯入 Glance，也不會建立 VM。
+**目的與影響：** Glance 是 OpenStack 保存 VM 開機映像的服務。
+目前 `openstack-lab01` 的 `/home/a2264/` 已保留一份
+AlmaLinux 10.2 x86_64 Generic Cloud QCOW2 檔案；
+Glance 尚無這份 AlmaLinux 映像，也沒有 OpenStack CPU 客體。
+宿主機上的下載檔與 Glance 映像是兩份不同資源。
 
-**已執行指令｜在 `openstack-lab01`：** `curl` 從 Ubuntu 官方下載映像，
-`-f` 在 HTTP 錯誤時回報失敗，`-L` 跟隨官方重新導向，
-`--output` 指定主機上的目標檔案。
+**已執行指令｜在 `openstack-lab01`：**
+`curl -fL` 從官方儲存庫下載固定版本；`--output` 指定宿主機來源檔。
 
 ```bash
-curl -fL --output /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260905/ubuntu-24.04-minimal-cloudimg-amd64.img
+curl -fL --output /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2 https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
+```
+
+**實際結果與判讀：** 終端回報 `100 473M`、退出碼 0；
+QCOW2 檔案已留在 `openstack-lab01`，尚未匯入 Glance。
+
+**已執行驗證指令｜在 `openstack-lab01`：**
+計算下載檔的 SHA-256，與官方 `CHECKSUM` 中同版本條目比較，
+核對檔案內容是否相符；不修改檔案。
+
+```bash
+sha256sum /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
 ```
 
 **實際輸出：**
 
 ```text
-100  252M  100  252M    0     0  45.3M      0  0:00:05  0:00:05 --:--:-- 54.6M
+bc59485c4828861a15887e30ff1bb913f0f16202fd7286208518f4814da1e10a  /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
 ```
 
-**判讀：** Ubuntu 映像已下載到 `openstack-lab01`，尚未匯入 Glance。
+**判讀：** 雜湊值與官方清單的固定版本條目一致；
+清單是經 HTTPS 取得，尚未核對其簽章。
 
-**下一步目的與影響：** 將下載的 Ubuntu QCOW2 檔案從
-`openstack-lab01` 的 `/home/a2264/` 上傳到同一台主機承載的 Glance，
-讓後續 OpenStack CPU VM 能選它作開機映像。`--file` 指定來源檔，
-`--disk-format qcow2` 指定磁碟格式，`--container-format bare` 表示沒有外層容器，
-`--private` 限定目前 `admin` 專案可見。
-這會在 Glance 新增約 252 MB 的映像資料，佔用既有 VM 的儲存空間；
-原始 `.img` 檔留在宿主機；若不再使用，可刪除這個 Glance 映像。
-指令語法依 [OpenStack CLI 的 image create 說明](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/image/v2/index.html)。
+**下一步目的與影響：** 在 `openstack-lab01` 載入 DevStack
+`admin` 使用者與 `admin` 專案的 API 登入環境，
+再讓 Glance 從本機 QCOW2 讀取資料，新增約 497 MB 映像。
+`--file` 只讀取原檔，不刪除或搬走它；
+`--disk-format qcow2` 指定磁碟格式，
+`--container-format bare` 表示沒有外層容器，
+`--private` 限定映像先由所屬專案使用。
+這一步不建立或修改 VM；若需撤銷，確認無 VM 使用後
+依新映像 ID 刪除 Glance 紀錄，宿主機原檔仍保留。
 
-**已執行指令｜在 `openstack-lab01`：**
+**待執行指令｜在 `openstack-lab01`：**
 
 ```bash
-openstack image create ubuntu-24.04-minimal-20260905 --file /home/a2264/ubuntu-24.04-minimal-cloudimg-amd64-20260905.img --disk-format qcow2 --container-format bare --private
+bash -lc 'source /home/a2264/devstack/openrc admin admin && openstack image create almalinux-10.2-genericcloud-20260817 --file /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2 --disk-format qcow2 --container-format bare --private'
 ```
 
-**實際輸出重點：**
+`bash -lc` 在同一個 shell 依序執行兩部分：
+先由 `source` 載入 API 登入環境，成功後才執行
+`openstack image create` 上傳檔案。
+實際輸出的 `id`、`status`、`size`、
+`disk_format` 與 `visibility` 用來確認映像是否可用；
+完成後才記錄結果。
 
-| 欄位 | 值 |
-|---|---|
-| `id` | `8279b5ea-5e41-44a4-8fa9-598ec8d4646f` |
-| `name` | `ubuntu-24.04-minimal-20260905` |
-| `status` | `active` |
-| `disk_format` / `container_format` | `qcow2` / `bare` |
-| `visibility` | `private` |
-| `size` / `virtual_size` | `264372224` bytes / `3758096384` bytes |
-
-**判讀：** Glance 已接受映像並標為 `active`；`private` 表示僅映像所屬專案可見。
-`size` 是上傳檔案實際大小，`virtual_size` 約為 3.5 GiB，
-挑選 VM 規格時要給開機磁碟足夠空間。
+**後續段落狀態：** 下文尚保留已刪除的 Ubuntu 客體之原始實測紀錄；
+其中的 Ubuntu 映像 ID、IP、登入帳號與結果不可用於 AlmaLinux 客體。
+往後每一步依實際輸出在原操作位置修正。
 
 **下一步目的與影響：** 查 Nova 已提供的 VM 規格（flavor）：
 每種規格決定 vCPU、RAM 與開機磁碟容量。先找能容納映像虛擬磁碟、
@@ -1927,63 +1933,3 @@ NAME      TYPE       SIZE USED PRIO
 **判讀：** `/swapfile` 已啟用，容量約 4 GiB，目前尚未使用。
 這不代表記憶體不足已消失，也不代表客體套件已安裝。
 
-### AlmaLinux 10 映像檔與目前狀態
-
-**目的與影響：** `openstack-lab01` 保留一份 AlmaLinux 10.2 x86_64
-Generic Cloud QCOW2 下載檔，作為日後在 OpenStack 匯入映像的來源。
-來源是 [AlmaLinux 官方儲存庫](https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/)；
-這個本機檔案不等於 Glance 映像或運行中的 VM。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-curl -fL --output /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2 https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
-```
-
-**實際結果與判讀：** 下載完成，終端回報 `100 473M`、退出碼 0；
-檔案保留在宿主機的 `/home/a2264/`。
-
-**已執行驗證指令｜在 `openstack-lab01`：**
-計算檔案的 SHA-256，與官方 `CHECKSUM` 中固定版本條目比較。
-
-```bash
-sha256sum /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
-```
-
-**實際輸出：**
-
-```text
-bc59485c4828861a15887e30ff1bb913f0f16202fd7286208518f4814da1e10a  /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
-```
-
-**判讀：** 雜湊值與官方 `CHECKSUM` 條目相符。
-這次只核對透過 HTTPS 取得的清單，未驗證清單簽章。
-
-**目前狀態：** 舊 Ubuntu 客體、新建的 AlmaLinux 客體與新建的
-AlmaLinux Glance 映像均已刪除。Ubuntu Glance 映像仍保留；
-目前沒有 OpenStack CPU 客體。inventory 的舊 IP 與帳號已失效。
-
-### 下一步：把已保留的 AlmaLinux 映像檔匯入 Glance
-
-**目的與影響：** 前一節已核對宿主機下載檔的 SHA-256；
-目前 Glance 尚無這份 AlmaLinux 映像。
-在 `openstack-lab01` 使用 DevStack 的 `admin` 使用者與 `admin` 專案，
-讓 Glance 從本機 `/home/a2264/` 的 QCOW2 讀取檔案並建立映像紀錄。
-`--file` 只讀取原檔，不會刪除或搬走它；
-`--disk-format qcow2` 指明磁碟格式，`--container-format bare`
-表示沒有外層容器，`--private` 限定映像先由所屬專案使用。
-本步會新增約 497 MB 的 Glance 資料，不建立或更動 VM。
-若要撤銷，須先核對沒有 VM 使用，再依新映像 ID 刪除 Glance 紀錄；
-宿主機原檔仍會保留。
-
-**待執行指令｜在 `openstack-lab01`：**
-
-```bash
-bash -lc 'source /home/a2264/devstack/openrc admin admin && openstack image create almalinux-10.2-genericcloud-20260817 --file /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2 --disk-format qcow2 --container-format bare --private'
-```
-
-`bash -lc` 讓兩個動作在同一個 shell 順序執行：
-先以 `source` 載入 API 登入環境；只有成功時才由 `openstack image create`
-把本機檔上傳到 Glance。回傳的 `id`、`status`、`size`、
-`disk_format` 與 `visibility` 用來確認映像是否可用；
-取得實際輸出後才記錄結果。

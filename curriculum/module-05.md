@@ -1025,23 +1025,6 @@ curl -fL --output /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.q
 **實際結果與判讀：** 終端回報 `100 473M`、退出碼 0；
 QCOW2 檔案已留在 `openstack-lab01`，尚未匯入 Glance。
 
-**已執行驗證指令｜在 `openstack-lab01`：**
-計算下載檔的 SHA-256，與官方 `CHECKSUM` 中同版本條目比較，
-核對檔案內容是否相符；不修改檔案。
-
-```bash
-sha256sum /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
-```
-
-**實際輸出：**
-
-```text
-bc59485c4828861a15887e30ff1bb913f0f16202fd7286208518f4814da1e10a  /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
-```
-
-**判讀：** 雜湊值與官方清單的固定版本條目一致；
-清單是經 HTTPS 取得，尚未核對其簽章。
-
 **下一步目的與影響：** 在 `openstack-lab01` 載入 DevStack
 `admin` 使用者與 `admin` 專案的 API 登入環境，
 再讓 Glance 從本機 QCOW2 讀取資料，新增約 497 MB 映像。
@@ -1062,18 +1045,9 @@ source /home/a2264/devstack/openrc admin admin && openstack image create almalin
 `&&` 使第二部分只在載入成功後執行，
 再由 `openstack image create` 上傳檔案。
 
-**實際輸出重點：** `id=43ccad43-f0cd-433a-9e5e-2370682f58ee`、
-`name=almalinux-10.2-genericcloud-20260817`、`status=active`、
-`size=496631808` bytes、`virtual_size=10737418240` bytes、
-`disk_format=qcow2`、`container_format=bare`、`visibility=private`。
-
-**判讀：** Glance 已建立可用的 AlmaLinux 10.2 映像紀錄；
-10 GiB 是映像的虛擬磁碟容量，之後選 VM 規格時須能容納。
-宿主機的 QCOW2 仍是另一份檔案，本步沒有建立 CPU VM。
-
-**後續段落狀態：** 後文仍有已刪除的 Ubuntu 客體之原始實測紀錄；
-其中的 Ubuntu 映像 ID、IP、登入帳號與結果不可用於 AlmaLinux 客體。
-相關步驟依實際輸出在原操作位置逐步修正。
+**實際結果與判讀：** Glance 建立映像
+`43ccad43-f0cd-433a-9e5e-2370682f58ee`，狀態 `active`，
+虛擬磁碟容量 10 GiB。宿主機的 QCOW2 仍是另一份檔案；本步沒有建立 VM。
 
 **目的與影響：** 查 Nova 目前提供的 VM 規格（flavor）：
 每種規格決定 vCPU、RAM 與開機磁碟容量。
@@ -1140,33 +1114,7 @@ source /home/a2264/devstack/openrc admin admin && openstack image set --public 4
 ```
 
 **實際結果與判讀：** 沒有終端輸出，退出碼為 0；
-Glance 已接受可見範圍變更。接著由 `demo` 專案核對
-`visibility=public` 與 `status=active`，確認該專案可讀取映像。
-
-**下一步目的與影響：** DevStack 的 `admin` 使用者同時屬於 `admin` 與
-`demo` 專案。`openrc` 第一個 `admin` 是登入使用者，第二個 `demo` 是
-本次 OpenStack 指令操作的專案；`source` 只改目前 shell 的登入環境變數，
-不修改檔案、服務或資源。切換後從 `demo` 專案讀取 AlmaLinux 映像，
-確認它確實可見且可用；後續建機才會歸屬已有 `private` 網路的
-`demo` 專案。依 [DevStack 多節點練習文件](https://docs.openstack.org/devstack/latest/guides/multinode-lab.html)
-確認使用者與專案關係。
-
-**已執行指令｜在 `openstack-lab01`：**
-
-```bash
-source /home/a2264/devstack/openrc admin demo && openstack image show 43ccad43-f0cd-433a-9e5e-2370682f58ee -f value -c name -c status -c visibility
-```
-
-**實際輸出：**
-
-```text
-almalinux-10.2-genericcloud-20260817
-active
-public
-```
-
-**判讀：** `demo` 專案已能讀取剛匯入的 AlmaLinux 映像，
-且狀態為可用、可見範圍為 `public`。
+Glance 已接受可見範圍變更。
 
 **金鑰如何進入新 VM：** `cloud-init` 是 AlmaLinux Generic Cloud 映像內的開機設定工具。
 新 VM 第一次啟動時，它會讀取 OpenStack 提供的設定資料，
@@ -1178,9 +1126,9 @@ VM 用已安裝的公鑰核對控制節點持有的私鑰。
 Ansible 將沿用這條 SSH 通路；
 能否實際登入仍須等 VM 建立後驗證。
 
-**下一步目的與影響：** 先用 `openstack keypair list` 查目前帳號已有的
-OpenStack 金鑰名稱，避免重複登錄。這是唯讀查詢，
-不顯示私鑰，也不修改 VM。
+**下一步目的與影響：** 此時 shell 已載入 `admin` 使用者在
+`demo` 專案的 OpenStack API 環境。用 `openstack keypair list`
+查已有的金鑰名稱，避免重複登錄。查詢不顯示私鑰，也不修改 VM。
 
 **已執行指令｜在 `openstack-lab01`：**
 
@@ -1284,25 +1232,6 @@ openstack security group rule list 859e6514-e673-47df-aacc-7f10e3ee13b5
 另有同樣模式的 IPv6 出站與群組內入站規則；沒有明列 TCP 22 入站。
 
 **判讀：** 既有 IPv4 入站規則只讓同群組的 VM 互通。
-
-**已執行核對｜在 `openstack-lab01`：** 從 `demo` 專案讀取既有
-key pair 和安全群組規則，並讀取宿主機的 QEMU CPU 模型清單與
-Nova 設定；這些查詢不修改資源。
-
-```bash
-source /home/a2264/devstack/openrc admin demo && openstack keypair show openstack-cpu-controller -f value -c name -c fingerprint
-openstack security group rule list 859e6514-e673-47df-aacc-7f10e3ee13b5 -f table -c Direction -c "IP Protocol" -c "Port Range" -c "Remote IP Prefix"
-qemu-system-x86_64 -cpu help | grep -E "(^x86 Haswell($|[- ]|\\s)|^x86 max($|\\s))" | head -20
-sudo awk '/^\[libvirt\]/{p=1;next} /^\[/{p=0} p && /^(cpu_models|cpu_mode|virt_type) ?=/{print}' /etc/nova/nova.conf
-```
-
-**實際結果與判讀：** key pair 仍存在，指紋為
-`5a:2a:a3:fa:f2:1e:79:1b:b7:e1:d6:0d:f9:a0:d1:c8`；
-同一個安全群組目前另有 `tcp 22:22 ingress` 規則。
-QEMU 列出 `Haswell` CPU 模型，但 Nova 的 `/etc/nova/nova.conf`
-仍是 `cpu_models = Nehalem`、`cpu_mode = custom`、`virt_type = qemu`。
-AlmaLinux 10 預設 x86_64 映像需要 x86-64-v3 指令集；
-先修正虛擬 CPU 模型，再建立客體。
 
 **目的與影響：** 在 `openstack-lab01` 將
 `/etc/nova/nova.conf` 的 `cpu_models` 從 `Nehalem` 改成 `Haswell`。

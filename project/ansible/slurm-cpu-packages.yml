@@ -1,0 +1,125 @@
+---
+# 在已存在的 Ubuntu CPU 客體建置並安裝與控制端相同的 Slurm 26.05.4。
+# 從控制節點執行；inventory 的 cpu_compute 只包含 compute-cpu01。
+# 原始碼來自工作樹 project/packages/slurm，建置產物留在客體的 /home/ubuntu/slurm-build。
+# 只處理套件；MUNGE 共用金鑰、slurm.conf 與服務啟動由後續設定處理。
+- name: 在 CPU 客體安裝 MUNGE 與 Slurm 運算節點套件
+  hosts: cpu_compute
+  become: true
+  gather_facts: false
+  vars:
+    slurm_build_dir: /home/ubuntu/slurm-build
+    slurm_source_dir: /home/ubuntu/slurm-build/slurm-26.05.4
+    slurm_common_deb: /home/ubuntu/slurm-build/slurm-smd_26.05.4-1_amd64.deb
+    slurm_daemon_deb: /home/ubuntu/slurm-build/slurm-smd-slurmd_26.05.4-1_amd64.deb
+  tasks:
+    # 只在客體安裝打包工具；單工建置適合目前的 1 vCPU、2 GiB 記憶體。
+    - name: 備妥 Debian 套件建置工具
+      ansible.builtin.apt:
+        name:
+          - build-essential
+          - fakeroot
+          - devscripts
+          - equivs
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    # 建置工作目錄屬於 ubuntu，避免編譯器以 root 寫入來源檔。
+    - name: 建立 Slurm 套件建置目錄
+      ansible.builtin.file:
+        path: "{{ slurm_build_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    # 從控制節點工作樹複製已保存的官方原始碼；不依賴暫存目錄或新下載來源。
+    - name: 複製 Slurm 26.05.4 原始碼到 CPU 客體
+      ansible.builtin.copy:
+        src: ../packages/slurm/slurm-26.05.4.tar.bz2
+        dest: "{{ slurm_build_dir }}/slurm-26.05.4.tar.bz2"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: 展開 Slurm 原始碼與 Debian 打包檔
+      ansible.builtin.unarchive:
+        src: "{{ slurm_build_dir }}/slurm-26.05.4.tar.bz2"
+        dest: "{{ slurm_build_dir }}"
+        remote_src: true
+        owner: ubuntu
+        group: ubuntu
+        creates: "{{ slurm_source_dir }}/debian/control"
+
+    - name: 查詢同版運算節點套件是否已建好
+      ansible.builtin.stat:
+        path: "{{ slurm_daemon_deb }}"
+      register: slurm_daemon_package
+
+    # mk-build-deps 讀來源內的 debian/control，再以 apt 補齊官方建置相依套件。
+    # -r 清除暫時產生的 build-deps 安裝檔；不移除已安裝的編譯相依套件。
+    - name: 安裝 Slurm 原始碼宣告的建置相依套件
+      ansible.builtin.command:
+        argv:
+          - mk-build-deps
+          - -i
+          - -r
+          - -t
+          - apt-get -y --no-install-recommends
+          - debian/control
+        chdir: "{{ slurm_source_dir }}"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      when: not slurm_daemon_package.stat.exists
+
+    # debuild 產生 slurm-smd 與 slurm-smd-slurmd 等 .deb；-b 只建二進位套件，
+    # -nc 略過建置前清理，逾時後重跑時保留已編好的檔案；-uc/-us 不替輸出簽章。
+    # DEB_BUILD_OPTIONS 限制同時只編譯一個工作。
+    - name: 建置 Slurm 26.05.4 Debian 套件
+      ansible.builtin.command:
+        argv:
+          - debuild
+          - -b
+          - -nc
+          - -uc
+          - -us
+        chdir: "{{ slurm_source_dir }}"
+        creates: "{{ slurm_daemon_deb }}"
+      become_user: ubuntu
+      environment:
+        DEB_BUILD_OPTIONS: parallel=1
+        DEBIAN_FRONTEND: noninteractive
+      async: 28800
+      poll: 30
+
+    # apt-get 同時處理本地兩個 .deb 的相依關係；只選運算節點所需套件。
+    # munge 先裝入客體，後續才部署叢集金鑰並核對服務。
+    - name: 安裝 MUNGE 與同版 Slurm 運算節點套件
+      ansible.builtin.command:
+        argv:
+          - apt-get
+          - install
+          - -y
+          - munge
+          - "{{ slurm_common_deb }}"
+          - "{{ slurm_daemon_deb }}"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    # 套件版本是這個安裝階段的交付證據；不把安裝成功當成服務或排程已可用。
+    - name: 核對 CPU 客體實際安裝的套件版本
+      ansible.builtin.command:
+        argv:
+          - dpkg-query
+          - -W
+          - '-f=${Package} ${Version}\n'
+          - munge
+          - slurm-smd
+          - slurm-smd-slurmd
+      register: cpu_package_versions
+      changed_when: false
+
+    - name: 顯示 CPU 客體的套件版本
+      ansible.builtin.debug:
+        var: cpu_package_versions.stdout_lines

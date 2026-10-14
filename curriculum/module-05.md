@@ -22,9 +22,12 @@ OpenStack 已建立 `compute-cpu01`，Nova 回報 `ACTIVE`，
 `ubuntu@compute-cpu01`。這條已驗證的管理通路可作為後續
 Ansible 納管該 VM 的連線基礎，也可供部署 Slurm 運算節點時使用。
 
-**目前狀態：** `compute-cpu01` 已建立，控制節點已透過 SSH 登入。
-尚未把這台客體列入 Ansible inventory，也未部署 NFS、MUNGE 或 Slurm；
-獨立 CPU 工作尚未驗證。
+**目前狀態：** 舊 Ubuntu `compute-cpu01` 與新建的 AlmaLinux 同名客體
+都已刪除；目前沒有 OpenStack CPU 客體。新建的 AlmaLinux Glance
+映像也已刪除，宿主機的 AlmaLinux 10 QCOW2 下載檔保留。
+下文舊 IP `10.0.0.62` 的 SSH、Ansible `pong` 與網路結果
+只屬於已刪除的 Ubuntu 客體。inventory 仍指向舊 IP 與 Ubuntu 帳號；
+CPU 客體的 SSH、Ansible、MUNGE、Slurm 和工作均未驗證。
 
 ## 管理位置與本次部署範圍
 
@@ -1793,9 +1796,8 @@ TCP 不能只靠去程建立連線：客體送出 SYN 後還要收到
 
 **現有能力與缺口：** 控制節點對 GPU VM 的 NFS、MUNGE 與 Slurm
 已有 Ansible 管理成果；CPU 客體的雙向網路基礎已驗證，
-也已列入 Ansible 管理清單，但尚未實際驗證 Ansible 連線。
-接下來沿用上文成功的 SSH 金鑰與 OVN 命名空間通路，
-再處理客體服務。
+也已列入 Ansible 管理清單。接下來沿用上文成功的 SSH 金鑰
+與 OVN 命名空間通路驗證 Ansible，再處理客體服務。
 
 **設定來源與影響：** 控制節點工作樹的
 [hosts.yml](../project/ansible/inventory/hosts.yml) 已新增
@@ -1807,14 +1809,156 @@ TCP 不能只靠去程建立連線：客體送出 SYN 後還要收到
 [ansible.cfg](../project/ansible/ansible.cfg) 仍指向這份 inventory。
 若需撤銷，只移除新增的 `cpu_compute` 群組；既有 GPU 群組不變。
 
-**下一步目的與影響：** 在控制節點以 root 執行 Ansible 的
+**目的與影響：** 在控制節點以 root 執行 Ansible 的
 `ping` 模組，實際透過上述 SSH 通路在 CPU 客體執行 Python。
 這不是 ICMP；輸出若有 `SUCCESS`、`ping: pong`、`changed: false`，
 表示 inventory 連線及遠端模組可用。
 Ansible 可能建立並清理遠端暫存檔，不修改持久設定或服務。
 
-**待執行指令｜控制節點：**
+**已執行指令｜控制節點：**
 
 ```bash
 ansible -i /root/hpc-arch/project/ansible/inventory/hosts.yml cpu_compute -m ansible.builtin.ping
 ```
+
+**實際輸出：**
+
+```text
+compute-cpu01 | SUCCESS => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}
+```
+
+**判讀：** 控制節點透過 inventory 的 SSH 路徑到達
+`compute-cpu01`，並在客體上使用 `/usr/bin/python3` 執行
+Ansible 模組；`pong` 表示模組完成，`changed: false`
+表示這次沒有修改持久設定。此結果只證明 Ansible 管理通路，
+不代表 MUNGE 或 Slurm 已部署到 CPU 客體。
+
+### CPU 客體加入 Slurm 前的套件取捨
+
+**現有能力與缺口：** 控制節點與 GPU VM 已用 Slurm `26.05.4`
+及共用 MUNGE 金鑰完成跨節點驗證。CPU 客體的 Ansible 管理
+與到控制節點的 TCP 通路也已驗證；但客體沒有 MUNGE、Slurm
+運算服務或相應設定，現在還不能接受排程工作。
+MUNGE 讓客體核對控制端送來的身分與工作憑證；`slurmd`
+接收排程工作並在 CPU 客體執行。CPU 工作的程式與輸入可由
+Ansible 部署到客體本地，不必為這項驗收新增 NFS 掛載。
+
+**版本與來源：** CPU 客體是 Ubuntu 24.04。經唯讀查詢，
+其套件庫候選 `munge` 為 `0.5.15-4ubuntu0.1`，
+`slurmd` 為 `23.11.4-1.2ubuntu5`，兩者目前均未安裝。
+現有控制端 Slurm 為 `26.05.4`；依
+[SchedMD 相容版本表](https://slurm.schedmd.com/upgrades.html)，
+`26.05` 可搭配的較舊 Slurm 主版本為 `25.11`、`25.05`
+與 `24.11`，不含 `23.11`。因此 CPU 客體不能直接沿用
+Ubuntu 24.04 套件庫的 `slurmd` 來加入現有叢集。
+工作樹已保存
+[Slurm 26.05.4 原始碼](../project/packages/slurm/slurm-26.05.4.tar.bz2)；
+依 [SchedMD Debian 套件建置方式](https://slurm.schedmd.com/quickstart_admin.html)
+可在 Ubuntu 上建出同版本的運算節點套件，避免更換既有
+控制端或 GPU VM 的 Slurm。套件尚未建置或安裝，
+MUNGE 金鑰、服務與 Slurm 設定也尚未部署到 CPU 客體。
+
+### CPU 客體安裝前的宿主機記憶體緩衝
+
+**目的與影響：** `openstack-lab01` 是 2 vCPU、8 GiB 記憶體的 DevStack
+宿主機，同時執行 `compute-cpu01`。安裝前查得宿主機僅約 395 MiB
+可用記憶體、沒有 swap；根檔案系統是 ext4，尚無 `/swapfile`，
+根檔案系統尚有 26 GiB 可用。先在**宿主機**建立 4 GiB 暫時 swap，
+讓記憶體吃緊時可把較少使用的頁面移到磁碟，再進行客體內的單工套件建置。
+此操作占用宿主機 4 GiB 磁碟空間，不增加客體的 2 GiB 記憶體，
+大量使用 swap 時服務會變慢；沒有寫入 `/etc/fstab`，重開機後不自動啟用。
+若要復原，須先停止使用 `/swapfile` 作為 swap，再移除該檔案。
+
+**已執行指令｜在 `openstack-lab01` 建立檔案：**
+
+```bash
+sudo fallocate -l 4G /swapfile
+```
+
+**實際結果與判讀：** 沒有終端輸出，退出碼為 0；宿主機已配置檔案，
+此時尚未把它當作 swap 使用。
+
+**已執行指令｜在 `openstack-lab01` 限制檔案權限：**
+
+```bash
+sudo chmod 600 /swapfile
+```
+
+**實際結果與判讀：** 沒有終端輸出，退出碼為 0；只有 root 可讀寫
+這個之後可能存放記憶體內容的檔案。
+
+**已執行指令｜在 `openstack-lab01` 寫入 swap 格式：**
+
+```bash
+sudo mkswap /swapfile
+```
+
+**實際輸出重點：** `Setting up swapspace version 1, size = 4 GiB (4294963200 bytes)`。
+這確認檔案已有 swap 格式；尚未啟用。
+
+**已執行指令｜在 `openstack-lab01` 啟用 swap：**
+
+```bash
+sudo swapon /swapfile
+```
+
+**實際結果與判讀：** 沒有終端輸出，退出碼為 0；核心已接受
+`/swapfile` 作為交換空間。下一條指令核對容量與是否真的啟用。
+
+**已執行驗證指令｜在 `openstack-lab01`：**
+
+```bash
+swapon --show --bytes
+```
+
+**實際輸出：**
+
+```text
+NAME      TYPE       SIZE USED PRIO
+/swapfile file 4294963200    0   -1
+```
+
+**判讀：** `/swapfile` 已啟用，容量約 4 GiB，目前尚未使用。
+這不代表記憶體不足已消失，也不代表客體套件已安裝。
+
+### AlmaLinux 10 映像檔與目前狀態
+
+**目的與影響：** `openstack-lab01` 保留一份 AlmaLinux 10.2 x86_64
+Generic Cloud QCOW2 下載檔，作為日後在 OpenStack 匯入映像的來源。
+來源是 [AlmaLinux 官方儲存庫](https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/)；
+這個本機檔案不等於 Glance 映像或運行中的 VM。
+
+**已執行指令｜在 `openstack-lab01`：**
+
+```bash
+curl -fL --output /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2 https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
+```
+
+**實際結果與判讀：** 下載完成，終端回報 `100 473M`、退出碼 0；
+檔案保留在宿主機的 `/home/a2264/`。
+
+**已執行驗證指令｜在 `openstack-lab01`：**
+計算檔案的 SHA-256，與官方 `CHECKSUM` 中固定版本條目比較。
+
+```bash
+sha256sum /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
+```
+
+**實際輸出：**
+
+```text
+bc59485c4828861a15887e30ff1bb913f0f16202fd7286208518f4814da1e10a  /home/a2264/AlmaLinux-10-GenericCloud-10.2-20260817.0.x86_64.qcow2
+```
+
+**判讀：** 雜湊值與官方 `CHECKSUM` 條目相符。
+這次只核對透過 HTTPS 取得的清單，未驗證清單簽章。
+
+**目前狀態：** 舊 Ubuntu 客體、新建的 AlmaLinux 客體與新建的
+AlmaLinux Glance 映像均已刪除。Ubuntu Glance 映像仍保留；
+目前沒有 OpenStack CPU 客體。inventory 的舊 IP 與帳號已失效。

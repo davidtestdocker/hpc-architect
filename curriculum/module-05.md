@@ -51,7 +51,9 @@ OpenStack CPU VM 的建立，以及 CPU 節點加入 Slurm 的實際指令與輸
 [ansible.cfg](../project/ansible/ansible.cfg) 指向
 [hosts.yml](../project/ansible/inventory/hosts.yml)，
 其中 `controller` 是控制節點本機，`gpu_compute` 是透過既有 SSH 金鑰
-連到私有 IP `10.146.0.3` 的 `compute-gpu01`。
+連到私有 IP `10.146.0.3` 的 `compute-gpu01`；`cpu_compute`
+透過 `openstack-lab01` 的 OVN 命名空間連到 `10.0.0.32` 的
+`compute-cpu01`。
 Inventory 只列出已存在的 VM，不會建立雲端資源。
 
 **閱讀順序：** 下方先交代已建立的管理通路、NFS 和 MUNGE 設定及執行結果。
@@ -77,7 +79,7 @@ Inventory 只列出已存在的 VM，不會建立雲端資源。
 **目的與影響：** 在控制節點執行下列指令。它先讀取目前目錄的
 [ansible.cfg](../project/ansible/ansible.cfg)，再依設定讀取
 [hosts.yml](../project/ansible/inventory/hosts.yml) 並列出群組與主機；
-這裡沒有執行 playbook，也不連線或修改 GPU VM：
+這裡沒有執行 playbook，也不連線或修改任何 VM：
 
 **已執行指令：**
 
@@ -94,11 +96,14 @@ ansible-inventory --graph
   |  |--instance-20260923-104239
   |--@gpu_compute:
   |  |--compute-gpu01
+  |--@cpu_compute:
+  |  |--compute-cpu01
 ```
 
-**判讀與下一步：** 兩個群組各有預期的 VM。下一條指令仍用 `hosts.yml` 選
-`gpu_compute`，再透過 SSH 在 GPU VM 執行 Ansible 的 `ping` 模組。
-這裡也沒有執行 playbook；這個 `ping` 不是 ICMP，
+**判讀：** 目前 inventory 中的 `controller`、`gpu_compute`、`cpu_compute`
+三個群組各列出預期的節點；清單顯示節點名稱，不代表 VM 當下在線。
+下方保留先前以 `hosts.yml` 選 `gpu_compute`，透過 SSH 在 GPU VM
+執行 Ansible `ping` 模組的實測。這個 `ping` 不是 ICMP，
 回傳 `pong` 才代表遠端模組可執行：
 
 **已執行指令：**

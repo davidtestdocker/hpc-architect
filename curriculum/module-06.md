@@ -662,3 +662,54 @@ sudo systemctl start slurmd
 **實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。
 
 若 Slurm 控制節點仍保留節點 `DOWN` 狀態，再依實際狀態恢復排程。
+
+**目的與影響：** 從控制節點查 `compute-cpu02` 的排程狀態，
+確認 `slurmd` 啟動後，Slurm 是否已重新開放該節點；這條指令只讀。
+
+**已執行指令｜控制節點：**
+
+```bash
+sinfo -N -n compute-cpu02 -o '%N %T'
+```
+
+**實際輸出：**
+
+```text
+NODELIST STATE
+compute-cpu02 down
+```
+
+**判讀：** `slurmd` 已重新啟動，Zabbix 恢復由操作人員回報，
+但 Slurm 控制節點仍保留 `DOWN`。現有四節點設定未指定
+`ReturnToService`；[Slurm 官方文件](https://slurm.schedmd.com/slurm.conf.html)
+說明其預設值 `0` 會保留 `DOWN`，直到管理員明確變更節點狀態。
+
+**目的與影響：** 從控制節點解除 `compute-cpu02` 的 `DOWN`，
+讓控制服務要求 `slurmd` 重新註冊；只修改控制端的排程狀態，
+不修改 VM 設定或重啟服務。
+
+**已執行指令｜控制節點：**
+
+```bash
+scontrol update NodeName=compute-cpu02 State=RESUME
+```
+
+**實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。
+
+**目的與影響：** 再從控制節點查同一節點的排程狀態，
+確認 `RESUME` 後能否重新接工作；這條指令只讀。
+
+**已執行指令｜控制節點：**
+
+```bash
+sinfo -N -n compute-cpu02 -o '%N %T'
+```
+
+**實際輸出：**
+
+```text
+NODELIST STATE
+compute-cpu02 idle
+```
+
+**判讀：** 控制節點已重新開放 `compute-cpu02` 接受 Slurm 工作。

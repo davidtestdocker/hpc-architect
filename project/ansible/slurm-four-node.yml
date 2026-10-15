@@ -1,0 +1,111 @@
+---
+# 從控制節點的 project/ansible 執行，將工作樹的 four-node-slurm.conf
+# 複製到三台運算 VM 與控制節點各自的 /etc/slurm/slurm.conf。
+# 先確認沒有工作，再檢查運算節點設定，最後重載控制端與重啟變更過的 slurmd。
+- name: 確認更新叢集設定時沒有排隊或執行中的工作
+  hosts: controller
+  gather_facts: false
+  tasks:
+    # -h 不印標題；有工作或查詢失敗都停止後續部署，避免打斷計算。
+    - name: 核對 Slurm 佇列為空
+      ansible.builtin.command: squeue -h -o '%i %T'
+      register: cluster_jobs
+      changed_when: false
+      failed_when: cluster_jobs.rc != 0 or (cluster_jobs.stdout | trim) != ''
+
+- name: 先更新並檢查每台運算節點的四節點設定
+  hosts: gpu_compute:cpu_compute
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # 各 VM 讀自己的 /etc/slurm；缺目錄時建立，不修改其他路徑。
+    - name: 建立或核對運算節點的 Slurm 設定目錄
+      ansible.builtin.file:
+        path: /etc/slurm
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # slurmd 啟動與 -G 驗證都會使用本機 UNIX socket 目錄，先確保路徑存在。
+    - name: 建立或核對運算節點的 Slurm 暫存目錄
+      ansible.builtin.file:
+        path: /var/spool/slurmd
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # src 在控制節點工作樹，dest 在各運算 VM；內容變更時留下舊檔備份。
+    - name: 複製四節點設定到運算節點
+      ansible.builtin.copy:
+        src: ../slurm/four-node-slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: compute_slurm_config
+
+    # -G 讀取節點自己的設定並退出；GPU 節點還須認得 L4，失敗就不動控制端。
+    - name: 核對節點可解析設定及 GPU 資源
+      ansible.builtin.command:
+        argv:
+          - slurmd
+          - -G
+          - -f
+          - /etc/slurm/slurm.conf
+      register: compute_gres_probe
+      changed_when: false
+      failed_when: >-
+        compute_gres_probe.rc != 0 or
+        'error:' in ((compute_gres_probe.stdout ~ compute_gres_probe.stderr) | lower) or
+        ('gpu_compute' in group_names and
+        'nvidia_l4' not in (compute_gres_probe.stdout ~ compute_gres_probe.stderr))
+
+    # 只顯示硬體資源摘要，供核對 GPU 卡數與 CPU 節點沒有 GPU 宣告。
+    - name: 顯示資源設定檢查結果
+      ansible.builtin.debug:
+        var: compute_gres_probe.stdout_lines
+
+- name: 讓控制節點辨認四節點設定
+  hosts: controller
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # 運算端先通過設定檢查，才替換控制端自己的檔案；notify 僅在變更時觸發 handler。
+    - name: 複製四節點設定到控制節點
+      ansible.builtin.copy:
+        src: ../slurm/four-node-slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: 重新載入 Slurm 控制設定
+
+  handlers:
+    # reconfigure 讓執行中的 slurmctld 重讀設定，不重啟服務或清除工作佇列。
+    - name: 重新載入 Slurm 控制設定
+      ansible.builtin.command: scontrol reconfigure
+
+- name: 讓運算節點讀取四節點設定
+  hosts: gpu_compute:cpu_compute
+  become: true
+  gather_facts: false
+  tasks:
+    # 前面的 copy 真有變更才重啟 slurmd，讓它重讀自己的設定。
+    - name: 設定變更時重啟運算節點的 slurmd
+      ansible.builtin.service:
+        name: slurmd
+        state: restarted
+      when: compute_slurm_config.changed
+
+    # 已在執行時不重啟；enabled 讓 VM 正常開機後自動啟動 slurmd。
+    - name: 確保運算節點的 slurmd 已啟動
+      ansible.builtin.service:
+        name: slurmd
+        state: started
+        enabled: true

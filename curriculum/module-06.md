@@ -547,3 +547,7 @@ sudo systemctl start zabbix-agent2
 ```
 
 **實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。
+
+**網頁結果：** [啟動 agent 後的儀表板](../project/monitoring/zabbix-server-agent.png)
+顯示主機可用性 `1 可用、0 無法使用`，並有 CPU 使用率資料；
+目前問題清單為空。這證明本機 agent 已能提供資料給 Zabbix server。

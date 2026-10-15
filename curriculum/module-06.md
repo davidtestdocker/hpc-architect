@@ -570,10 +570,27 @@ sudo systemctl enable mariadb zabbix-server php-fpm httpd zabbix-agent2
 
 目前 Zabbix 已收到 `compute-cpu02` 的主機資料；下一步讓它定期收集
 這台 VM 的 `slurmd` 狀態，作為 Slurm 服務告警的依據。
-已確認代理程式能讀到 `active`。建立監控項只修改 Zabbix 的監控設定，
-不會重啟或修改 `slurmd`。
 
-**待操作｜Zabbix 網頁：** 從「數據收集」→「主機」找到預設主機
+**目的與影響：** 先讓 `compute-cpu02` 的代理程式單次讀取
+`slurmd.service` 的狀態，確認稍後要使用的監控鍵值可用；
+`-t` 只測試這次讀取，不修改服務或監控設定。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+zabbix_agent2 -t 'systemd.unit.info[slurmd.service]'
+```
+
+**實際輸出：**
+
+```text
+systemd.unit.info[slurmd.service]             [s|active]
+```
+
+**判讀：** `[s|active]` 表示回傳字串 `active`，可用這個鍵值建立監控項。
+建立監控項只修改 Zabbix 的監控設定，不會重啟或修改 `slurmd`。
+
+**已操作｜Zabbix 網頁：** 從「數據收集」→「主機」找到預設主機
 「Zabbix 伺服器」，進入該主機的監控項，建立以下項目：
 
 | 欄位 | 值 |
@@ -584,5 +601,36 @@ sudo systemctl enable mariadb zabbix-server php-fpm httpd zabbix-agent2
 | 資訊類型 | 字元 |
 | 更新間隔 | `1m` |
 
-其他欄位維持預設，按「新增」。這個監控項應定期收到 `active`；
-告警條件要在確認資料進入 Zabbix 後再建立。
+**實際結果：** 已回報新增成功；項目列表顯示名稱
+`Slurm 運算服務狀態`、鍵值 `systemd.unit.info[slurmd.service]`、
+更新間隔 `1m`、歷史資料保留 `31d`、類型 `Zabbix agent`，
+狀態 `Enabled`。
+
+**最新資料：** 在「監測」的最新資料頁，這個項目顯示：
+
+```text
+Zabbix server
+Slurm 運算服務狀態
+18s	active
+History
+```
+
+**判讀：** 上次收集距畫面顯示時為 `18s`，最新值 `active`；
+Zabbix 伺服器已收到這個監控項的資料。
+
+## 14. 設定 `slurmd` 停止時的告警條件
+
+監控項已持續收到狀態，接著用觸發器判斷服務何時不是 `active`。
+這只在 Zabbix 建立告警規則，不會停止或重啟 `slurmd`。
+狀態恢復 `active` 時，同一條規則會回到正常。
+
+**待操作｜Zabbix 網頁：** 從「數據收集」→「主機」找到
+「Zabbix 伺服器」，進入觸發器並建立以下規則：
+
+| 欄位 | 值 |
+|---|---|
+| 名稱 | `compute-cpu02：slurmd 未執行` |
+| 嚴重程度 | 高 |
+| 表達式 | `last(/Zabbix server/systemd.unit.info[slurmd.service])<>"active"` |
+
+其他欄位維持預設，按「新增」。

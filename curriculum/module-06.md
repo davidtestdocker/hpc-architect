@@ -234,9 +234,57 @@ OpenStack 宿主機雖有 8 GiB，已承載 DevStack 和 `compute-cpu01`，因�
 |---|---|---|---|---|
 | `compute-cpu02` | AlmaLinux 10.2；2 vCPU、8 GiB 記憶體、40 GiB 磁碟 | `10.146.0.5` | `cpu`：2 CPU、4000 MiB 可排程記憶體 | `idle`；指定節點的工作已成功執行 |
 
+**目的與影響：** 列出 Slurm 目前認得的節點，核對
+`compute-cpu02` 是否出現在 `cpu` 分區，以及它目前的狀態、CPU 數與可排程記憶體。
+此指令只讀，不改動節點或工作。
+
+**已執行指令｜控制節點：**
+
+```bash
+sinfo -N -o '%N %T %c %m %P'
+```
+
+**實際輸出：**
+
+```text
+NODELIST STATE CPUS MEMORY PARTITION
+compute-cpu01 idle 1 1400 cpu
+compute-cpu02 idle 2 4000 cpu
+compute-gpu01 idle 4 14000 gpu
+instance-20260923-104239 idle 2 3000 debug
+```
+
+**判讀：** `%N` 是節點名稱、`%T` 是狀態、`%c` 是 CPU 數、
+`%m` 是可排程記憶體 MiB、`%P` 是分區。
+`compute-cpu02` 確實列在 `cpu` 分區，為 `idle`，有 2 CPU 與 4000 MiB
+可供 Slurm 排程；其餘三個節點此時也都是 `idle`。
+
 **新增檔案：** [四節點 Slurm 設定](../project/slurm/four-node-slurm.conf)、
 [四節點部署 playbook](../project/ansible/slurm-four-node.yml)。
 
 **修改檔案：** [Ansible inventory](../project/ansible/inventory/hosts.yml)，加入 `compute-cpu02`。
 
 Zabbix 尚未安裝。這台 VM 同時接 Slurm 工作；安裝監控後須依實際記憶體用量調整可排程工作或 VM 規格。
+
+## 3. 建立 Zabbix 套件來源
+
+Slurm 已能接收並執行工作，接下來需要 Zabbix 持續收集狀態與記錄告警。
+Zabbix server 負責收集和判斷，資料庫保存歷史與事件，網頁介面用來查看；
+之後再讓各節點提供健康資料。
+[Zabbix 官方 AlmaLinux 10 套件庫](https://repo.zabbix.com/zabbix/7.0/alma/10/x86_64/)
+提供 7.0 LTS 的 server、網頁介面與 agent 套件。
+
+**目的與影響：** 從控制節點的 `project/ansible` 對 `compute-cpu02`
+安裝官方 `zabbix-release` 套件，使新 VM 增加 Zabbix 7.0 LTS 套件庫。
+這會修改新 VM 的套件資料庫及 `/etc/yum.repos.d/` 下的來源設定；
+本步不安裝或啟動 Zabbix 服務。若需復原，可從新 VM 移除該 release 套件。
+
+**待執行指令｜控制節點的 `project/ansible` 目錄：**
+
+```bash
+ansible monitor_cpu -b -m dnf -a 'name=https://repo.zabbix.com/zabbix/7.0/alma/10/x86_64/zabbix-release-latest-7.0.el10.noarch.rpm state=present' -o
+```
+
+`monitor_cpu` 只選新 VM，`-b` 以管理者權限安裝，`-m dnf` 使用
+Ansible 套件模組；`state=present` 表示已安裝時不重複安裝。
+執行後核對 Ansible 是否回報 `failed=0`，再查實際套件來源。

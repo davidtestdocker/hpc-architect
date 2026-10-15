@@ -530,3 +530,20 @@ Windows 瀏覽器開啟 `http://127.0.0.1:18081/zabbix/` 後進入
 顯示 `Zabbix server is running: Yes`，server 與 frontend 均為 `7.0.31`。
 畫面同時顯示 `Linux: Zabbix agent is not available`；
 目前只證明網頁登入與 server 運作，尚未證明 agent 監控可用。
+
+## 11. 啟動監控 VM 的 Zabbix agent
+
+`compute-cpu02` 已安裝 `zabbix-agent2`，但儀表板顯示本機 agent 不可用。
+agent 在被監控的 VM 上提供主機資料，Zabbix server 再讀取資料並判斷告警。
+
+**目的與影響：** 在 `compute-cpu02` 啟動 agent 服務，讓本機 Zabbix server
+能取得這台 VM 的狀態；不修改 Slurm。需要撤回時可執行
+`sudo systemctl stop zabbix-agent2`。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+sudo systemctl start zabbix-agent2
+```
+
+**實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。

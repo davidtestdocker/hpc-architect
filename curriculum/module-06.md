@@ -175,9 +175,16 @@ SubState=running
 UnitFileState=enabled
 ```
 
-**判讀：** 控制服務目前運行，且控制節點開機時會啟動它；
-`Restart=no` 表示程序運行中意外退出後，systemd 不會自動重啟。
-這是控制服務的現況，不能直接推論兩台運算節點的設定也相同。
+**判讀：** 這四個值分別回答不同問題：
+
+| 欄位與實際值 | 代表什麼 | 這次能得出的結論 |
+|---|---|---|
+| `Restart=no` | systemd 對這個服務的程序重啟策略 | `slurmctld` 程序退出後，systemd 不會依此設定自動再啟動它；這不影響下次整台 VM 開機時是否啟動。 |
+| `ActiveState=active` | 服務單元目前的大類狀態 | systemd 目前認為 `slurmctld` 處於啟用狀態；單看 `active` 還無法分辨程序是否仍在執行。 |
+| `SubState=running` | 大類狀態之下的具體狀態 | `slurmctld` 程序此刻正在運行；它與上一欄合起來是 `active/running`。 |
+| `UnitFileState=enabled` | 服務單元是否設為隨系統開機啟動 | 控制節點下次正常開機時，systemd 會嘗試啟動 `slurmctld`；它不代表程序失敗後會自動重啟。 |
+
+這是控制節點查詢當下的狀態與設定，不能直接推論兩台運算節點也相同。
 
 ### 核對 GPU 運算服務
 

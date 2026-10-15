@@ -551,3 +551,38 @@ sudo systemctl start zabbix-agent2
 **網頁結果：** [啟動 agent 後的儀表板](../project/monitoring/zabbix-server-agent.png)
 顯示主機可用性 `1 可用、0 無法使用`，並有 CPU 使用率資料；
 目前問題清單為空。這證明本機 agent 已能提供資料給 Zabbix server。
+
+## 12. 設定監控服務開機啟動
+
+**目的與影響：** 在 `compute-cpu02` 設定資料庫、Zabbix 伺服器、
+網頁服務及本機代理程式開機自動啟動。
+`enable` 修改 systemd 的開機設定，不會重啟目前正在執行的服務。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+sudo systemctl enable mariadb zabbix-server php-fpm httpd zabbix-agent2
+```
+
+**實際結果：** 已回報設定完成；未提供終端輸出。
+
+## 13. 持續收集 `slurmd` 的服務狀態
+
+目前 Zabbix 已收到 `compute-cpu02` 的主機資料；下一步讓它定期收集
+這台 VM 的 `slurmd` 狀態，作為 Slurm 服務告警的依據。
+已確認代理程式能讀到 `active`。建立監控項只修改 Zabbix 的監控設定，
+不會重啟或修改 `slurmd`。
+
+**待操作｜Zabbix 網頁：** 從「數據收集」→「主機」找到預設主機
+「Zabbix 伺服器」，進入該主機的監控項，建立以下項目：
+
+| 欄位 | 值 |
+|---|---|
+| 名稱 | `Slurm 運算服務狀態` |
+| 類型 | Zabbix 代理程式 |
+| 鍵值 | `systemd.unit.info[slurmd.service]` |
+| 資訊類型 | 字元 |
+| 更新間隔 | `1m` |
+
+其他欄位維持預設，按「新增」。這個監控項應定期收到 `active`；
+告警條件要在確認資料進入 Zabbix 後再建立。

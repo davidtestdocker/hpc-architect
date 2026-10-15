@@ -156,7 +156,7 @@ JOBID PARTITION STATE USER NODELIST
 自動重啟，取決於服務單元的 `Restart=`，與開機啟動是不同設定。
 先只讀取控制節點服務的四個欄位，不啟動或修改服務。
 
-**待由你執行的指令｜控制節點：**
+**已執行指令｜控制節點：**
 
 ```bash
 systemctl show slurmctld -p ActiveState -p SubState -p UnitFileState -p Restart
@@ -165,3 +165,38 @@ systemctl show slurmctld -p ActiveState -p SubState -p UnitFileState -p Restart
 `ActiveState` 與 `SubState` 用來看目前是否運行；
 `UnitFileState` 用來看是否設定開機啟動；
 `Restart` 用來看程序意外退出後 systemd 是否嘗試重啟。
+
+**實際輸出：**
+
+```text
+Restart=no
+ActiveState=active
+SubState=running
+UnitFileState=enabled
+```
+
+**判讀：** 控制服務目前運行，且控制節點開機時會啟動它；
+`Restart=no` 表示程序運行中意外退出後，systemd 不會自動重啟。
+這是控制服務的現況，不能直接推論兩台運算節點的設定也相同。
+
+### 核對 GPU 運算服務
+
+**目的與影響：** GPU VM 的 `slurmd` 接收排程器交付的工作。
+先從控制節點進入 `project/ansible`，讓 Ansible 自動讀該目錄的
+[ansible.cfg](../project/ansible/ansible.cfg) 與其中指定的 inventory；
+`gpu_compute` 群組會選到 `compute-gpu01`。
+`command` 模組在 GPU VM 執行只讀的 `systemctl show`，
+`-o` 把結果壓成一行。這不修改 GPU VM 的服務或設定；
+ad hoc `command` 若顯示 `CHANGED`，只代表模組執行過命令，
+仍須按實際命令內容判斷有無副作用。
+
+**待由你執行的指令｜控制節點：**
+
+```bash
+cd project/ansible
+ansible gpu_compute -m command -a 'systemctl show slurmd -p ActiveState -p SubState -p UnitFileState -p Restart' -o
+```
+
+第一行只切換到已有的 Ansible 工作目錄，不建立檔案；
+第二行查 GPU VM 的目前運行、開機啟動和自動重啟設定，
+再與控制服務比較。

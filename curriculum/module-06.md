@@ -758,7 +758,7 @@ cpu_ms=581.485 validation=PASS
 **判讀：** 工作在 `compute-cpu02` 完成，總和與已知答案一致。
 這是故障恢復後該節點實際接受工作的證據。
 
-**待執行指令｜控制節點，在 `compute-cpu01` 執行：**
+**已執行指令｜控制節點，在 `compute-cpu01` 執行：**
 
 ```bash
 sudo -iu a2264 srun -p cpu -w compute-cpu01 -N1 -n1 -c1 --mem=512M -t 00:02:00 \
@@ -768,5 +768,16 @@ sudo -iu a2264 srun -p cpu -w compute-cpu01 -N1 -n1 -c1 --mem=512M -t 00:02:00 \
 **目的與影響：** 在另一台獨立 CPU 運算節點申請相同的 1 CPU、512 MiB、
 最多 2 分鐘，並以 `--bcast` 將同一可執行檔放進該節點的 `/tmp` 執行。
 這會短暫占用 `compute-cpu01` 資源並留下暫存執行檔，不改設定或服務。
-若成功，核對主機、總和與 `validation`；兩台硬體不同，
-耗時不作為這次比較的判斷依據。
+**實際輸出：**
+
+```text
+host=compute-cpu01.novalocal grid=1024x1024 steps=200
+sum=65535.998004 expected=65535.998004 abs_error=0.000000
+cpu_ms=44855.795 validation=PASS
+```
+
+**判讀：** 兩台獨立 CPU 運算節點已用相同的 1 CPU、512 MiB 請求
+完成同一份熱擴散工作，總和一致且都回報 `PASS`。
+`compute-cpu01` 的實際主機名帶 `.novalocal` 後綴；
+這裡比較的是工作可完成與答案一致，兩台硬體不同，
+不以 `cpu_ms` 判定節點性能。故障期間的新工作轉移仍待驗證。

@@ -234,4 +234,9 @@ OpenStack 宿主機雖有 8 GiB，已承載 DevStack 和 `compute-cpu01`，因�
 |---|---|---|---|---|
 | `compute-cpu02` | AlmaLinux 10.2；2 vCPU、8 GiB 記憶體、40 GiB 磁碟 | `10.146.0.5` | `cpu`：2 CPU、4000 MiB 可排程記憶體 | `idle`；指定節點的工作已成功執行 |
 
+**新增檔案：** [四節點 Slurm 設定](../project/slurm/four-node-slurm.conf)、
+[四節點部署 playbook](../project/ansible/slurm-four-node.yml)。
+
+**修改檔案：** [Ansible inventory](../project/ansible/inventory/hosts.yml)，加入 `compute-cpu02`。
+
 Zabbix 尚未安裝。這台 VM 同時接 Slurm 工作；安裝監控後須依實際記憶體用量調整可排程工作或 VM 規格。

@@ -400,8 +400,17 @@ sudo mariadb -e "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE ta
 
 `tables` 是資料表數，`users` 是初始帳號數；兩者應有非零結果。
 
-**實際輸出：** `tables=203`、`users=2`。
-資料表與初始帳號均已寫入 `zabbix` 資料庫。
+**實際輸出：**
+
+```text
++--------+-------+
+| tables | users |
++--------+-------+
+|    203 |     2 |
++--------+-------+
+```
+
+**判讀：** 資料表與初始帳號均已寫入 `zabbix` 資料庫。
 
 ## 6. 設定 Zabbix server 連接資料庫
 
@@ -420,8 +429,14 @@ sudo grep -nE '^(DBName|DBUser)=' /etc/zabbix/zabbix_server.conf
 
 `-n` 顯示行號，方便接下來找到設定；`-E` 讓同一個條件比對兩個欄位。
 
-**實際輸出：** `107:DBName=zabbix`、`123:DBUser=zabbix`。
-Zabbix server 的資料庫名稱與帳號已對上剛建立的資料庫和使用者。
+**實際輸出：**
+
+```text
+107:DBName=zabbix
+123:DBUser=zabbix
+```
+
+**判讀：** Zabbix server 的資料庫名稱與帳號已對上剛建立的資料庫和使用者。
 
 **目的與影響：** 編輯 `compute-cpu02` 上 Zabbix server 實際讀取的設定檔，
 加入本機 `zabbix` 資料庫帳號的密碼。只修改這台 VM 的設定檔；

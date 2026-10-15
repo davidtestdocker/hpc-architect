@@ -515,6 +515,18 @@ Windows 瀏覽器開啟 `http://127.0.0.1:18081/zabbix/` 後進入
 目前顯示 MySQL、`localhost`、連接埠 `0`（使用預設埠）、
 資料庫 `zabbix`、使用者 `zabbix`；密碼欄尚未填入。
 
-**待操作｜網頁初始設定：** 在 Password 欄輸入 `zabbix`
-資料庫帳號的密碼，按 **Next step**。網頁前端需要用這組帳密
+**已操作｜網頁初始設定：** 在 Password 欄輸入 `zabbix`
+資料庫帳號的密碼，按 **Next step**。網頁前端使用這組帳密
 連接 MariaDB；密碼不記入本文件。
+
+**實際結果：** [畫面進入 Settings](../project/monitoring/image.png)，
+資料庫連線設定已通過，網頁初始設定尚未完成。
+
+## 10. 設定網頁顯示選項
+
+**已操作｜網頁初始設定：** 通過 Settings 頁，完成後續安裝畫面並登入。
+
+**實際結果：** [成功登入後的 Global view](../project/monitoring/success-login.png)
+顯示 `Zabbix server is running: Yes`，server 與 frontend 均為 `7.0.31`。
+畫面同時顯示 `Linux: Zabbix agent is not available`；
+目前只證明網頁登入與 server 運作，尚未證明 agent 監控可用。

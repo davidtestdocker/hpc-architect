@@ -291,28 +291,46 @@ Zabbix server 負責收集和判斷，資料庫保存歷史與事件，網頁介
 
 MariaDB 要先運行，後續才能建立 Zabbix 的資料庫與表格。
 
-**目的與影響：** 從控制節點啟動 `compute-cpu02` 上的 `mariadb` 服務；
-首次啟動會在該 VM 建立資料庫檔案，但不會建立 Zabbix 資料庫，
-也不會設定開機自動啟動。若需停止，可用 `systemctl stop mariadb`。
+**目的與影響：** 在 `compute-cpu02` 直接啟動 MariaDB。
+如果服務已在運行，`start` 不會重啟；這條指令不建立 Zabbix 資料庫，
+也不設定開機自動啟動。
 
-**已執行指令｜控制節點的 `project/ansible` 目錄：**
-
-```bash
-ansible monitor_cpu -b -m systemd -a 'name=mariadb state=started' -o
-```
-
-**實際結果：** `compute-cpu02 | CHANGED`，`changed=true`、`state=started`。
-輸出中附帶的 `status.ActiveState=inactive` 是執行前的狀態快照；
-這條指令沒有設定開機自啟，回傳的 `UnitFileState=disabled`。
-
-**判讀：** Ansible 回報啟動動作成功；再用短輸出核對服務目前的狀態。
-
-**待執行指令｜控制節點的 `project/ansible` 目錄：**
+**已執行指令｜`compute-cpu02`：**
 
 ```bash
-ansible monitor_cpu -m command -a 'systemctl show mariadb -p ActiveState -p SubState -p UnitFileState' -o
+sudo systemctl start mariadb
 ```
 
-`systemctl show` 只讀取 MariaDB 的目前狀態：`ActiveState` 看服務是否啟用、
-`SubState` 看程序是否在運行、`UnitFileState` 看開機自啟是否啟用。
-Ansible `command` 模組即使執行只讀查詢也會顯示 `CHANGED`，不代表修改服務。
+**實際結果：** 沒有終端輸出，指令返回 shell 提示字元。
+
+**判讀：** `start` 沒有報錯；是否正在運行，以服務狀態核對。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+sudo systemctl status mariadb
+```
+
+**實際輸出節錄：** `Loaded: loaded (...; disabled; preset: disabled)`；
+`Active: active (running) since Thu 2026-10-15 05:57:43 UTC; 27min ago`；
+`Main PID: 19455 (mariadbd)`；`Status: "Taking your SQL requests now..."`。
+
+**判讀：** MariaDB 正在運行且可接受 SQL 請求。啟動時間比本次
+`systemctl start` 早約 27 分鐘，因此本次沒有重啟它。
+`disabled` 表示尚未設定開機自動啟動。
+
+## 5. 建立 Zabbix 資料庫
+
+MariaDB 程序已運行，但 Zabbix 專用資料庫與帳號尚未建立。
+先進入新 VM 上的 MariaDB 命令列，後續 SQL 才會送到這台資料庫服務。
+
+**目的與影響：** 以本機管理者身分連上 MariaDB；進入互動式 SQL 提示字元，
+這一步本身不建立或修改資料庫。退出時可輸入 `exit`。
+
+**待執行指令｜`compute-cpu02`：**
+
+```bash
+sudo mariadb
+```
+
+成功時會進入 `MariaDB [(none)]>` 提示字元；接著再建立 Zabbix 資料庫。

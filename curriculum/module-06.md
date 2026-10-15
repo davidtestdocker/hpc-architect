@@ -284,8 +284,8 @@ Zabbix server 負責收集和判斷，資料庫保存歷史與事件，網頁介
 | `zabbix-selinux-policy` | `7.0.31-release1.el10` | 提供服務所需的 SELinux 政策 |
 | `zabbix-agent2` | `7.0.31-release1.el10` | 供這台 VM 提供自身的健康資料；其他節點尚未安裝 |
 
-**目前狀態：** 只完成套件安裝。資料庫尚未初始化，Zabbix 與網頁服務
-尚未設定或啟動；接下來由手動實作這些步驟。
+**目前狀態：** 套件已安裝；Zabbix 資料庫尚未建立，Zabbix 與網頁服務
+尚未設定或啟動。
 
 ## 4. 啟動資料庫
 
@@ -295,12 +295,24 @@ MariaDB 要先運行，後續才能建立 Zabbix 的資料庫與表格。
 首次啟動會在該 VM 建立資料庫檔案，但不會建立 Zabbix 資料庫，
 也不會設定開機自動啟動。若需停止，可用 `systemctl stop mariadb`。
 
-**待執行指令｜控制節點的 `project/ansible` 目錄：**
+**已執行指令｜控制節點的 `project/ansible` 目錄：**
 
 ```bash
 ansible monitor_cpu -b -m systemd -a 'name=mariadb state=started' -o
 ```
 
-`-b` 取得啟動服務所需權限；`state=started` 讓服務現在運作，
-沒有 `enabled=yes`，因此尚未改變開機自動啟動設定。
-回傳後再記錄服務啟動結果與狀態。
+**實際結果：** `compute-cpu02 | CHANGED`，`changed=true`、`state=started`。
+輸出中附帶的 `status.ActiveState=inactive` 是執行前的狀態快照；
+這條指令沒有設定開機自啟，回傳的 `UnitFileState=disabled`。
+
+**判讀：** Ansible 回報啟動動作成功；再用短輸出核對服務目前的狀態。
+
+**待執行指令｜控制節點的 `project/ansible` 目錄：**
+
+```bash
+ansible monitor_cpu -m command -a 'systemctl show mariadb -p ActiveState -p SubState -p UnitFileState' -o
+```
+
+`systemctl show` 只讀取 MariaDB 的目前狀態：`ActiveState` 看服務是否啟用、
+`SubState` 看程序是否在運行、`UnitFileState` 看開機自啟是否啟用。
+Ansible `command` 模組即使執行只讀查詢也會顯示 `CHANGED`，不代表修改服務。

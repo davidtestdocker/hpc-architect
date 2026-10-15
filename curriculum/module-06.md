@@ -264,27 +264,43 @@ instance-20260923-104239 idle 2 3000 debug
 
 **修改檔案：** [Ansible inventory](../project/ansible/inventory/hosts.yml)，加入 `compute-cpu02`。
 
-Zabbix 尚未安裝。這台 VM 同時接 Slurm 工作；安裝監控後須依實際記憶體用量調整可排程工作或 VM 規格。
+這台 VM 同時接 Slurm 工作；啟動監控後須依實際記憶體用量調整可排程工作或 VM 規格。
 
-## 3. 建立 Zabbix 套件來源
+## 3. 安裝 Zabbix 套件
 
 Slurm 已能接收並執行工作，接下來需要 Zabbix 持續收集狀態與記錄告警。
 Zabbix server 負責收集和判斷，資料庫保存歷史與事件，網頁介面用來查看；
 之後再讓各節點提供健康資料。
-[Zabbix 官方 AlmaLinux 10 套件庫](https://repo.zabbix.com/zabbix/7.0/alma/10/x86_64/)
-提供 7.0 LTS 的 server、網頁介面與 agent 套件。
+已從[Zabbix 官方 AlmaLinux 10 套件庫](https://repo.zabbix.com/zabbix/7.0/alma/10/x86_64/)
+在 `compute-cpu02` 安裝以下套件；版本經 VM 的套件資料庫核對。
 
-**目的與影響：** 從控制節點的 `project/ansible` 對 `compute-cpu02`
-安裝官方 `zabbix-release` 套件，使新 VM 增加 Zabbix 7.0 LTS 套件庫。
-這會修改新 VM 的套件資料庫及 `/etc/yum.repos.d/` 下的來源設定；
-本步不安裝或啟動 Zabbix 服務。若需復原，可從新 VM 移除該 release 套件。
+| 套件 | 已安裝版本 | 用途 |
+|---|---|---|
+| `zabbix-release` | `7.0-7.el10` | 加入官方 7.0 LTS 套件來源與簽章公鑰 |
+| `zabbix-server-mysql` | `7.0.31-release1.el10` | 收集資料、計算告警條件；使用 MariaDB 後端 |
+| `mariadb-server` | `10.11.18-1.el10_2.alma.2` | 儲存監控歷史和事件 |
+| `zabbix-web`、`zabbix-web-mysql`、`zabbix-apache-conf` | `7.0.31-release1.el10` | Zabbix 網頁介面與 Apache 設定；相依套件也安裝了 `httpd 2.4.63`、`PHP-FPM 8.4.24` |
+| `zabbix-sql-scripts` | `7.0.31-release1.el10` | 提供稍後建立資料庫表格的 SQL，尚未匯入 |
+| `zabbix-selinux-policy` | `7.0.31-release1.el10` | 提供服務所需的 SELinux 政策 |
+| `zabbix-agent2` | `7.0.31-release1.el10` | 供這台 VM 提供自身的健康資料；其他節點尚未安裝 |
+
+**目前狀態：** 只完成套件安裝。資料庫尚未初始化，Zabbix 與網頁服務
+尚未設定或啟動；接下來由手動實作這些步驟。
+
+## 4. 啟動資料庫
+
+MariaDB 要先運行，後續才能建立 Zabbix 的資料庫與表格。
+
+**目的與影響：** 從控制節點啟動 `compute-cpu02` 上的 `mariadb` 服務；
+首次啟動會在該 VM 建立資料庫檔案，但不會建立 Zabbix 資料庫，
+也不會設定開機自動啟動。若需停止，可用 `systemctl stop mariadb`。
 
 **待執行指令｜控制節點的 `project/ansible` 目錄：**
 
 ```bash
-ansible monitor_cpu -b -m dnf -a 'name=https://repo.zabbix.com/zabbix/7.0/alma/10/x86_64/zabbix-release-latest-7.0.el10.noarch.rpm state=present' -o
+ansible monitor_cpu -b -m systemd -a 'name=mariadb state=started' -o
 ```
 
-`monitor_cpu` 只選新 VM，`-b` 以管理者權限安裝，`-m dnf` 使用
-Ansible 套件模組；`state=present` 表示已安裝時不重複安裝。
-執行後核對 Ansible 是否回報 `failed=0`，再查實際套件來源。
+`-b` 取得啟動服務所需權限；`state=started` 讓服務現在運作，
+沒有 `enabled=yes`，因此尚未改變開機自動啟動設定。
+回傳後再記錄服務啟動結果與狀態。

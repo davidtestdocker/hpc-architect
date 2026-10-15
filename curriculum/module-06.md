@@ -466,11 +466,42 @@ sudo systemctl start zabbix-server
 
 **實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。
 
-**目的與影響：** 只讀查詢 Zabbix server 目前是否仍在執行；
-輸出 `active` 代表服務正在執行，其他結果則需查看服務錯誤。
+Zabbix server 目前正在執行。
 
-**待執行指令｜`compute-cpu02`：**
+## 7. 啟動 Zabbix 網頁介面
+
+Zabbix server 已執行；網頁介面還需要 `php-fpm` 執行 PHP 程式，
+以及 `httpd` 接收瀏覽器的 HTTP 請求。
+
+**目的與影響：** 在 `compute-cpu02` 啟動網頁介面的兩個服務；
+這會讓 HTTP 服務在 VM 上開始監聽。需要停止時可執行
+`sudo systemctl stop httpd php-fpm`。
+
+**已執行指令｜`compute-cpu02`：**
 
 ```bash
-systemctl is-active zabbix-server
+sudo systemctl start php-fpm httpd
 ```
+
+**實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。
+
+## 8. 從自己的電腦開啟網頁初始設定
+
+`compute-cpu02` 沒有外部 IP。從自己的電腦建立 SSH 轉接，
+讓本機瀏覽器透過控制節點連到 `compute-cpu02` 的 HTTP 服務。
+轉接只綁定自己電腦的 `127.0.0.1:18081`，不開放 VM 的公開 HTTP 入站。
+
+**待執行指令｜自己電腦的終端：**
+
+```bash
+gcloud compute ssh a2264@instance-20260923-104239 \
+  --project=project-78b8a95c-a2c0-461f-a08 \
+  --zone=asia-east1-b \
+  --ssh-flag="-N" \
+  --ssh-flag="-L 127.0.0.1:18081:10.146.0.5:80"
+```
+
+第一行指定控制節點，第二、三行指定 GCP 專案與區域；
+`-N` 保持連線但不開遠端 shell，`-L` 將自己電腦的 18081 轉到
+`compute-cpu02` 的 80。連線保持執行時，瀏覽器開啟
+`http://127.0.0.1:18081/zabbix/` 進入初始設定頁。

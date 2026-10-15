@@ -606,16 +606,9 @@ systemd.unit.info[slurmd.service]             [s|active]
 更新間隔 `1m`、歷史資料保留 `31d`、類型 `Zabbix agent`，
 狀態 `Enabled`。
 
-**最新資料：** 在「監測」的最新資料頁，這個項目顯示：
-
-```text
-Zabbix server
-Slurm 運算服務狀態
-18s	active
-History
-```
-
-**判讀：** 上次收集距畫面顯示時為 `18s`，最新值 `active`；
+**實際畫面：** [最新資料中的 `slurmd` 狀態](../project/monitoring/slurmed-service.png)。
+畫面篩選主機 `Zabbix server` 和項目 `Slurm 運算服務狀態`，
+顯示上次檢查為 `25s` 前、最新值為 `active`。
 Zabbix 伺服器已收到這個監控項的資料。
 
 ## 14. 設定 `slurmd` 停止時的告警條件
@@ -624,7 +617,7 @@ Zabbix 伺服器已收到這個監控項的資料。
 這只在 Zabbix 建立告警規則，不會停止或重啟 `slurmd`。
 狀態恢復 `active` 時，同一條規則會回到正常。
 
-**待操作｜Zabbix 網頁：** 從「數據收集」→「主機」找到
+**已操作｜Zabbix 網頁：** 從「數據收集」→「主機」找到
 「Zabbix 伺服器」，進入觸發器並建立以下規則：
 
 | 欄位 | 值 |
@@ -633,4 +626,39 @@ Zabbix 伺服器已收到這個監控項的資料。
 | 嚴重程度 | 高 |
 | 表達式 | `last(/Zabbix server/systemd.unit.info[slurmd.service])<>"active"` |
 
-其他欄位維持預設，按「新增」。
+**實際畫面：** [觸發器建立結果](../project/monitoring/trigger-sluremd-service.png)。
+頁面顯示 `Trigger added`；規則嚴重程度為 `High`、狀態為 `Enabled`，
+目前值為 `OK`。這確認規則已建立，故障時的 `Problem` 與恢復事件
+仍需實際演練核對。
+
+## 15. 演練 `compute-cpu02` 的 `slurmd` 停止與恢復
+
+已確認目前沒有要保留的工作。這次只停止 `compute-cpu02` 的
+`slurmd`，讓該節點暫時不能接 Slurm 工作；Zabbix 伺服器、
+代理程式及網頁服務會繼續執行，以記錄問題與恢復事件。
+不修改設定檔或雲端資源。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+sudo systemctl stop slurmd
+```
+
+**實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。
+
+**Zabbix 問題事件：** [監測頁的故障畫面](../project/monitoring/slurmd-problem.png)
+顯示 `compute-cpu02：slurmd 未執行`，嚴重程度 `High`、狀態 `PROBLEM`，
+畫面記錄的發生時間為 `11:12:05 AM`。觸發器已偵測到這次服務停止。
+
+**目的與影響：** 在 `compute-cpu02` 重新啟動 `slurmd`，讓該 VM
+恢復向 Slurm 控制節點回報狀態；Zabbix 預期於下一次收集後恢復為正常。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+sudo systemctl start slurmd
+```
+
+**實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。
+
+若 Slurm 控制節點仍保留節點 `DOWN` 狀態，再依實際狀態恢復排程。

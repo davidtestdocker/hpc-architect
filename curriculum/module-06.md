@@ -487,21 +487,34 @@ sudo systemctl start php-fpm httpd
 
 ## 8. 從自己的電腦開啟網頁初始設定
 
-`compute-cpu02` 沒有外部 IP。從自己的電腦建立 SSH 轉接，
-讓本機瀏覽器透過控制節點連到 `compute-cpu02` 的 HTTP 服務。
-轉接只綁定自己電腦的 `127.0.0.1:18081`，不開放 VM 的公開 HTTP 入站。
+`compute-cpu02` 沒有外部 IP。Windows 上的 `18081` 已由 VS Code
+監聽；沿用 VS Code 對控制節點的埠轉送，從控制節點建立到
+`compute-cpu02` 的 SSH 轉接。Windows 上不再啟動另一個 `ssh -L`。
 
-**待執行指令｜自己電腦的終端：**
+**目的與影響：** 由控制節點登入 `compute-cpu02`，把控制節點的
+`127.0.0.1:18081` 轉到監控 VM 的 `127.0.0.1:80`。
+只建立持續到終端結束的連線，不改 VM 或防火牆。
+
+**已執行指令｜控制節點的 `a2264` shell：**
 
 ```bash
-gcloud compute ssh a2264@instance-20260923-104239 \
-  --project=project-78b8a95c-a2c0-461f-a08 \
-  --zone=asia-east1-b \
-  --ssh-flag="-N" \
-  --ssh-flag="-L 127.0.0.1:18081:10.146.0.5:80"
+ssh -i ~/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -N -L 127.0.0.1:18081:127.0.0.1:80 a2264@10.146.0.5
 ```
 
-第一行指定控制節點，第二、三行指定 GCP 專案與區域；
-`-N` 保持連線但不開遠端 shell，`-L` 將自己電腦的 18081 轉到
-`compute-cpu02` 的 80。連線保持執行時，瀏覽器開啟
-`http://127.0.0.1:18081/zabbix/` 進入初始設定頁。
+`-i` 指定 Ansible inventory 使用的 SSH 金鑰；`-N` 保持連線但不開遠端 shell；
+`-L` 指定控制節點的本機埠和監控 VM 的網頁埠。
+
+**實際結果：** SSH 指令保持執行，沒有終端輸出；
+Windows 瀏覽器開啟 `http://127.0.0.1:18081/zabbix/` 後進入
+`http://127.0.0.1:18081/zabbix/setup.php` 安裝頁面。
+網頁已可達，初始設定尚未完成。
+
+## 9. 設定網頁前端的資料庫連線
+
+**實際畫面：** [資料庫連線設定頁](../project/monitoring/zabbix-prerequisites.png)。
+目前顯示 MySQL、`localhost`、連接埠 `0`（使用預設埠）、
+資料庫 `zabbix`、使用者 `zabbix`；密碼欄尚未填入。
+
+**待操作｜網頁初始設定：** 在 Password 欄輸入 `zabbix`
+資料庫帳號的密碼，按 **Next step**。網頁前端需要用這組帳密
+連接 MariaDB；密碼不記入本文件。

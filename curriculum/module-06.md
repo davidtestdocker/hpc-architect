@@ -330,14 +330,26 @@ CREATE DATABASE zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 **實際結果：** `Query OK, 1 row affected (0.001 sec)`。
 `zabbix` 資料庫已建立，帳號與資料表尚未建立。
 
-接下來要建立含密碼的資料庫帳號。
-MariaDB 命令列可能把 SQL 存入歷史檔，因此先退出，再用不寫入 SQL
-歷史的方式重新登入；已建立的資料庫不受影響。
+**目的與影響：** 在目前的 MariaDB 連線建立 `zabbix` 資料庫帳號，
+只允許從這台 VM 的 `localhost` 使用。這一步只建立帳號，
+還不授予它操作 `zabbix` 資料庫的權限。
+
+**已執行指令｜`compute-cpu02` 的 MariaDB 提示字元：**
+
+```sql
+CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '<DB_PASSWORD>';
+```
+
+**實際結果：** `Query OK, 0 rows affected (0.004 sec)`；
+`zabbix`@`localhost` 帳號已建立。實際密碼不寫入文件。
+
+**目的與影響：** 將帳號密碼換成另一組自行設定的密碼。
+這只更新資料庫帳號的驗證資訊，不改動 `zabbix` 資料庫內容。
 
 **待執行指令｜`compute-cpu02` 的 MariaDB 提示字元：**
 
-```text
-exit
+```sql
+ALTER USER 'zabbix'@'localhost' IDENTIFIED BY '<NEW_DB_PASSWORD>';
 ```
 
-退出後會回到 `compute-cpu02` 的 shell 提示字元。
+執行前替換 `<NEW_DB_PASSWORD>`；回傳時只提供執行結果，勿貼密碼。

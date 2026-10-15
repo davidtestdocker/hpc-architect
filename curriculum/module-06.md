@@ -442,12 +442,35 @@ sudo grep -nE '^(DBName|DBUser)=' /etc/zabbix/zabbix_server.conf
 加入本機 `zabbix` 資料庫帳號的密碼。只修改這台 VM 的設定檔；
 密碼不寫進課程文件或命令列。
 
-**待執行指令｜`compute-cpu02`：**
+**已執行指令｜`compute-cpu02`：**
 
 ```bash
 sudo vi /etc/zabbix/zabbix_server.conf
 ```
 
-在編輯器內尋找 `DBPassword=`，將該設定改成
-`DBPassword=<建立 zabbix 資料庫帳號時使用的密碼>` 並儲存。
-`<...>` 是說明用佔位文字，不要原樣寫入設定檔。
+在編輯器內將 `DBPassword=` 設為建立 `zabbix` 資料庫帳號時使用的密碼；
+密碼不記入文件。
+
+**實際結果：** 已回報密碼設定修改完成；編輯器沒有可記錄的終端輸出。
+目前尚未以 Zabbix server 啟動結果驗證資料庫連線。
+
+**目的與影響：** 啟動 `compute-cpu02` 的 Zabbix server，
+讓它讀取上述設定並連接本機 MariaDB；這會啟動監控服務，
+可用 `sudo systemctl stop zabbix-server` 停止。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+sudo systemctl start zabbix-server
+```
+
+**實際結果：** 指令返回 shell，沒有終端輸出或錯誤訊息。
+
+**目的與影響：** 只讀查詢 Zabbix server 目前是否仍在執行；
+輸出 `active` 代表服務正在執行，其他結果則需查看服務錯誤。
+
+**待執行指令｜`compute-cpu02`：**
+
+```bash
+systemctl is-active zabbix-server
+```

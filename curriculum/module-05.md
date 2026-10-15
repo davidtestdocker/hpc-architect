@@ -14,7 +14,7 @@
 ```mermaid
 flowchart LR
     C["GCP 控制節點<br/>10.140.0.2<br/>slurmctld / MUNGE / NFS"]
-    G["GCP compute-gpu01<br/>10.146.0.3<br/>slurmd / NVIDIA L4<br/>目前關機"]
+    G["GCP compute-gpu01<br/>10.146.0.3<br/>slurmd / NVIDIA L4"]
     H["GCP openstack-lab01<br/>10.146.0.4<br/>DevStack / NAT 轉送"]
     F["DevStack 浮動 IP<br/>172.24.4.121"]
     V["OpenStack compute-cpu01<br/>10.0.0.32<br/>AlmaLinux 10.2 / slurmd"]
@@ -28,7 +28,7 @@ flowchart LR
 | 節點 | 角色與資源 | 模組 05 的實際結果 |
 |---|---|---|
 | 控制節點 `10.140.0.2` | `slurmctld`、MUNGE、NFS 伺服器；`debug` 分區 | 管理兩個運算節點的 Slurm 設定與工作提交 |
-| `compute-gpu01` `10.146.0.3` | GCP 運算 VM；4 邏輯 CPU、1 張 NVIDIA L4；`gpu` 分區 | 曾透過 Slurm 完成 L4 熱擴散工作；目前關機 |
+| `compute-gpu01` `10.146.0.3` | GCP 運算 VM；4 邏輯 CPU、1 張 NVIDIA L4；`gpu` 分區 | 先前完成 L4 熱擴散工作；開機恢復後核對為 `idle`、4 CPU、14000 MiB |
 | `openstack-lab01` `10.146.0.4` | GCP VM，執行 DevStack 與 CPU 客體；提供 NAT 轉送 | 將控制節點連向 `10.146.0.4:6818` 的流量轉入 CPU 客體 |
 | `compute-cpu01` `10.0.0.32` | OpenStack VM；AlmaLinux 10.2、1 vCPU、2 GiB RAM、20 GiB 磁碟；`cpu` 分區 | MUNGE 與 Slurm 以套件安裝；最後一次 Slurm 核對為 `IDLE`、1 CPU、1400 MiB；`srun hostname` 回報 `compute-cpu01.novalocal` |
 
@@ -38,20 +38,25 @@ flowchart LR
 客體連回控制節點 TCP `6817` 則經宿主機 NAT。
 控制節點對 GPU 節點提供 NFS 共享路徑；本次 CPU 客體沒有掛載 NFS。
 
-**目前狀態：** CPU 客體的 Slurm 工作已驗證；GPU 節點目前關機。
-表中的 `IDLE` 是最後一次實測，並非即時狀態。
+**最近一次核對：** CPU 客體的 Slurm 基本工作成功；
+GPU 節點重新加入後為 `idle`。表中的節點狀態是最近一次實測，
+並非即時保證。GPU 重新加入這次以節點可排程為驗收，
+未重跑 GPU 計算工作。
 
 ### 每次開機後恢復模組 05 網路
 
 每天啟動 GCP 控制節點與 `openstack-lab01` 後，可以請 Codex：
 「依模組 05 的開機恢復流程，核對現況、恢復網路並驗證 CPU Slurm 工作。」
-這是**待執行流程**，下面的恢復腳本尚未在重啟後實測。
+下列宿主機網路恢復腳本已在重啟後實測；
+每次執行仍須先核對 VM、客體和浮動 IP 的實際狀態。
 
 1. 先核對 `openstack-lab01` 的 DevStack 服務、`compute-cpu01` 的
    `ACTIVE` 狀態，以及浮動 IP `172.24.4.121` 是否仍關聯
    客體 `10.0.0.32`；如有變動，先依實際位址修正流程，
    不把舊 IP 規則套到其他 VM。
-2. 在控制節點工作樹執行下列**待執行指令**。新增的
+   本次核對為 DevStack 相關服務 `active running`、客體 `ACTIVE`，
+   固定 IP `10.0.0.32` 與浮動 IP `172.24.4.121` 的關聯仍在。
+2. 在控制節點工作樹執行下列**已實測的恢復指令**。
    [restore-module05-network.sh](../project/openstack/restore-module05-network.sh)
    透過 SSH 傳給 `openstack-lab01` 的 root shell，沒有複製到宿主機；
    它只在缺少時補上 `br-ex` 的 `172.24.4.1/24`、IPv4 轉送、
@@ -65,6 +70,9 @@ flowchart LR
    sudo -u a2264 -- ssh -i /home/a2264/.ssh/hpc_gpu_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 a2264@10.146.0.4 'sudo bash -s' < project/openstack/restore-module05-network.sh
    ```
 
+   **實際結果與判讀：** 腳本回報「宿主機網路規則已恢復或原本存在」，
+   退出碼為 0；這只確認腳本完成，客體管理連線和 Slurm 工作仍須另驗。
+
 3. 從控制節點核對 Ansible 能登入 CPU 客體，再核對 `sinfo`
    是否顯示 `compute-cpu01` 可接工作，最後提交下列已在模組 05
    成功過的基本工作。預期輸出 `compute-cpu01.novalocal`；
@@ -77,17 +85,87 @@ flowchart LR
    sudo -iu a2264 srun --partition=cpu --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=256M --time=00:05:00 --chdir=/tmp /usr/bin/hostname
    ```
 
-這份流程恢復 CPU 客體的宿主機網路。GPU VM 若也開機，
-先核對它是否仍持有舊版 Slurm 設定，再依當時狀態更新並驗證；
-不能把 CPU 工作成功當成 GPU 節點也已恢復。
+   **實際結果與判讀：** Ansible `ping` 回報 `compute-cpu01 | SUCCESS`、
+   `ping: pong`；`sinfo` 顯示 `compute-cpu01 idle 1 1400 cpu`；
+   `srun` 回報 `compute-cpu01.novalocal`、退出碼為 0。
+   管理連線、節點可排程狀態及 CPU 基本工作均已恢復。
+
+這份流程恢復 CPU 客體的宿主機網路。若 Nova 顯示客體 `ACTIVE`
+但宿主機 libvirt 顯示 `shut off`，須先恢復客體電源並確認實際開機；
+不能只憑 Nova 狀態判定 SSH 或 Slurm 可用。
+本次客體開機時因 `/boot`、`/boot/efi` 裝置等待逾時進入 emergency mode；
+掛載 UUID 與實際磁碟相符，但持久修正與再次開機驗證尚未完成。
+GPU VM 的恢復步驟如下；CPU 工作成功不能代表 GPU 節點已恢復。
+
+### GPU VM 開機後重新加入 Slurm
+
+**目的與影響：** `compute-gpu01` 已開機，`slurmd` 正在執行，
+但控制端因節點重開機將它保留在 `DOWN`；GPU VM 自己的
+`/etc/slurm/slurm.conf` 仍是舊兩節點版。
+控制節點工作樹中的
+[three-node-slurm.conf](../project/slurm/three-node-slurm.conf)
+已是控制端正在使用的三節點版。
+下一條指令會由控制節點執行
+[slurm-gpu-rejoin.yml](../project/ansible/slurm-gpu-rejoin.yml)，
+只將這份來源檔複製到 GPU VM 自己的 `/etc/slurm/slurm.conf`，
+保留遠端舊檔備份，核對既有 `gres.conf` 對應的 L4，
+設定真的變更時才重啟 GPU VM 的 `slurmd`；
+不修改控制節點或 CPU 客體的設定。
+
+**已執行指令｜控制節點工作樹：**
+
+```bash
+ansible-playbook -i project/ansible/inventory/hosts.yml project/ansible/slurm-gpu-rejoin.yml
+```
+
+**實際結果：** 正式執行將三節點設定複製到 GPU VM，
+`slurmd -G -f /etc/slurm/slurm.conf` 退出碼為 0，
+回報 `Gres Name=gpu Type=nvidia_l4 Count=1 File=/dev/nvidia0`。
+設定變更觸發 `slurmd` 重啟；摘要為
+`compute-gpu01 : ok=5 changed=2 unreachable=0 failed=0`。
+
+**判讀：** 控制節點與 GPU VM 現在使用相同三節點設定，
+而 GPU VM 的 `gres.conf` 對應一張 L4。
+控制端仍以 `Node unexpectedly rebooted` 將節點保留在 `DOWN`，
+因此依該原因解除排程狀態。
+
+**已執行指令｜控制節點：**
+
+```bash
+scontrol update NodeName=compute-gpu01 State=RESUME
+```
+
+這條指令只改控制端的節點排程狀態，不修改 VM 設定或啟動服務；
+執行前已核對 `slurmd` 重新註冊、版本為 `26.05.4`，
+且 `DOWN` 原因確實是節點重開機。
+**實際結果：** 指令沒有終端輸出，退出碼為 0；
+接著以 `sinfo` 核對是否真的可排程。
+
+**已執行指令｜控制節點：**
+
+```bash
+sinfo -N -o '%N %T %c %m %P'
+```
+
+**實際輸出：**
+
+```text
+compute-cpu01 idle 1 1400 cpu
+compute-gpu01 idle 4 14000 gpu
+instance-20260923-104239 idle 2 3000 debug*
+```
+
+**判讀：** GPU VM 已可由 Slurm 接工作；
+本次開機恢復驗收到節點 `idle` 為止，未重新提交 GPU 計算工作。
 
 下文依序保留原有 GCP 節點的 Ansible 部署與 GPU 工作結果、
 OpenStack CPU VM 的建立，以及 CPU 節點加入 Slurm 的實際指令與輸出。
 
 ## 管理位置與本次部署範圍
 
-**執行位置：** 所有 Ansible 指令都在**控制節點**的
-`/root/hpc-arch/project/ansible` 目錄以 root 執行。
+**執行位置：** Ansible 指令都在**控制節點**以 root 執行；
+原有部署步驟使用 `/root/hpc-arch/project/ansible` 目錄，
+上方開機恢復指令則從 `/root/hpc-arch` 工作樹根目錄執行。
 [ansible.cfg](../project/ansible/ansible.cfg) 指向
 [hosts.yml](../project/ansible/inventory/hosts.yml)，
 其中 `controller` 是控制節點本機，`gpu_compute` 是透過既有 SSH 金鑰

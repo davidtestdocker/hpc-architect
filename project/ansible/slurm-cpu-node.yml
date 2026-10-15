@@ -1,7 +1,7 @@
 ---
 # 從控制節點執行：先準備 CPU 客體，再更新控制服務，最後啟動 CPU 客體 slurmd。
 # 來源是 project/slurm/three-node-slurm.conf；兩台各持有 /etc/slurm/slurm.conf。
-# 不連線到目前關機的 GPU VM；--syntax-check 與 --check 不會部署設定或啟動服務。
+# 不連線到 GPU VM；--syntax-check 與 --check 不會部署設定或啟動服務。
 - name: 備妥 CPU 客體的 Slurm 設定
   hosts: cpu_compute
   become: true

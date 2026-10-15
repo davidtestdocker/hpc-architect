@@ -1,0 +1,53 @@
+---
+# 在控制節點執行，讓已開機的 GPU VM 使用目前的三節點 Slurm 設定。
+# 來源為工作樹的 ../slurm/three-node-slurm.conf；目標只在 GPU VM 的 /etc/slurm/slurm.conf。
+# 控制節點和 CPU 客體的設定不會被本檔改動；舊設定由 copy 的 backup 留在 GPU VM。
+- name: 讓 GPU VM 重新加入三節點 Slurm 設定
+  hosts: gpu_compute
+  become: true
+  gather_facts: false
+  tasks:
+    # copy 真有變更時才留下備份，並記錄 changed 供後續決定是否重啟服務。
+    - name: 部署 GPU VM 的三節點設定
+      ansible.builtin.copy:
+        src: ../slurm/three-node-slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: gpu_slurm_config_result
+
+    # -G 讀取剛部署的 slurm.conf 和 VM 既有的 gres.conf；失敗時不重啟服務。
+    # 自動核對退出碼、L4 名稱與 error:；輸出仍須人工核對數量及裝置路徑。
+    - name: 核對 GPU VM 的 L4 資源對應
+      ansible.builtin.command:
+        argv:
+          - slurmd
+          - -G
+          - -f
+          - /etc/slurm/slurm.conf
+      register: gpu_gres_probe
+      changed_when: false
+      failed_when: >-
+        gpu_gres_probe.rc != 0 or
+        'nvidia_l4' not in (gpu_gres_probe.stdout ~ gpu_gres_probe.stderr) or
+        'error:' in ((gpu_gres_probe.stdout ~ gpu_gres_probe.stderr) | lower)
+
+    - name: 顯示 L4 資源核對結果
+      ansible.builtin.debug:
+        var: gpu_gres_probe
+
+    # 設定有變更時才重啟，讓 slurmd 重新讀取；重跑時不打斷既有工作。
+    - name: 設定變更時重啟 GPU VM 的 slurmd
+      ansible.builtin.service:
+        name: slurmd
+        state: restarted
+      when: gpu_slurm_config_result.changed
+
+    # enabled 確保 VM 下次開機會啟動服務；started 不會重啟已運行的服務。
+    - name: 確保 GPU VM 的 slurmd 已啟動
+      ansible.builtin.service:
+        name: slurmd
+        state: started
+        enabled: true

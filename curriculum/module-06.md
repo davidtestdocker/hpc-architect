@@ -209,13 +209,48 @@ UnitFileState=enabled
 ad hoc `command` 若顯示 `CHANGED`，只代表模組執行過命令，
 仍須按實際命令內容判斷有無副作用。
 
-**待由你執行的指令｜控制節點：**
+**已執行指令｜控制節點的 `project/ansible` 目錄：**
 
 ```bash
-cd project/ansible
 ansible gpu_compute -m command -a 'systemctl show slurmd -p ActiveState -p SubState -p UnitFileState -p Restart' -o
 ```
 
-第一行只切換到已有的 Ansible 工作目錄，不建立檔案；
-第二行查 GPU VM 的目前運行、開機啟動和自動重啟設定，
-再與控制服務比較。
+這條指令查 GPU VM 的目前運行、開機啟動和自動重啟設定。
+`-o` 讓四個欄位在同一行輸出，欄位之間以 `\n` 表示換行。
+
+**實際輸出：**
+
+```text
+compute-gpu01 | CHANGED | rc=0 | (stdout) Restart=no\nActiveState=active\nSubState=running\nUnitFileState=enabled
+```
+
+**判讀：** `rc=0` 表示遠端查詢成功。Ansible 的 `command` 模組顯示
+`CHANGED`，但這次執行的是只讀的 `systemctl show`，沒有更改服務。
+
+| 欄位與實際值 | 這次能得出的結論 |
+|---|---|
+| `Restart=no` | GPU VM 的 `slurmd` 程序退出後，systemd 不會依此設定自動重啟。 |
+| `ActiveState=active` | GPU VM 上的服務單元目前處於啟用狀態；單看此值不能確認程序正在運行。 |
+| `SubState=running` | GPU VM 上的 `slurmd` 程序目前正在運行。 |
+| `UnitFileState=enabled` | GPU VM 下次正常開機時，systemd 會嘗試啟動 `slurmd`；這不等於程序退出後自動重啟。 |
+
+這是 GPU VM 的服務狀態，不能據此推論 CPU 客體的 `slurmd` 設定。
+
+### 核對 CPU 運算服務
+
+**目的與影響：** 控制節點的 Ansible inventory 把 OpenStack CPU 客體
+`compute-cpu01` 列在 `cpu_compute` 群組。從 `project/ansible` 執行下列
+指令時，Ansible 會依 `ansible.cfg` 找到 inventory，經既有 SSH 路徑
+連到 CPU 客體，在該客體執行只讀的 `systemctl show`。
+它只查 `slurmd` 的目前運行、開機啟動和程序退出後的重啟設定；
+不更改 VM、Slurm 工作或服務，不需復原。
+
+**待執行指令｜控制節點的 `project/ansible` 目錄：**
+
+```bash
+ansible cpu_compute -m command -a 'systemctl show slurmd -p ActiveState -p SubState -p UnitFileState -p Restart' -o
+```
+
+`cpu_compute` 選 CPU 客體，`-m command` 在客體執行後面指定的命令；
+`-o` 把結果壓成一行。收到完整輸出後，逐欄判讀 CPU 客體的四個值，
+並與控制節點及 GPU VM 的結果比較。

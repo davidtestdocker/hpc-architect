@@ -131,7 +131,7 @@ instance-20260923-104239 idle 2 3000 debug*
 欄位依序是工作 ID、分區、狀態、提交者及分配節點。
 這條指令不提交、取消或更改工作。
 
-**待由你執行的指令｜控制節點：**
+**已執行指令｜控制節點：**
 
 ```bash
 squeue -o '%i %P %T %u %N'
@@ -139,3 +139,29 @@ squeue -o '%i %P %T %u %N'
 
 若只有標題而沒有工作列，表示查詢當下佇列是空的；
 若有工作，先讀狀態與節點，再決定下一步。
+
+**實際輸出：**
+
+```text
+JOBID PARTITION STATE USER NODELIST
+```
+
+**判讀：** 查詢當下沒有排隊或執行中的 Slurm 工作。
+這是安排後續演練的基準，不代表演練時佇列必然仍為空。
+
+### 核對控制服務的啟動與重啟設定
+
+**目的與影響：** `slurmctld` 在控制節點接收工作並維護節點狀態。
+`slurm.conf` 決定叢集資源與排程設定；程序退出後是否由 systemd
+自動重啟，取決於服務單元的 `Restart=`，與開機啟動是不同設定。
+先只讀取控制節點服務的四個欄位，不啟動或修改服務。
+
+**待由你執行的指令｜控制節點：**
+
+```bash
+systemctl show slurmctld -p ActiveState -p SubState -p UnitFileState -p Restart
+```
+
+`ActiveState` 與 `SubState` 用來看目前是否運行；
+`UnitFileState` 用來看是否設定開機啟動；
+`Restart` 用來看程序意外退出後 systemd 是否嘗試重啟。

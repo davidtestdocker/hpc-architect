@@ -289,11 +289,8 @@ Zabbix server 負責收集和判斷，資料庫保存歷史與事件，網頁介
 
 ## 4. 啟動資料庫
 
-MariaDB 要先運行，後續才能建立 Zabbix 的資料庫與表格。
-
-**目的與影響：** 在 `compute-cpu02` 直接啟動 MariaDB。
-如果服務已在運行，`start` 不會重啟；這條指令不建立 Zabbix 資料庫，
-也不設定開機自動啟動。
+**目的與影響：** 在 `compute-cpu02` 啟動 MariaDB，供後續建立 Zabbix
+資料庫；本步不設定開機自動啟動。
 
 **已執行指令｜`compute-cpu02`：**
 
@@ -301,23 +298,7 @@ MariaDB 要先運行，後續才能建立 Zabbix 的資料庫與表格。
 sudo systemctl start mariadb
 ```
 
-**實際結果：** 沒有終端輸出，指令返回 shell 提示字元。
-
-**判讀：** `start` 沒有報錯；是否正在運行，以服務狀態核對。
-
-**已執行指令｜`compute-cpu02`：**
-
-```bash
-sudo systemctl status mariadb
-```
-
-**實際輸出節錄：** `Loaded: loaded (...; disabled; preset: disabled)`；
-`Active: active (running) since Thu 2026-10-15 05:57:43 UTC; 27min ago`；
-`Main PID: 19455 (mariadbd)`；`Status: "Taking your SQL requests now..."`。
-
-**判讀：** MariaDB 正在運行且可接受 SQL 請求。啟動時間比本次
-`systemctl start` 早約 27 分鐘，因此本次沒有重啟它。
-`disabled` 表示尚未設定開機自動啟動。
+**實際結果：** 沒有終端輸出，MariaDB 已啟動。
 
 ## 5. 建立 Zabbix 資料庫
 
@@ -327,10 +308,36 @@ MariaDB 程序已運行，但 Zabbix 專用資料庫與帳號尚未建立。
 **目的與影響：** 以本機管理者身分連上 MariaDB；進入互動式 SQL 提示字元，
 這一步本身不建立或修改資料庫。退出時可輸入 `exit`。
 
-**待執行指令｜`compute-cpu02`：**
+**已執行指令｜`compute-cpu02`：**
 
 ```bash
 sudo mariadb
 ```
 
-成功時會進入 `MariaDB [(none)]>` 提示字元；接著再建立 Zabbix 資料庫。
+**實際結果：** 顯示 `Server version: 10.11.18-MariaDB`，並進入
+`MariaDB [(none)]>` 提示字元。已連上本機資料庫服務，尚未建立 Zabbix 資料庫。
+
+**目的與影響：** 建立名為 `zabbix` 的資料庫，供監控歷史和事件使用。
+`utf8mb4` 可儲存完整 Unicode，`utf8mb4_bin` 是 Zabbix 安裝指引採用的校對規則。
+這條 SQL 只建立資料庫，不建立帳號或資料表。
+
+**已執行指令｜`compute-cpu02` 的 `MariaDB [(none)]>` 提示字元：**
+
+```sql
+CREATE DATABASE zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+```
+
+**實際結果：** `Query OK, 1 row affected (0.001 sec)`。
+`zabbix` 資料庫已建立，帳號與資料表尚未建立。
+
+接下來要建立含密碼的資料庫帳號。
+MariaDB 命令列可能把 SQL 存入歷史檔，因此先退出，再用不寫入 SQL
+歷史的方式重新登入；已建立的資料庫不受影響。
+
+**待執行指令｜`compute-cpu02` 的 MariaDB 提示字元：**
+
+```text
+exit
+```
+
+退出後會回到 `compute-cpu02` 的 shell 提示字元。

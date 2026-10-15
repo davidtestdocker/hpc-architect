@@ -88,6 +88,18 @@ Zabbix 的非敏感設定保存在 `project/monitoring/`；真實演練紀錄放
 
 ## 1. 先確認排程器眼中的節點狀態
 
+**叢集裡誰做什麼：** Slurm 是這個叢集的工作排程系統。
+控制節點 `10.140.0.2` 上的 `slurmctld` 是排程控制程序：
+接收工作請求、決定交給哪台節點，並記錄節點是 `idle` 還是 `down`。
+GPU VM `compute-gpu01` 和 CPU 客體 `compute-cpu01` 各自執行
+`slurmd`，負責接收控制端分派的工作並在本機啟動程序。
+控制端會與各節點的 `slurmd` 通訊，掌握節點是否回應及能否接工作，
+再由 `slurmctld` 維護排程用的節點狀態。控制節點上執行的 `sinfo`
+讀的是這份排程狀態，並非直接查詢每台運算節點的 systemd 服務狀態。
+所以要查 `slurmctld` 程序是否在跑，就在控制節點查；
+要查某台 `slurmd` 程序是否在跑，就到那台運算節點查。
+節點在 `sinfo` 顯示 `idle`，也不能單靠這個值證明實際工作一定成功。
+
 **目的與影響：** 模組 05 的
 [三節點設定](../project/slurm/three-node-slurm.conf)
 把 `compute-cpu01` 放在 `cpu` 分區、`compute-gpu01` 放在 `gpu` 分區。

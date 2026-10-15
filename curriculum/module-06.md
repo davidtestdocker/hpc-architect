@@ -721,37 +721,52 @@ compute-cpu02 idle
 不能直接放到兩台只有 CPU 的節點執行。
 [heat2d_cpu.cpp](../project/workloads/heat2d_cpu.cpp) 沿用相同的中心熱源、
 四鄰點更新式及預設的 1024×1024 格、200 次更新；
-在兩台 CPU 節點上執行同一份程式，才能比較執行主機、答案與退出狀態。
+在兩台 CPU 節點上以相同的 Slurm 資源請求執行同一份程式，
+比較執行主機、答案與退出狀態。
 它只使用記憶體，不讀寫工作資料檔；預期總和取自模組 05 實測的
 `cpu_sum=65535.998004`，容許浮點誤差 `0.1`。
 
-**已執行指令｜控制節點，本機編譯與測試：**
+**已執行指令｜控制節點，準備可執行檔：**
 
 ```bash
 g++ -O2 -std=c++17 -Wall -Wextra -pedantic project/workloads/heat2d_cpu.cpp -o /tmp/heat2d_cpu_module06
-/tmp/heat2d_cpu_module06
 ```
 
-**實際結果：** 編譯沒有終端輸出；測試輸出如下，退出碼為 `0`。
+**實際結果：** 編譯成功，沒有終端輸出；建立控制節點的
+`/tmp/heat2d_cpu_module06`。這只是準備程式，沒有提交 Slurm 工作，
+也不能用來比較運算節點的資源或計算結果。
 
-```text
-host=instance-20260923-104239 grid=1024x1024 steps=200
-sum=65535.998004 expected=65535.998004 abs_error=0.000000
-cpu_ms=585.235 validation=PASS
-```
-
-**判讀：** 本機以相同輸入得到已知總和。耗時會因節點 CPU 而不同，
-不作為跨節點答案比對欄位；這次本機測試尚未證明運算節點可執行。
-
-**待執行指令｜控制節點，在 `compute-cpu02` 執行：**
+**已執行指令｜控制節點，在 `compute-cpu02` 執行：**
 
 ```bash
-sudo -iu a2264 srun --partition=cpu --nodelist=compute-cpu02 --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=512M --time=00:02:00 --chdir=/tmp --bcast /tmp/heat2d_cpu_module06
+sudo -iu a2264 srun -p cpu -w compute-cpu02 -N1 -n1 -c1 --mem=512M -t 00:02:00 \
+  --chdir=/tmp --bcast /tmp/heat2d_cpu_module06
 ```
 
 **目的與影響：** 申請 `compute-cpu02` 的 1 CPU、512 MiB、最多 2 分鐘，
 由 `srun` 把控制節點 `/tmp/heat2d_cpu_module06` 的可執行檔送到該節點的
 `/tmp` 後執行，不需在節點安裝編譯器或修改 Slurm 設定。
 `--bcast` 會在目標節點建立暫存執行檔；`--chdir=/tmp` 指定其目錄。
-預期輸出應有 `host=compute-cpu02`、已知總和和 `validation=PASS`；
-須以實際輸出和退出狀態確認，不預寫為成功。
+**實際輸出：**
+
+```text
+host=compute-cpu02 grid=1024x1024 steps=200
+sum=65535.998004 expected=65535.998004 abs_error=0.000000
+cpu_ms=581.485 validation=PASS
+```
+
+**判讀：** 工作在 `compute-cpu02` 完成，總和與已知答案一致。
+這是故障恢復後該節點實際接受工作的證據。
+
+**待執行指令｜控制節點，在 `compute-cpu01` 執行：**
+
+```bash
+sudo -iu a2264 srun -p cpu -w compute-cpu01 -N1 -n1 -c1 --mem=512M -t 00:02:00 \
+  --chdir=/tmp --bcast /tmp/heat2d_cpu_module06
+```
+
+**目的與影響：** 在另一台獨立 CPU 運算節點申請相同的 1 CPU、512 MiB、
+最多 2 分鐘，並以 `--bcast` 將同一可執行檔放進該節點的 `/tmp` 執行。
+這會短暫占用 `compute-cpu01` 資源並留下暫存執行檔，不改設定或服務。
+若成功，核對主機、總和與 `validation`；兩台硬體不同，
+耗時不作為這次比較的判斷依據。

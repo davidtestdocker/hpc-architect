@@ -18,7 +18,8 @@ Problem 與 OK 事件；單張儀表板截圖或單次服務重啟不算完成�
 
 ## 目前狀態與已有基礎
 
-**尚未開始本模組的操作。** 模組 01 已做過單節點控制服務停止與復原；
+**已完成本模組的節點、佇列與三台 Slurm 服務基準查詢。**
+模組 01 已做過單節點控制服務停止與復原；
 模組 02 已有提交前健檢 CLI；模組 05 已用 Ansible 部署原有兩節點 Slurm，
 並執行可核對答案的 L4 工作。`compute-cpu01` 已在 Slurm `cpu` 分區註冊，
 基本工作已從控制節點派送到該客體。模組 05 最後一次核對時，
@@ -161,22 +162,18 @@ JOBID PARTITION STATE USER NODELIST
 **判讀：** 查詢當下沒有排隊或執行中的 Slurm 工作。
 這是安排後續演練的基準，不代表演練時佇列必然仍為空。
 
-### 核對控制服務的啟動與重啟設定
+### 核對三台節點的 Slurm 服務
 
-**目的與影響：** `slurmctld` 在控制節點接收工作並維護節點狀態。
-`slurm.conf` 決定叢集資源與排程設定；程序退出後是否由 systemd
-自動重啟，取決於服務單元的 `Restart=`，與開機啟動是不同設定。
-先只讀取控制節點服務的四個欄位，不啟動或修改服務。
+**目的與影響：** 分別查控制節點的 `slurmctld`、GPU VM 與 CPU 客體的
+`slurmd`，比較目前運行、開機啟動及程序退出後的重啟設定。
+`Restart=` 是 systemd 的程序重啟策略，與 `slurm.conf` 的排程設定
+及開機啟動設定是不同的事。下列查詢只讀，不修改服務。
 
-**已執行指令｜控制節點：**
+**已執行指令｜控制節點查 `slurmctld`：**
 
 ```bash
 systemctl show slurmctld -p ActiveState -p SubState -p UnitFileState -p Restart
 ```
-
-`ActiveState` 與 `SubState` 用來看目前是否運行；
-`UnitFileState` 用來看是否設定開機啟動；
-`Restart` 用來看程序意外退出後 systemd 是否嘗試重啟。
 
 **實際輸出：**
 
@@ -187,36 +184,13 @@ SubState=running
 UnitFileState=enabled
 ```
 
-**判讀：** 這四個值分別回答不同問題：
+**判讀：** 控制節點的服務查詢成功；四個欄位與下方兩台運算節點一起比較。
 
-| 欄位與實際值 | 代表什麼 | 這次能得出的結論 |
-|---|---|---|
-| `Restart=no` | systemd 對這個服務的程序重啟策略 | `slurmctld` 程序退出後，systemd 不會依此設定自動再啟動它；這不影響下次整台 VM 開機時是否啟動。 |
-| `ActiveState=active` | 服務單元目前的大類狀態 | systemd 目前認為 `slurmctld` 處於啟用狀態；單看 `active` 還無法分辨程序是否仍在執行。 |
-| `SubState=running` | 大類狀態之下的具體狀態 | `slurmctld` 程序此刻正在運行；它與上一欄合起來是 `active/running`。 |
-| `UnitFileState=enabled` | 服務單元是否設為隨系統開機啟動 | 控制節點下次正常開機時，systemd 會嘗試啟動 `slurmctld`；它不代表程序失敗後會自動重啟。 |
-
-這是控制節點查詢當下的狀態與設定，不能直接推論兩台運算節點也相同。
-
-### 核對 GPU 運算服務
-
-**目的與影響：** GPU VM 的 `slurmd` 接收排程器交付的工作。
-先從控制節點進入 `project/ansible`，讓 Ansible 自動讀該目錄的
-[ansible.cfg](../project/ansible/ansible.cfg) 與其中指定的 inventory；
-`gpu_compute` 群組會選到 `compute-gpu01`。
-`command` 模組在 GPU VM 執行只讀的 `systemctl show`，
-`-o` 把結果壓成一行。這不修改 GPU VM 的服務或設定；
-ad hoc `command` 若顯示 `CHANGED`，只代表模組執行過命令，
-仍須按實際命令內容判斷有無副作用。
-
-**已執行指令｜控制節點的 `project/ansible` 目錄：**
+**已執行指令｜控制節點的 `project/ansible` 目錄查 GPU VM 的 `slurmd`：**
 
 ```bash
 ansible gpu_compute -m command -a 'systemctl show slurmd -p ActiveState -p SubState -p UnitFileState -p Restart' -o
 ```
-
-這條指令查 GPU VM 的目前運行、開機啟動和自動重啟設定。
-`-o` 讓四個欄位在同一行輸出，欄位之間以 `\n` 表示換行。
 
 **實際輸出：**
 
@@ -224,33 +198,30 @@ ansible gpu_compute -m command -a 'systemctl show slurmd -p ActiveState -p SubSt
 compute-gpu01 | CHANGED | rc=0 | (stdout) Restart=no\nActiveState=active\nSubState=running\nUnitFileState=enabled
 ```
 
-**判讀：** `rc=0` 表示遠端查詢成功。Ansible 的 `command` 模組顯示
-`CHANGED`，但這次執行的是只讀的 `systemctl show`，沒有更改服務。
+**判讀：** `rc=0`，GPU VM 查詢成功；四個欄位與控制節點相同。
 
-| 欄位與實際值 | 這次能得出的結論 |
-|---|---|
-| `Restart=no` | GPU VM 的 `slurmd` 程序退出後，systemd 不會依此設定自動重啟。 |
-| `ActiveState=active` | GPU VM 上的服務單元目前處於啟用狀態；單看此值不能確認程序正在運行。 |
-| `SubState=running` | GPU VM 上的 `slurmd` 程序目前正在運行。 |
-| `UnitFileState=enabled` | GPU VM 下次正常開機時，systemd 會嘗試啟動 `slurmd`；這不等於程序退出後自動重啟。 |
-
-這是 GPU VM 的服務狀態，不能據此推論 CPU 客體的 `slurmd` 設定。
-
-### 核對 CPU 運算服務
-
-**目的與影響：** 控制節點的 Ansible inventory 把 OpenStack CPU 客體
-`compute-cpu01` 列在 `cpu_compute` 群組。從 `project/ansible` 執行下列
-指令時，Ansible 會依 `ansible.cfg` 找到 inventory，經既有 SSH 路徑
-連到 CPU 客體，在該客體執行只讀的 `systemctl show`。
-它只查 `slurmd` 的目前運行、開機啟動和程序退出後的重啟設定；
-不更改 VM、Slurm 工作或服務，不需復原。
-
-**待執行指令｜控制節點的 `project/ansible` 目錄：**
+**已執行指令｜控制節點的 `project/ansible` 目錄查 CPU 客體的 `slurmd`：**
 
 ```bash
 ansible cpu_compute -m command -a 'systemctl show slurmd -p ActiveState -p SubState -p UnitFileState -p Restart' -o
 ```
 
-`cpu_compute` 選 CPU 客體，`-m command` 在客體執行後面指定的命令；
-`-o` 把結果壓成一行。收到完整輸出後，逐欄判讀 CPU 客體的四個值，
-並與控制節點及 GPU VM 的結果比較。
+**實際輸出：**
+
+```text
+compute-cpu01 | CHANGED | rc=0 | (stdout) Restart=no\nActiveState=active\nSubState=running\nUnitFileState=enabled
+```
+
+**判讀：** `rc=0`，CPU 客體查詢成功；四個欄位也與前兩台相同。
+兩次 Ansible 查詢的 `CHANGED` 是 `command` 模組的執行標記；
+實際執行的 `systemctl show` 只讀，沒有更改服務。
+
+| 三台服務都回傳的值 | 意義與結論 |
+|---|---|
+| `Restart=no` | 程序退出後，systemd 不會依此設定自動重啟該服務。 |
+| `ActiveState=active` | 服務單元目前處於啟用狀態；單看這個值還不能確認程序正在運行。 |
+| `SubState=running` | 搭配 `active`，表示三台各自的 Slurm 程序當時都正在運行。 |
+| `UnitFileState=enabled` | 下次正常開機時，systemd 會嘗試啟動各自的服務；這與程序退出後的重啟策略不同。 |
+
+這些值只說明查詢當下的服務狀態與 systemd 設定；
+節點能否完成工作，仍須以實際排程與工作結果核對。

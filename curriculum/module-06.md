@@ -343,13 +343,96 @@ CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '<DB_PASSWORD>';
 **實際結果：** `Query OK, 0 rows affected (0.004 sec)`；
 `zabbix`@`localhost` 帳號已建立。實際密碼不寫入文件。
 
-**目的與影響：** 將帳號密碼換成另一組自行設定的密碼。
-這只更新資料庫帳號的驗證資訊，不改動 `zabbix` 資料庫內容。
+**目的與影響：** 讓這個帳號只能操作剛建立的 `zabbix` 資料庫。
+這一步授予資料庫權限，不更改帳號密碼，也不建立資料表。
 
-**待執行指令｜`compute-cpu02` 的 MariaDB 提示字元：**
+**已執行指令｜`compute-cpu02` 的 MariaDB 提示字元：**
 
 ```sql
-ALTER USER 'zabbix'@'localhost' IDENTIFIED BY '<NEW_DB_PASSWORD>';
+GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';
 ```
 
-執行前替換 `<NEW_DB_PASSWORD>`；回傳時只提供執行結果，勿貼密碼。
+`zabbix.*` 指 `zabbix` 資料庫內的表格，不是整台 MariaDB 的所有資料庫。
+
+**實際結果：** `Query OK, 0 rows affected (0.002 sec)`。
+`zabbix` 帳號已有其專用資料庫的權限，資料表尚未匯入。
+
+**目的與影響：** 回到 `compute-cpu02` 的 shell 後，核對套件提供的
+Zabbix server 資料表腳本是否存在；這條指令只讀，不匯入資料。
+
+**已執行指令｜`compute-cpu02` 的 shell：**
+
+```bash
+ls -l /usr/share/zabbix-sql-scripts/mysql/server.sql.gz
+```
+
+**實際輸出：**
+
+```text
+-rw-r--r--. 1 root root 4240104 Sep 22 00:00 /usr/share/zabbix-sql-scripts/mysql/server.sql.gz
+```
+
+Zabbix server 的壓縮 SQL 腳本存在；尚未匯入資料庫。
+
+**目的與影響：** `zcat` 將這個壓縮腳本送到標準輸出，`|` 把 SQL
+交給本機 MariaDB 客戶端，後者以 `zabbix` 帳號匯入 `zabbix` 資料庫。
+這會建立監控資料表與初始資料，不修改 Slurm 設定。
+
+**已執行指令｜`compute-cpu02` 的 shell：**
+
+```bash
+zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mariadb --default-character-set=utf8mb4 -uzabbix -p zabbix
+```
+
+`--default-character-set=utf8mb4` 使用資料庫的字元集；`-p` 會另外提示輸入
+剛建立的資料庫帳號密碼，不把密碼放進指令。
+
+**實際結果：** 出現 `Enter password:`，輸入後返回 shell，沒有顯示錯誤。
+
+**目的與影響：** 只讀查詢 `zabbix` 資料庫的資料表數量和內建帳號數量，
+確認 SQL 腳本的結構與初始資料已寫入；不修改資料庫。
+
+**已執行指令｜`compute-cpu02` 的 shell：**
+
+```bash
+sudo mariadb -e "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='zabbix') AS tables, (SELECT COUNT(*) FROM zabbix.users) AS users;"
+```
+
+`tables` 是資料表數，`users` 是初始帳號數；兩者應有非零結果。
+
+**實際輸出：** `tables=203`、`users=2`。
+資料表與初始帳號均已寫入 `zabbix` 資料庫。
+
+## 6. 設定 Zabbix server 連接資料庫
+
+Zabbix server 會讀取 `compute-cpu02` 自己的
+`/etc/zabbix/zabbix_server.conf`，取得資料庫名稱、帳號和密碼。
+先核對套件目前設定的資料庫名稱與帳號，避免修改錯誤欄位。
+
+**目的與影響：** 只讀取 `DBName` 和 `DBUser` 的有效設定行；
+不顯示密碼，也不修改設定檔或服務。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+sudo grep -nE '^(DBName|DBUser)=' /etc/zabbix/zabbix_server.conf
+```
+
+`-n` 顯示行號，方便接下來找到設定；`-E` 讓同一個條件比對兩個欄位。
+
+**實際輸出：** `107:DBName=zabbix`、`123:DBUser=zabbix`。
+Zabbix server 的資料庫名稱與帳號已對上剛建立的資料庫和使用者。
+
+**目的與影響：** 編輯 `compute-cpu02` 上 Zabbix server 實際讀取的設定檔，
+加入本機 `zabbix` 資料庫帳號的密碼。只修改這台 VM 的設定檔；
+密碼不寫進課程文件或命令列。
+
+**待執行指令｜`compute-cpu02`：**
+
+```bash
+sudo vi /etc/zabbix/zabbix_server.conf
+```
+
+在編輯器內尋找 `DBPassword=`，將該設定改成
+`DBPassword=<建立 zabbix 資料庫帳號時使用的密碼>` 並儲存。
+`<...>` 是說明用佔位文字，不要原樣寫入設定檔。

@@ -9,7 +9,6 @@ OpenStack 供給的 `compute-cpu01` 已納入叢集。
 納入獨立運算節點，執行可核對的 CPU／GPU 工作，
 配合 Python 健檢、共享儲存與 Zabbix，展示部署、排程、觀測、除錯和
 復原能力。OpenStack 依單台 VM 供給與 Slurm 納管證據如實對照。
-K8s／GKE 本輪不實作，不列為作品能力。
 
 ```mermaid
 flowchart LR
@@ -57,7 +56,7 @@ GCP VM 的實體主機配置不確定，OpenStack CPU 客體則運行在
 目前 GPU 配額僅允許一張卡；替換節點時先停止舊 GPU VM，並保留回復方式。
 OpenStack 已有單台 VM 供給證據，沒有 OpenStack 叢集建置證據。
 RDMA、Lustre、Slurm accounting 資料庫需有需求與相應環境才展開；
-Zabbix 已在模組 06 實作；模組 07 的 GKE 計畫已取消。
+Zabbix 已在模組 06 實作。
 
 ## 建議實作目錄
 

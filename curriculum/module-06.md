@@ -970,3 +970,15 @@ compute-cpu02 idle
 `compute-cpu02` 回到可排程的 `idle`，這次沒有執行人工 `RESUME`。
 此處驗證的是失聯節點重新開放；故障期間新工作落到 `compute-cpu01`
 的計算結果已在前節核對。
+
+## 本模組結果
+
+Zabbix 已收到 `slurmd` 狀態資料，並記錄停止服務時的 `PROBLEM`；
+恢復由操作人員回報，但未保留 `OK` 事件畫面或時間，因此不宣稱
+已獨立核對該事件的原始紀錄。
+
+Slurm 已在故障時將 `compute-cpu02` 標為 `down*`；未指定節點的新 CPU
+工作落到 `compute-cpu01` 並得到 `validation=PASS`。節點恢復後，
+`ReturnToService=1` 已由控制端確認，`compute-cpu02` 回到 `idle`，
+此輪未執行人工 `RESUME`。兩台 CPU 節點也已用相同資源請求完成
+同一份熱擴散工作。至此結束本模組實作，不重做已完成的故障演練。

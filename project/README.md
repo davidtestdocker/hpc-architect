@@ -36,7 +36,7 @@ GCP VM 的實體主機配置不確定，OpenStack CPU 客體則運行在
 | 叢集建置自動化 | inventory、playbook、OpenStack CPU 客體納管及乾淨 GPU 節點加入既有控制節點的部署證據 |
 | Linux 與程式能力 | Python 健檢工具及測試、C/MPI 程式與正確性驗證 |
 | 開源維運經驗 | Slurm 運算節點故障定位、Zabbix 告警與恢復事件、工作復測紀錄 |
-| OpenStack | DevStack 的映像、網路及 CPU VM 供給，控制節點 SSH 管理與 Slurm 工作證據；不宣稱 OpenStack 叢集自動化 |
+| OpenStack | DevStack 的映像、網路及 CPU VM 供給，控制節點 SSH 管理與 Slurm 工作證據 |
 
 ## 必做驗收
 
@@ -54,7 +54,7 @@ GCP VM 的實體主機配置不確定，OpenStack CPU 客體則運行在
 - [ ] 在新環境按文件重建並核對工作；README、部署手冊、操作／復原手冊、技術追問與十分鐘展示完整，沒有將規劃寫成完成。
 
 目前 GPU 配額僅允許一張卡；替換節點時先停止舊 GPU VM，並保留回復方式。
-OpenStack 已有單台 VM 供給證據，沒有 OpenStack 叢集建置證據。
+OpenStack 已供給 `compute-cpu01`，並完成管理連線及 Slurm 工作驗證。
 RDMA、Lustre、Slurm accounting 資料庫需有需求與相應環境才展開；
 Zabbix 已在模組 06 實作。
 

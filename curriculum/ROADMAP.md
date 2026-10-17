@@ -34,8 +34,7 @@ Python 是自動化與健檢主語言；C 和 C++ 用於交付可編譯、
 可核對結果的系統觀察與計算工作。Go 不再另外開一條完整主線，
 除非面試或實際工作要求。加分項整合進既有模組：05 用 DevStack
 供給的 CPU VM 並納入 Slurm；06 用 Zabbix 驗證 Slurm 節點故障的
-監控、隔離、恢復與工作結果。OpenStack CPU 客體已完成 Slurm 工作，
-但沒有 OpenStack 叢集自動化證據。
+監控、隔離、恢復與工作結果。OpenStack CPU 客體已完成 Slurm 工作。
 
 **GPU 是核心架構與實作項目。** 獨立 GPU VM `compute-gpu01` 已建立；模組 04 已驗證兩台 VM 私有網路互通、控制節點 SSH 遠端執行、共享目錄雙向讀寫、跨節點 MPI 工作，以及驅動辨認一張 NVIDIA L4。這次 MPI 工作只用 CPU；GPU 資源設定、工作與監控會在相應模組處理。課程會說明 GPU 記憶體、CPU／GPU 資料傳輸、PCIe／NUMA、單卡與多卡拓撲，以及驅動／CUDA 相容性；[Slurm GRES](https://slurm.schedmd.com/gres.html) 是排程 GPU 的具體機制。單卡 VM 能驗證單 GPU 管理，不能宣稱驗證了 NVLink、多 GPU、跨 GPU RDMA 或大規模 GPU 訓練。RDMA、平行檔案系統與機櫃供電等沒有設備時只做架構判斷。
 

@@ -11,6 +11,6 @@
 | 5 | [Ansible 入門](https://docs.ansible.com/projects/ansible/latest/getting_started/index.html) | inventory、playbook、roles、handlers 與冪等性 |
 | 5 | [OpenStack 文件](https://docs.openstack.org/) | 對照 VM、網路、映像與身分管理的供給流程；有平台時再核對實作版本 |
 | 6 | [Zabbix 文件](https://www.zabbix.com/documentation/current/en/manual/quickstart) | 核對 host、item、trigger、event 與實際版本 |
-| 7 | [Linux CPU 拓撲](https://docs.kernel.org/arch/x86/topology.html)、[Kubernetes 概念](https://kubernetes.io/docs/concepts/)、[GKE 文件](https://cloud.google.com/kubernetes-engine/docs) | 量測解釋、K8s 工作及 GKE 資源管理；實作前核對費用與目前版本 |
+| 8 | [Linux CPU 拓撲](https://docs.kernel.org/arch/x86/topology.html) | 作品展示時解釋資源配置與量測限制 |
 
 需要容器實作時再查 [Apptainer 指南](https://apptainer.org/docs/user/latest/)；GPU、RDMA 或平行檔案系統須有具體需求和硬體條件，才加深到安裝或調校。

@@ -869,16 +869,104 @@ compute-cpu02 down*
 **判讀：** `down*` 表示控制端已將 `compute-cpu02` 排除可接工作狀態，
 且目前沒有收到該節點回報；可以用不指定節點的新工作驗證落點。
 
-**目的與影響：** 控制節點曾重開機，重新從工作樹的
-[heat2d_cpu.cpp](../project/workloads/heat2d_cpu.cpp) 編譯本次要提交的
-熱擴散程式，確保 `/tmp/heat2d_cpu_module06` 存在。只在控制節點
-建立或取代這個暫存執行檔，不提交工作，也不修改 Slurm 設定。
+本次沿用控制節點現有的 `/tmp/heat2d_cpu_module06`；
+程式來源與先前編譯結果見上一節，不重做編譯。
 
-**待執行指令｜控制節點：**
+**目的與影響：** 從控制節點提交一個不指定運算節點的 `cpu` 分區工作，
+申請 1 CPU、512 MiB、最多 5 分鐘。`srun --bcast` 把現有執行檔
+送到獲分配節點的 `/tmp` 並執行；工作會短暫占用該節點資源，
+不修改 Slurm 設定或服務。輸出的 `host` 要確認落在
+`compute-cpu01`，`sum` 與 `validation` 要核對已知答案。
+
+**已執行指令｜控制節點：**
 
 ```bash
-g++ -O2 -std=c++17 -Wall -Wextra -pedantic project/workloads/heat2d_cpu.cpp -o /tmp/heat2d_cpu_module06
+srun -p cpu -N1 -n1 -c1 --mem=512M -t 00:05:00 --chdir=/tmp --bcast /tmp/heat2d_cpu_module06
 ```
 
-`-O2` 啟用一般最佳化，`-std=c++17` 指定語言版本，警告選項
-協助指出編譯問題；`-o` 指定稍後由 `srun --bcast` 發送的執行檔。
+沒有使用 `-w` 指定節點，因此落點由 Slurm 從可用的 `cpu` 節點選出；
+這次 `compute-cpu02` 已是 `down*`。`--chdir=/tmp` 是工作執行目錄，
+`--bcast` 發送控制節點上的現有執行檔。
+
+**實際輸出：**
+
+```text
+host=compute-cpu01.novalocal grid=1024x1024 steps=200
+sum=65535.998004 expected=65535.998004 abs_error=0.000000
+cpu_ms=46616.864 validation=PASS
+```
+
+**判讀：** 故障期間新提交且未指定節點的工作落在另一台獨立運算節點
+`compute-cpu01`，答案與預期一致；`validation=PASS` 是程式自己的
+答案檢查。執行後已回報工作正常完成；未另查 shell 退出碼。
+
+`compute-cpu02` 的 `slurmd` 已由操作人員啟動，控制端仍顯示 `down`；
+在目前尚未設定自動恢復的狀態下，服務啟動不會自動清除保留的 `DOWN`。
+
+### 設定失聯後自動恢復
+
+目前四節點設定未指定 `ReturnToService`，預設值 `0` 會保留 `DOWN`。
+依 [Slurm 官方說明](https://slurm.schedmd.com/slurm.conf.html)，
+`ReturnToService=1` 只讓因失聯而 `DOWN` 的節點在有效重新註冊後
+自動開放；其他原因仍須人工判斷，工作結果也須另驗。
+
+**目的與影響：** 在控制節點修改工作樹中的
+[four-node-slurm.conf](../project/slurm/four-node-slurm.conf) 來源檔，
+加入 `ReturnToService=1`。這一步只改來源檔，
+四台 VM 各自的 `/etc/slurm/slurm.conf` 不會因此改變；
+服務也不會重載或重啟。來源檔目前需管理權限才能寫入。
+
+**已執行指令｜控制節點的 `hpc-arch` 目錄：**
+
+```bash
+sudo vi project/slurm/four-node-slurm.conf
+```
+
+在 `SlurmdSpoolDir=/var/spool/slurmd` 後加入 `ReturnToService=1`，
+存檔離開後核對檔案內容，再執行部署。
+
+**實際結果：** 編輯器沒有終端輸出；工作樹來源檔第 33 行已核對為
+`ReturnToService=1`。此時只確認來源檔內容，尚未套用到任何 VM。
+
+**目的與影響：** 用既有
+[slurm-four-node.yml](../project/ansible/slurm-four-node.yml)
+正式部署來源設定。playbook 先在控制節點確認佇列為空，
+接著更新三台運算 VM 各自的 `/etc/slurm/slurm.conf` 並檢查 `slurmd -G`，
+再更新控制節點自己的同名檔案、執行 `scontrol reconfigure`，
+最後在設定有變更時重啟三台運算 VM 的 `slurmd`。
+各 VM 的舊檔由 copy 備份；運算服務在重啟期間暫時不能接工作。
+
+**已執行指令｜控制節點的 `project/ansible` 目錄：**
+
+```bash
+sudo ansible-playbook slurm-four-node.yml
+```
+
+**實際輸出重點：** 佇列查詢 `ok`；三台運算 VM 的設定複製均為
+`changed`，`slurmd -G` 檢查均為 `ok`；控制節點設定複製與
+`scontrol reconfigure` handler 均為 `changed`；三台運算 VM 的
+`slurmd` 重啟均為 `changed`。Play recap 顯示四台皆為
+`failed=0`、`unreachable=0`。
+
+**判讀：** 來源設定已正式複製到四台各自的目標檔，控制端已重載，
+三台運算服務已重啟。部署任務完成，接著核對控制端實際載入值與節點狀態。
+
+**已執行指令｜控制節點：**
+
+```bash
+scontrol show config | rg '^ReturnToService'
+sinfo -N -n compute-cpu02 -o '%N %T'
+```
+
+**實際結果：**
+
+```text
+ReturnToService         = 1
+NODELIST STATE
+compute-cpu02 idle
+```
+
+**判讀：** 控制端已載入 `ReturnToService=1`；部署重啟 `slurmd` 後，
+`compute-cpu02` 回到可排程的 `idle`，這次沒有執行人工 `RESUME`。
+此處驗證的是失聯節點重新開放；故障期間新工作落到 `compute-cpu01`
+的計算結果已在前節核對。

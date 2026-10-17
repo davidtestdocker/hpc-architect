@@ -11,7 +11,35 @@
 
 ## 目前狀態
 
-**未開始實作。** 本文件記錄作品重建與面試展示的目標。
+**進行中。** 已盤點現有作品證據及重建依賴；新環境重建、
+展示與技術追問尚未執行。
+
+## 第一段：現有證據與重建前置
+
+這一段只核對工作樹與先前保存的實測紀錄，沒有連線到 VM、
+提交工作或改動雲端資源。作品主張可從下列來源追到實際結果：
+
+| 能力 | 現有證據與可重跑來源 |
+|---|---|
+| 網路與共享資料 | [模組 04](module-04.md)記錄私有網路、Cloud NAT、SSH、NFS 雙向讀寫及兩台 VM 各一個 rank 的 MPI 工作；[模組 05](module-05.md)記錄 OpenStack CPU 客體的雙向通路、SNAT／DNAT 與開機後網路恢復；恢復腳本在[工作樹](../project/openstack/restore-module05-network.sh) |
+| 部署自動化 | [模組 05](module-05.md)與[模組 06](module-06.md)保存 Ansible 部署結果；[inventory](../project/ansible/inventory/hosts.yml)及[四節點 playbook](../project/ansible/slurm-four-node.yml)是現有設定來源 |
+| 計算與排程 | [模組 05](module-05.md)有 L4 熱擴散工作的 `validation=PASS`；[模組 06](module-06.md)有兩台 CPU 節點各自完成同一份熱擴散工作，以及故障期間新工作落到 `compute-cpu01` 的 `validation=PASS`；程式在[工作負載目錄](../project/workloads/) |
+| 監控與恢復 | [模組 06](module-06.md)記錄 Zabbix `slurmd` 告警、Slurm 隔離與恢復，以及 `ReturnToService=1` 部署後節點回到 `idle` |
+
+**重建依賴：** 現有 [inventory](../project/ansible/inventory/hosts.yml)、
+[Slurm 設定](../project/slurm/four-node-slurm.conf)及
+[宿主機網路恢復腳本](../project/openstack/restore-module05-network.sh)
+含目前 VM 的位址、名稱、SSH 路徑或網路命名空間資訊；
+新環境須先確認這些值及 CPU／GPU 資源，才能決定要替換哪些設定。
+[Slurm RPM 與來源檔](../project/packages/slurm/README.md)已保存，
+但套件相依、MUNGE、GPU 驅動和 Zabbix 的部署仍須依節點角色處理。
+新 VM 或 GPU 使用會產生費用，須先確定重建範圍與預算。
+
+**文件對齊：** [拓撲文件](../project/docs/cluster-topology.md)
+已按模組 05、06 的實測結果更新四節點角色、位址與工作範圍；
+其中保存的是當時結果，不能當成即時節點狀態。
+新環境重建、部署重跑及面試展示的結果目前都沒有，
+不列為已完成證據。
 
 ## 作品要讓別人看見什麼
 

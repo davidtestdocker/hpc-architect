@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 圖示是已驗證的工作角色，不代表各 VM 在讀取文件當下仍在線。
-Slurm 教學叢集的[目標拓撲](docs/cluster-topology.md)包含
+Slurm 教學叢集的[已驗證拓撲](docs/cluster-topology.md)包含
 OpenStack CPU 客體與另一台獨立 CPU VM。
 運算節點所需的[Slurm 套件與原始碼](packages/slurm/README.md)已保存在專案中。
 CPU VM 兼任多項角色是降低實驗成本的取捨，沒有生產高可用性。
@@ -38,22 +38,20 @@ GCP VM 的實體主機配置不確定，OpenStack CPU 客體則運行在
 | 開源維運經驗 | Slurm 運算節點故障定位、Zabbix 告警與恢復事件、工作復測紀錄 |
 | OpenStack | DevStack 的映像、網路及 CPU VM 供給，控制節點 SSH 管理與 Slurm 工作證據 |
 
-## 必做驗收
+## 作品證據狀態
 
-- [ ] 控制 VM、獨立 CPU 客體及 GPU VM 的版本、資源、位址與角色有文件，敏感資訊不公開。
-- [ ] `compute-cpu01` 的雙向通路、身分與共享資料經驗證；Ansible 納管後，Slurm CPU 工作在此客體完成且答案可核對。
-- [ ] 從符合文件前置條件的乾淨 GPU VM，以 Ansible 加入既有控制節點；人工步驟與依賴如實列出。
-- [ ] 獨立 CPU 客體與 GPU VM 都能接收各自適合的 Slurm 工作；以輸出中的主機名證明執行位置。
-- [ ] C/MPI 程式正確處理不可整除工作量，結果與序列版本一致。
-- [ ] MPI 工作跨 CPU VM 與 GPU VM 執行，保存 rank／主機名與工作輸出。
-- [ ] Python 工具有 help、結構化輸出、逾時及部分失敗處理，保留測試結果。
-- [ ] 只做能支持架構決策的量測；保留原始數據、輸入、資源配置、版本與波動，不要求一定加速。
-- [ ] Zabbix 持續更新運算節點或 Slurm 服務狀態；同一次故障有 Problem 與 OK 事件，並有 Slurm 定位、修復及已知答案工作的復測結果。跨節點轉移另需兩台獨立運算節點可接同類 CPU 工作的證據。
-- [ ] 以已完成的 DevStack CPU VM 供給與 SSH 登入證據，對照現有 GCP VM 供給流程。
-- [ ] 一份完整的跨節點故障紀錄，串起監控、告警、原因、修復、恢復事件與工作結果。
-- [ ] 在新環境按文件重建並核對工作；README、部署手冊、操作／復原手冊、技術追問與十分鐘展示完整，沒有將規劃寫成完成。
+| 項目 | 已有證據與仍待驗收的範圍 |
+|---|---|
+| 節點與拓撲 | [拓撲文件](docs/cluster-topology.md)列出控制節點、GPU VM、兩台 CPU VM 與 OpenStack 宿主機；節點狀態依[模組 05](../curriculum/module-05.md)及[模組 06](../curriculum/module-06.md)的當時結果，不代表目前在線 |
+| 網路與共享資料 | [模組 04](../curriculum/module-04.md)已驗證私有網路、NAT、SSH 及控制節點與 GPU VM 的 NFS 雙向讀寫；[模組 05](../curriculum/module-05.md)已驗證 OpenStack CPU 客體的雙向通路與網路恢復；CPU 客體沒有掛載 NFS |
+| Ansible 與 Slurm | [模組 05](../curriculum/module-05.md)有 GPU 節點部署、OpenStack CPU 客體納管及工作證據；[模組 06](../curriculum/module-06.md)有四節點設定部署結果；新環境整套重建仍待驗證 |
+| 計算工作 | [模組 03](../curriculum/module-03.md)有 C/MPI 正確性結果；[模組 04](../curriculum/module-04.md)有兩台 VM 各一個 CPU rank 的跨節點 MPI；模組 05 有 L4 工作 `validation=PASS`，模組 06 有兩台 CPU VM 的同一份工作與故障期間轉移結果 |
+| Python 健檢 | [模組 02](../curriculum/module-02.md)有 help、JSON、逾時與部分失敗的程式及實測案例 |
+| 監控與復原 | [模組 06](../curriculum/module-06.md)記錄 Zabbix `slurmd` 告警、恢復、Slurm 隔離及工作復測；這是教學叢集的故障演練證據 |
+| 架構量測與供給比較 | 工作輸出已有單次量測；若要主張效能比較，仍需可比輸入、重複量測與原始資料。DevStack 與 GCP 的供給流程對照尚未整理 |
+| 模組 07 交付 | [模組 07](../curriculum/module-07.md)已開始盤點證據；新環境重建、可依文件操作的手冊、職缺能力對照、技術追問及十分鐘展示尚未完成 |
 
-目前 GPU 配額僅允許一張卡；替換節點時先停止舊 GPU VM，並保留回復方式。
+目前 GPU 配額僅允許一張卡；新環境重建前須另確認資源與預算。
 OpenStack 已供給 `compute-cpu01`，並完成管理連線及 Slurm 工作驗證。
 RDMA、Lustre、Slurm accounting 資料庫需有需求與相應環境才展開；
 Zabbix 已在模組 06 實作。

@@ -1,67 +1,52 @@
-# 教學叢集拓撲與目標規格
+# 教學規模 Slurm 叢集拓撲
 
-這份文件區分已驗證的叢集、已供給但未納管的 VM 與目標拓撲；實際指令和輸出見
-[模組 04](../../curriculum/module-04.md)與[模組 05](../../curriculum/module-05.md)。
-**目標是 GCP 控制節點、獨立 GPU 運算節點及 OpenStack CPU 運算客體。**
-新 GPU 節點的替換步驟與回復方式見
-[模組 05 的替換紀錄](../../curriculum/module-05.md#8-單-gpu-配額下替換乾淨節點)。
-
-## 目前資源狀態
+本圖整理[模組 05](../../curriculum/module-05.md)與
+[模組 06](../../curriculum/module-06.md)保存的部署、節點及工作結果。
+節點狀態是當時的實測，不代表閱讀文件時仍在線；目前狀態須另行核對。
 
 ```text
-a2264 提交工作
-       │
-       ▼
-CPU VM：instance-20260923-104239（台灣）
-  ├─ slurmctld：排程；slurmd：debug 分區的 CPU 工作
-  ├─ Ansible：管理兩台 VM 的設定
-  └─ NFS：分享 /srv/hpc-share
-       │  私有網路、MUNGE 驗證、NFS
-       ▼
-GPU VM：compute-gpu01（東京，已停止）
-  └─ 保留開機磁碟與設定；目前不能接工作
-
-DevStack 宿主機：openstack-lab01
-  └─ OpenStack 客體：compute-cpu01
-       └─ 已供給且控制節點可透過宿主機 SSH 登入；尚不能宣稱接 Slurm 工作
+工作提交者
+    │
+    ▼
+控制節點 instance-20260923-104239（10.140.0.2）
+    ├─ slurmctld／slurmd、Ansible、MUNGE、NFS 伺服器
+    ├── 私有網路與 NFS ── compute-gpu01（10.146.0.3，L4／slurmd）
+    ├── 私有網路 ──────── compute-cpu02（10.146.0.5，slurmd／Zabbix）
+    └── TCP 6818 ─────── openstack-lab01（10.146.0.4，DevStack／NAT）
+                               └── 浮動 IP 172.24.4.121
+                                    → compute-cpu01（10.0.0.32，slurmd）
 ```
 
-| 角色 | 已確認的 VM 與硬體 | 排程與資料路徑 |
+`compute-cpu01` 回連控制節點的 TCP `6817` 經過 DevStack 路由器與
+宿主機來源轉址；控制節點到該客體的 TCP `6818` 經宿主機與浮動 IP
+目的轉址。SSH 管理客體則由宿主機的網路命名空間代理，
+與 Slurm 服務連線使用不同路徑。
+
+| 角色 | 已建立的資源 | 已驗證的工作與資料路徑 |
 |---|---|---|
-| CPU 控制／提交／運算／NFS | `instance-20260923-104239`；`asia-east1-b`；`e2-custom-2-4096`，2 vCPU、4 GiB；10 GiB 開機磁碟、100 GiB 附加磁碟；私有 IP `10.140.0.2` | `debug` 分區宣告 2 CPU、3000 MiB；提供 `/srv/hpc-share`；執行 Ansible |
-| GPU 運算（已停止） | `compute-gpu01`；`asia-northeast1-c`；`g2-standard-4`，4 vCPU、16 GiB、一張 NVIDIA L4；40 GiB `pd-balanced` 開機磁碟；私有 IP `10.146.0.3`，沒有 VM 外部 IP | 設定仍指向舊節點；停止期間不能接工作 |
-| OpenStack CPU 客體（待納管） | `compute-cpu01`；由 `openstack-lab01` 的 DevStack 供給；`m1.small`，1 vCPU、2 GiB；OpenStack 私有 IP `10.0.0.62` | 控制端已透過宿主機網路命名空間以 SSH 登入；客體回連、NFS、MUNGE 與 Slurm 工作尚未驗證 |
+| 控制／提交／CPU／NFS | GCP `instance-20260923-104239`；`asia-east1-b`；2 vCPU、4 GiB；私有 IP `10.140.0.2` | `debug` 分區宣告 2 CPU、3000 MiB；執行 Ansible 並提供 `/srv/hpc-share` |
+| GPU 運算 | GCP `compute-gpu01`；`asia-northeast1-c`；4 vCPU、16 GiB、一張 NVIDIA L4；私有 IP `10.146.0.3` | `gpu` 分區宣告 4 CPU、14000 MiB、一張 L4；透過 NFS 讀共享程式，Slurm GPU 熱擴散工作回報 `validation=PASS` |
+| OpenStack 宿主機 | GCP `openstack-lab01`；Ubuntu 24.04、2 vCPU、8 GiB；私有 IP `10.146.0.4` | 承載 DevStack 與 CPU 客體；提供宿主機網路轉送，不是 Slurm 運算節點 |
+| OpenStack CPU 運算 | `compute-cpu01`；AlmaLinux 10.2、1 vCPU、2 GiB、20 GiB 磁碟；私有 IP `10.0.0.32` | `cpu` 分區宣告 1 CPU、1400 MiB；已由 Ansible 納管並完成 Slurm CPU 工作；本客體沒有掛載 NFS |
+| 監控兼 CPU 運算 | GCP `compute-cpu02`；AlmaLinux 10.2、2 vCPU、8 GiB、40 GiB 磁碟；私有 IP `10.146.0.5` | `cpu` 分區宣告 2 CPU、4000 MiB；執行 Zabbix 並完成 Slurm CPU 工作 |
 
-原有兩台 GCP VM 的 `/etc/slurm/slurm.conf` 各存在自己的本機磁碟；
-內容由[同一份工作樹來源](../slurm/two-node-slurm.conf)部署。
-控制節點的 `/srv/hpc-share` 是 NFS 分享來源，GPU VM 上的同名路徑是掛載點。
-模組 05 曾透過 Slurm 在 `compute-gpu01` 的 L4 執行二維熱擴散工作，
-CPU 與 GPU 結果比較為 `validation=PASS`。
-模組 04 的跨 VM MPI 工作由 SSH 啟動，未驗證跨節點 Slurm 排程。
+控制節點、GPU VM 與兩台 CPU VM 的 `/etc/slurm/slurm.conf`
+各是本機檔案，來源為[四節點設定](../slurm/four-node-slurm.conf)，
+由[四節點 playbook](../ansible/slurm-four-node.yml)部署。
+控制節點的 `/srv/hpc-share` 是 NFS 來源；GPU VM 的同名路徑是掛載點。
+跨節點 MPI 已在控制節點與 GPU VM 各執行一個 CPU rank，
+由 SSH 啟動，不是跨節點 Slurm 工作。
 
-## 目標規格與替換範圍
+[模組 06](../../curriculum/module-06.md)記錄兩台 CPU VM 都完成同一份
+熱擴散工作，以及 `compute-cpu02` 故障期間未指定節點的新工作落到
+`compute-cpu01` 並回報 `validation=PASS`。Zabbix 記錄服務停止告警，
+`ReturnToService=1` 部署後，`compute-cpu02` 曾回到 `idle`。
 
-CPU VM 保持上述規格與角色，不在 GPU 節點替換時重建。
-`compute-cpu01` 的目標是由 Ansible 管理的獨立 Slurm CPU 運算節點；
-其客體系統是 Ubuntu，不能直接使用原 GPU 節點的 AlmaLinux RPM。
-加入之前須核對客體到控制節點的通路、身分、共享資料及可用的相容套件。
-實際完成後才更新本表的排程與資料路徑證據。
-最終 GPU VM 規劃為 `compute-gpu02`：同在東京 `asia-northeast1-c`，
-使用 `g2-standard-4`、4 vCPU、16 GiB、一張具 24 GiB 顯示記憶體的 L4、40 GiB `pd-balanced`
-開機磁碟、AlmaLinux 10、既有 VPC／subnet，沒有 VM 外部 IP 或服務帳戶。
-它的私有 IP 由建機結果決定，確認後才寫入 inventory、NFS 匯出與 Slurm 設定。
-原映像 `almalinux-10-v20260811` 已標為 `DEPRECATED`，
-候選映像 `almalinux-10-v20261005` 已確認為 `READY`、`X86_64`；
-Slurm 套件已保存在[專案套件目錄](../packages/slurm/README.md)。
+## 重建時的邊界
 
-單 GPU 配額下，舊 GPU VM 已停止，保留其開機磁碟與設定；
-建好新 VM 並通過工作驗證後，才決定移除舊 VM。
-替換期間舊 VM 與新 VM 可能同時存在，但只有一台 GPU VM 運行。
-舊 VM 停止後仍有磁碟費用，重新啟動或建立新 VM 也受即時 GPU 容量限制。
-驗收的範圍是乾淨 GPU 節點加入**既有** CPU 控制節點，
-不能寫成整個叢集從零重建。
-
-這是教學規模叢集：控制端仍兼任 CPU 工作與 NFS，沒有高可用控制端；
-即使 `compute-cpu01` 成為獨立 CPU 運算節點，也不能單憑其存在
-宣稱故障時工作能轉移；要先證明另一台獨立運算節點可接同類工作。
-一張 L4 不能證明多卡隔離、跨 GPU RDMA 或大型生產叢集經驗。
+[inventory](../ansible/inventory/hosts.yml)、四節點設定及
+[宿主機網路恢復腳本](../openstack/restore-module05-network.sh)
+含這次環境的位址、SSH 路徑與網路命名空間資訊；
+在新環境使用前須依新資源核對。現有叢集沒有高可用控制節點，
+OpenStack 只供給一台 CPU 客體；單張 L4 的結果不代表多 GPU 或
+企業實體網路的驗證。新環境重建尚未執行。

@@ -781,3 +781,104 @@ cpu_ms=44855.795 validation=PASS
 `compute-cpu01` 的實際主機名帶 `.novalocal` 後綴；
 這裡比較的是工作可完成與答案一致，兩台硬體不同，
 不以 `cpu_ms` 判定節點性能。故障期間的新工作轉移仍待驗證。
+
+## 17. 故障期間的新 CPU 工作轉移
+
+兩台獨立 CPU 節點已用相同資源請求完成同一份熱擴散工作。
+這次讓 `compute-cpu02` 暫時不能接工作，觀察新提交且不指定節點的
+`cpu` 分區工作是否落在 `compute-cpu01`。演練前佇列為空，
+`compute-cpu02` 的 Zabbix server、agent 與 `slurmd` 均在執行。
+
+**目的與影響：** 在 `compute-cpu02` 以 `sudo` 停止該 VM 的 `slurmd`。
+這會使它暫時無法接 Slurm 工作，
+Zabbix 的服務狀態監控預期會告警；不修改設定檔或其他節點。
+復原時會在同一台 VM 啟動 `slurmd`，再依控制節點的實際狀態
+決定是否執行 `RESUME`。
+
+**已執行指令｜`compute-cpu02`：**
+
+```bash
+sudo systemctl stop slurmd
+```
+
+`systemctl stop` 只會停止這台 VM 的服務。指令返回後，須向 Slurm 控制端
+核對節點狀態，並核對 Zabbix 的 Problem 事件，再提交新工作。
+
+**實際結果：** 沒有終端輸出，已返回 `compute-cpu02` 的 shell 提示字元。
+`slurmd` 停止指令已完成；排程器何時把節點標為不可接工作，須另查控制端狀態。
+
+**目的與影響：** 在控制節點用 Slurm 客戶端查它對
+`compute-cpu02` 的目前判斷。這條指令只讀；`idle` 表示控制端尚未隔離，
+`down` 或帶 `*` 的無回應狀態表示不能把它當成可接工作的節點。
+
+**已執行指令｜控制節點：**
+
+```bash
+sinfo -N -n compute-cpu02 -o '%N %T'
+```
+
+`-N` 逐節點顯示，`-n` 限定本次故障節點，格式只保留名稱與狀態；
+檢查的是 Slurm 控制端的排程狀態，不是本機 systemd 服務狀態。
+
+**實際輸出：**
+
+```text
+NODELIST STATE
+compute-cpu02 idle
+```
+
+**判讀：** 服務剛停止後，控制端仍將節點列為 `idle`，尚未隔離；
+此時不可提交新工作來判斷轉移落點。先查控制端的失聯判定時間，
+再等待狀態更新。
+
+**目的與影響：** 查目前 Slurm 控制端的 `SlurmdTimeout`，
+了解它要等多久才會把未回報的運算節點判為失聯。
+這條指令只讀設定，不修改控制端、服務或節點狀態。
+
+**已執行指令｜控制節點：**
+
+```bash
+scontrol show config | grep -i '^SlurmdTimeout'
+```
+
+`scontrol show config` 讀取正在運行的 Slurm 設定；`grep`
+只保留失聯逾時欄位。此值用來判讀稍後 `sinfo` 狀態更新的等待時間。
+
+**實際輸出：**
+
+```text
+SlurmdTimeout           = 300 sec
+```
+
+**判讀：** 控制端在運算節點停止回報後，可能要約五分鐘才會判定失聯。
+在確認 `compute-cpu02` 已離開 `idle` 前，不提交轉移測試工作。
+
+**已執行指令｜控制節點，等待失聯判定後重查：**
+
+```bash
+sinfo -N -n compute-cpu02 -o '%N %T'
+```
+
+**實際輸出：**
+
+```text
+NODELIST STATE
+compute-cpu02 down*
+```
+
+**判讀：** `down*` 表示控制端已將 `compute-cpu02` 排除可接工作狀態，
+且目前沒有收到該節點回報；可以用不指定節點的新工作驗證落點。
+
+**目的與影響：** 控制節點曾重開機，重新從工作樹的
+[heat2d_cpu.cpp](../project/workloads/heat2d_cpu.cpp) 編譯本次要提交的
+熱擴散程式，確保 `/tmp/heat2d_cpu_module06` 存在。只在控制節點
+建立或取代這個暫存執行檔，不提交工作，也不修改 Slurm 設定。
+
+**待執行指令｜控制節點：**
+
+```bash
+g++ -O2 -std=c++17 -Wall -Wextra -pedantic project/workloads/heat2d_cpu.cpp -o /tmp/heat2d_cpu_module06
+```
+
+`-O2` 啟用一般最佳化，`-std=c++17` 指定語言版本，警告選項
+協助指出編譯問題；`-o` 指定稍後由 `srun --bcast` 發送的執行檔。

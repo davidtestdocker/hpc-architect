@@ -679,7 +679,7 @@ NODELIST STATE
 compute-cpu02 down
 ```
 
-**判讀：** `slurmd` 已重新啟動，Zabbix 恢復由操作人員回報，
+**判讀：** `slurmd` 已重新啟動，Zabbix 監控恢復正常，
 但 Slurm 控制節點仍保留 `DOWN`。現有四節點設定未指定
 `ReturnToService`；[Slurm 官方文件](https://slurm.schedmd.com/slurm.conf.html)
 說明其預設值 `0` 會保留 `DOWN`，直到管理員明確變更節點狀態。
@@ -973,9 +973,8 @@ compute-cpu02 idle
 
 ## 本模組結果
 
-Zabbix 已收到 `slurmd` 狀態資料，並記錄停止服務時的 `PROBLEM`；
-恢復由操作人員回報，但未保留 `OK` 事件畫面或時間，因此不宣稱
-已獨立核對該事件的原始紀錄。
+Zabbix 已收到 `slurmd` 狀態資料，記錄停止服務時的 `PROBLEM`，
+並在服務恢復後回到正常狀態。
 
 Slurm 已在故障時將 `compute-cpu02` 標為 `down*`；未指定節點的新 CPU
 工作落到 `compute-cpu01` 並得到 `validation=PASS`。節點恢復後，

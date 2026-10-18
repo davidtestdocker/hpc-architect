@@ -1,9 +1,23 @@
-# HPC 系統軟體工程師學習與面試作品
+# HPC 叢集建置與維運作品
 
-目標是學會本庫保存的鴻海 HPC 系統軟體工程師／架構師職缺摘要所需能力，完成能在面試中說清楚、可重建的作品。學員已有 SRE／維運經驗；基礎只在任務需要時補。原始職缺全文未保存在本庫，若取得原文，應重新核對要求，不把本課程的工具選擇當成職缺原文。
+在 GCP 與 DevStack 環境建立四節點 Slurm 叢集：一台控制節點、
+一台 NVIDIA L4 運算節點，以及兩台獨立 CPU 運算節點。
+使用 Ansible 部署節點設定，接通 NFS 與 OpenStack 客體的網路路徑，
+以 CPU／GPU 工作結果和 Zabbix 故障事件核對派工與復原。
 
-從[能力路線](curriculum/ROADMAP.md)開始，第一個實作模組是[單機工作負載與健檢](curriculum/module-01.md)。[進度](PROGRESS.md)依可驗證成果更新，[面試專案](project/README.md)記錄目標和限制，[環境方案](ENVIRONMENT.md)處理 VM 與成本。
+## 先看成果
 
-課程按能力依賴推進，不固定 24 週或每天一個指令。一次只給一條要在學員 VM 執行的新指令，是互動節奏，不是學習量。開始某次帶練前，先在對應模組文件寫明要執行的指令、目的及會影響的檔案；學員做完後才補實際輸出、判讀與下一步。已會的 Linux／Git／Shell 操作不獨立重做，不建立只為練習的檔案或目錄。
+| 主題 | 證據入口 |
+|---|---|
+| 架構與資源 | [四節點拓撲](project/docs/cluster-topology.md)、[Slurm 設定](project/slurm/four-node-slurm.conf) |
+| 自動化與網路 | [Ansible playbooks](project/ansible/)、[OpenStack 客體納管與網路](curriculum/module-05.md) |
+| 可核對的計算工作 | [L4 工作結果](curriculum/module-05.md)、[兩台 CPU 節點的工作與轉移](curriculum/module-06.md) |
+| 監控與復原 | [Zabbix 告警及 Slurm 故障處理](curriculum/module-06.md)、[操作手冊](project/docs/operations.md) |
 
-每項成果都要有可重跑的程式、設定、測試、工作輸出、量測或故障紀錄支持。看過工具、完成模組或單次指令成功，都不等於具備大型 HPC 叢集經驗，也不保證錄取。跨節點實作前先確認資源及費用；只有單機時如實標示未驗證部分。
+[作品總覽](project/README.md)整理各項成果；
+[職缺能力與證據索引](curriculum/module-07.md)可從主張追到設定、命令與實際輸出。
+可重跑的程式與設定在 [project/](project/)，各模組保存實作結果與判讀。
+
+這是教學規模虛擬叢集的實作作品；節點角色、部署範圍與工作結果
+依上述證據描述。[學習路線](curriculum/ROADMAP.md)和[進度](PROGRESS.md)
+記錄實作順序。

@@ -24,18 +24,18 @@ Slurm 的四個節點是控制節點、`compute-gpu01`、`compute-cpu02` 和
 更完整的位址、資源與路徑可看[拓撲](project/docs/cluster-topology.md)和
 [四節點設定](project/slurm/four-node-slurm.conf)。
 
-## 代表作品
+## 實作內容
 
-| 作品 | 實際結果 | 相關內容 |
+| 項目 | 實際結果 | 相關內容 |
 |---|---|---|
 | L4 熱擴散計算 | Slurm 配置一張 NVIDIA L4，在 `compute-gpu01` 執行 `1024×1024` 網格、200 步；CPU 與 GPU 答案逐格比對，`validation=PASS` | [程式](project/workloads/heat2d.cu)、[工作輸出](curriculum/module-05.md) |
 | 兩台 CPU 節點的相同工作 | `compute-cpu01` 與 `compute-cpu02` 以相同的 1 CPU、512 MiB 請求完成熱擴散工作，總和均為 `65535.998004`、`validation=PASS` | [程式](project/workloads/heat2d_cpu.cpp)、[工作輸出](curriculum/module-06.md) |
 | 監控與故障復原 | Zabbix 記錄 `slurmd` 停止告警；節點隔離期間，未指定節點的新工作由 `compute-cpu01` 完成並回報 `validation=PASS` | [故障與工作結果](curriculum/module-06.md) |
 | 跨 VM MPI 與共享資料 | 控制節點與 GPU VM 各執行一個 CPU rank，使用共享執行檔計算 `15+40=55` | [程式](project/workloads/sum_mpi.c)、[跨節點結果](curriculum/module-04.md) |
 
-## 我具備的能力
+## 作品呈現的能力
 
-| 能力 | 我完成的實作 | 相關內容 |
+| 能力 | 作品中的實作 | 相關內容 |
 |---|---|---|
 | HPC 叢集架構與資源規劃 | 規劃控制、GPU 與兩台 CPU 節點的角色、分區及資源配置 | [拓撲](project/docs/cluster-topology.md)、[Slurm 設定](project/slurm/four-node-slurm.conf) |
 | Slurm 與 Linux 服務管理 | 設定 MUNGE、`slurmctld`、`slurmd`，判讀節點狀態與工作結果，處理節點故障及恢復 | [服務與工作結果](curriculum/module-06.md) |
@@ -45,6 +45,3 @@ Slurm 的四個節點是控制節點、`compute-gpu01`、`compute-cpu02` 和
 | GPU 資源管理 | 以 Slurm GRES 配置 NVIDIA L4，提交 GPU 熱擴散工作並取得 `validation=PASS` | [設定與工作結果](curriculum/module-05.md) |
 | 監控與故障復原 | 使用 Zabbix 捕捉 `slurmd` 停止告警，核對節點隔離、工作轉移及恢復後的答案 | [告警與復原結果](curriculum/module-06.md) |
 | OpenStack 客體納管 | 在 DevStack 供給 CPU VM、建立管理與 Slurm 網路通路，並完成指定客體的 Slurm 工作 | [供給與工作結果](curriculum/module-05.md) |
-
-更多實作內容可以看[作品總覽](project/README.md)；
-程式與設定放在 [project/](project/)。

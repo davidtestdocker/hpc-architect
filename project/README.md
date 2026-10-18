@@ -1,4 +1,4 @@
-# 面試專案：可查證的迷你 HPC 叢集
+# HPC 叢集建置與維運作品
 
 在 GCP 與 DevStack 環境建立四節點 Slurm 叢集：控制節點、
 NVIDIA L4 運算節點，以及兩台獨立 CPU 運算節點。
@@ -7,12 +7,12 @@ NVIDIA L4 運算節點，以及兩台獨立 CPU 運算節點。
 
 ## 主要成果
 
-| 成果 | 可查證的證據 |
+| 成果 | 相關內容 |
 |---|---|
 | 四節點排程 | [拓撲與資源配置](docs/cluster-topology.md)、[四節點設定](slurm/four-node-slurm.conf)、[Ansible 部署](../curriculum/module-06.md) |
 | CPU／GPU 工作 | [L4 熱擴散 `validation=PASS`](../curriculum/module-05.md)；[兩台 CPU VM 的相同工作與故障期間工作轉移](../curriculum/module-06.md) |
 | 網路與資料路徑 | [NFS 雙向讀寫與跨 VM MPI](../curriculum/module-04.md)；[OpenStack 客體的管理與 Slurm 雙向通路](../curriculum/module-05.md) |
-| 故障定位與恢復 | [Zabbix 告警、Slurm 節點隔離及工作復測](../curriculum/module-06.md)；[操作與復原手冊](docs/operations.md) |
+| 故障定位與恢復 | [Zabbix 告警、Slurm 節點隔離及工作復測](../curriculum/module-06.md)；[操作與復原流程](docs/operations.md) |
 
 完整的[作品證據索引](../curriculum/module-07.md)依職缺能力串接設定、命令和實際結果。
 
@@ -26,7 +26,7 @@ flowchart LR
 ```
 
 圖示是已驗證的工作角色，不代表各 VM 在讀取文件當下仍在線。
-Slurm 教學叢集的[已驗證拓撲](docs/cluster-topology.md)包含
+Slurm 叢集的[拓撲](docs/cluster-topology.md)包含
 OpenStack CPU 客體與另一台獨立 CPU VM。
 運算節點所需的[Slurm 套件與原始碼](packages/slurm/README.md)已保存在專案中。
 控制節點兼任 CPU 與 NFS 服務，是降低實驗成本的取捨；控制服務採單一節點。
@@ -46,7 +46,7 @@ GCP VM 的實體主機配置不確定，OpenStack CPU 客體則運行在
 
 ## 作品證據狀態
 
-| 項目 | 可查證的成果 |
+| 項目 | 實作內容 |
 |---|---|
 | 節點與拓撲 | [拓撲文件](docs/cluster-topology.md)列出控制節點、GPU VM、兩台 CPU VM 與 OpenStack 宿主機；節點狀態依[模組 05](../curriculum/module-05.md)及[模組 06](../curriculum/module-06.md)的當時結果，不代表目前在線 |
 | 網路與共享資料 | [模組 04](../curriculum/module-04.md)已驗證私有網路、NAT、SSH 及控制節點與 GPU VM 的 NFS 雙向讀寫；[模組 05](../curriculum/module-05.md)已驗證 OpenStack CPU 客體的雙向通路與網路恢復 |
@@ -54,15 +54,14 @@ GCP VM 的實體主機配置不確定，OpenStack CPU 客體則運行在
 | 計算工作 | [模組 03](../curriculum/module-03.md)有 C/MPI 正確性結果；[模組 04](../curriculum/module-04.md)有兩台 VM 各一個 CPU rank 的跨節點 MPI；模組 05 有 L4 工作 `validation=PASS`，模組 06 有兩台 CPU VM 的同一份工作與故障期間轉移結果 |
 | Python 健檢 | [模組 02](../curriculum/module-02.md)有 help、JSON、逾時與部分失敗的程式及實測案例 |
 | 監控與復原 | [模組 06](../curriculum/module-06.md)記錄 Zabbix `slurmd` 告警、Slurm 隔離、工作轉移、服務恢復及工作復測 |
-| 作品索引 | [模組 07](../curriculum/module-07.md)對照職缺能力與實際證據；[操作手冊](docs/operations.md)說明使用及復原，[作品展示提綱](docs/demo.md)串起拓撲、工作與故障結果 |
+| 作品索引 | [能力與實作](../curriculum/module-07.md)整理職缺能力對應的成果；[操作與復原流程](docs/operations.md)說明使用方式 |
 
 OpenStack 已供給 `compute-cpu01`，並完成管理連線及 Slurm 工作驗證。
 
 ## 使用作品
 
-從[操作手冊](docs/operations.md)找到既有環境的前置條件、設定來源、
-工作驗證與故障復原入口；[拓撲](docs/cluster-topology.md)說明各節點角色，
-[展示提綱](docs/demo.md)串起可向面試官展示的證據。
+更多內容可看[操作與復原流程](docs/operations.md)、
+[拓撲](docs/cluster-topology.md)及[實作結果](../curriculum/module-07.md)。
 實際部署結果與完整輸出保留在各模組文件。
 
 履歷可依上述證據描述各 VM 的角色、部署範圍、工作結果及故障處理。
